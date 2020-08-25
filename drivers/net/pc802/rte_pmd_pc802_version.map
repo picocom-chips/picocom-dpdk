@@ -1,0 +1,6 @@
+DPDK_2.0 {
+
+	local: *;
+
+	picocom_pc802_startup;
+};

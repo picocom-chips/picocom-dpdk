@@ -1,0 +1,1383 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2018-2020 Picocom Corporation
+ */
+
+#include <sys/queue.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <rte_common.h>
+#include <rte_interrupts.h>
+#include <rte_byteorder.h>
+#include <rte_debug.h>
+#include <rte_pci.h>
+#include <rte_bus_pci.h>
+#include <rte_ether.h>
+#include <rte_ethdev_driver.h>
+#include <rte_ethdev_pci.h>
+#include <rte_memory.h>
+#include <rte_eal.h>
+#include <rte_malloc.h>
+#include <rte_dev.h>
+
+#include "pc802_logs.h"
+#include "pc802_ethdev.h"
+
+#define PCI_VENDOR_ID_SYNOPSYS        0x16c3
+#define PCI_DEVICE_ID_SYNOPSYS_HAPSUSB31    0xabcf
+
+static PC802_BAR_t *gbar;
+
+static const struct rte_pci_id pci_id_pc802_map[] = {
+    { RTE_PCI_DEVICE(PCI_VENDOR_ID_SYNOPSYS, PCI_DEVICE_ID_SYNOPSYS_HAPSUSB31) },
+    { .vendor_id = 0, /* sentinel */ },
+};
+
+typedef struct PC802_Mem_Pool_t {
+    PC802_Mem_Block_t *first;
+    uint32_t block_size;
+    uint32_t block_num;
+} PC802_Mem_Pool_t;
+
+/**
+ * Structure associated with each descriptor of the RX ring of a RX queue.
+ */
+struct pc802_rx_entry {
+    union {
+        struct rte_mbuf *mbuf; /**< mbuf associated with RX descriptor. */
+        PC802_Mem_Block_t *mblk;
+    };
+};
+
+/**
+ * Structure associated with each RX queue.
+ */
+struct pc802_rx_queue {
+    struct rte_mempool  *mb_pool;   /**< mbuf pool to populate RX ring. */
+    volatile PC802_Descriptor_t *rx_ring; /**< RX ring virtual address. */
+    struct pc802_rx_entry *sw_ring;   /**< address of RX software ring. */
+    //uint64_t            rx_ring_phys_addr; /**< RX ring DMA address. */
+    volatile uint32_t   *rrccnt_reg_addr; /**< RDT register address. */
+    volatile uint32_t   *repcnt_mirror_addr;
+    //volatile uint32_t   *repcnt_reg_addr; /**< RDH register address. */
+    //struct rte_mbuf *pkt_first_seg; /**< First segment of current packet. */
+    //struct rte_mbuf *pkt_last_seg;  /**< Last segment of current packet. */
+    //uint64_t      offloads;   /**< Offloads of DEV_RX_OFFLOAD_* */
+    PC802_Mem_Pool_t    mpool;
+    uint32_t            rc_cnt;
+    //uint32_t            ep_cnt;
+    uint16_t            nb_rx_desc; /**< number of RX descriptors. */
+    //uint16_t            rx_tail;    /**< current value of RDT register. */
+    uint16_t            nb_rx_hold; /**< number of held free RX desc. */
+    uint16_t            rx_free_thresh; /**< max free RX desc to hold. */
+    uint16_t            queue_id;   /**< RX queue index. */
+    uint16_t            port_id;    /**< Device port identifier. */
+    //uint8_t             pthresh;    /**< Prefetch threshold register. */
+    //uint8_t             hthresh;    /**< Host threshold register. */
+    //uint8_t             wthresh;    /**< Write-back threshold register. */
+    //uint8_t             crc_len;    /**< 0 if CRC stripped, 4 otherwise. */
+};
+
+/**
+ * Structure associated with each descriptor of the TX ring of a TX queue.
+ */
+struct pc802_tx_entry {
+    union {
+        struct {
+            struct rte_mbuf *mbuf; /**< mbuf associated with TX desc, if any. */
+            //uint16_t next_id; /**< Index of next descriptor in ring. */
+            //uint16_t last_id; /**< Index of last scattered descriptor. */
+        };
+        PC802_Mem_Block_t *mblk;
+   };
+};
+
+/**
+ * Structure associated with each TX queue.
+ */
+struct pc802_tx_queue {
+    volatile PC802_Descriptor_t *tx_ring; /**< TX ring address */
+    //uint64_t               tx_ring_phys_addr; /**< TX ring DMA address. */
+    struct pc802_tx_entry    *sw_ring; /**< virtual address of SW ring. */
+    volatile uint32_t      *trccnt_reg_addr; /**< Address of TDT register. */
+    volatile uint32_t      *tepcnt_mirror_addr;
+    //uint32_t               ep_cnt;
+    PC802_Mem_Pool_t            mpool;
+    uint32_t               rc_cnt;  /**< Current value of TDT register. */
+    uint16_t               nb_tx_desc;    /**< number of TX descriptors. */
+    /**< Start freeing TX buffers if there are less free descriptors than
+         this value. */
+    uint16_t               tx_free_thresh;
+    /**< Number of TX descriptors to use before RS bit is set. */
+    //uint16_t               tx_rs_thresh;
+    /** Number of TX descriptors used since RS bit was set. */
+    //uint16_t               nb_tx_used;
+    /** Total number of TX descriptors ready to be allocated. */
+    uint16_t               nb_tx_free;
+    uint16_t               queue_id; /**< TX queue index. */
+    uint16_t               port_id;  /**< Device port identifier. */
+    //uint8_t                pthresh;  /**< Prefetch threshold register. */
+    //uint8_t                hthresh;  /**< Host threshold register. */
+    //uint8_t                wthresh;  /**< Write-back threshold register. */
+    //struct em_ctx_info ctx_cache;
+    /**< Hardware context history.*/
+    //uint64_t         offloads; /**< offloads of DEV_TX_OFFLOAD_* */
+};
+
+struct pc802_adapter {
+    uint8_t *bar0_addr;
+    PC802_Descs_t *pDescs;
+    uint64_t descs_phy_addr;
+    struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
+    struct pc802_rx_queue  rxq[MAX_UL_CH_NUM];
+    uint8_t started;
+    uint8_t stopped;
+
+    uint64_t *dbg;
+    uint32_t dbg_rccnt;
+};
+
+#define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
+
+int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
+{
+    if (!isPowerOf2(nb_desc) || (nb_desc > MAX_DESC_NUM) || (nb_desc < MIN_DESC_NUM))
+        return -EINVAL;
+    if (block_num <= nb_desc)
+        return -EINVAL;
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    volatile PC802_Descriptor_t *rxdp;
+    struct pc802_rx_entry *rxep;
+    uint32_t mask = NPU_CACHE_LINE_SZ - 1;
+    uint32_t k;
+    int socket_id = dev->device->numa_node;
+    char z_name[RTE_MEMZONE_NAMESIZE];
+    const struct rte_memzone *mz;
+    PC802_Mem_Block_t *mblk;
+
+    rxq->mpool.block_size = block_size;
+    rxq->mpool.block_num = block_num;
+
+    block_size = (block_size + mask) & (~mask);
+    //block_size += sizeof(PC802_Mem_Block_t);
+
+    /* Allocate software ring. */
+    if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
+            sizeof (rxq->sw_ring[0]) * nb_desc,
+            RTE_CACHE_LINE_SIZE)) == NULL) {
+        return -ENOMEM;
+    }
+
+    rxq->mpool.first = NULL;
+    for (k = 0; k < block_num; k++) {
+        snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d_%4d",
+              dev->data->port_id, queue_id, k);
+        mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+        if (mz == NULL)
+            return -ENOMEM;
+        mblk = (PC802_Mem_Block_t *)mz->addr;
+        mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+        mblk->pkt_length = 0;
+        mblk->next = rxq->mpool.first;
+        mblk->first = &rxq->mpool.first;
+        mblk->alloced = 0;
+        rxq->mpool.first = mblk;
+        DBLOG("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, k, mz->iova, mz->addr);
+        DBLOG("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+    }
+
+    rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
+    rxep = rxq->sw_ring;
+    for (k = 0; k < nb_desc; k++) {
+        rxep->mblk = rxq->mpool.first;
+        rxq->mpool.first = rxep->mblk->next;
+        rxep->mblk->next = NULL;
+        rxep->mblk->alloced = 1;
+        rxdp->phy_addr = rxep->mblk->buf_phy_addr;
+        rxdp->length = 0;
+        DBLOG("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
+        rxep++;
+        rxdp++;
+    }
+
+    rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
+    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
+    rxq->nb_rx_desc = rxq->rc_cnt = nb_desc;
+    rxq->nb_rx_hold = 0;
+    rxq->rx_free_thresh = 32;
+    rxq->queue_id = queue_id;
+    rxq->port_id = port_id;
+
+    PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+    PC802_WRITE_REG(bar->RRCCNT[queue_id], nb_desc);
+
+    return 0;
+}
+
+int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
+{
+    if (!isPowerOf2(nb_desc) || (nb_desc > MAX_DESC_NUM) || (nb_desc < MIN_DESC_NUM))
+        return -EINVAL;
+    if (block_num <= nb_desc)
+        return -EINVAL;
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    struct pc802_tx_entry *txep;
+    uint32_t mask = NPU_CACHE_LINE_SZ - 1;
+    uint32_t k;
+    int socket_id = dev->device->numa_node;
+    char z_name[RTE_MEMZONE_NAMESIZE];
+    const struct rte_memzone *mz;
+    PC802_Mem_Block_t *mblk;
+
+    txq->mpool.block_size = block_size;
+    txq->mpool.block_num = block_num;
+
+    block_size = (block_size + mask) & (~mask);
+    //block_size += sizeof(PC802_Mem_Block_t);
+
+    /* Allocate software ring. */
+    if ((txq->sw_ring = rte_zmalloc("txq->sw_ring",
+            sizeof (txq->sw_ring[0]) * nb_desc,
+            RTE_CACHE_LINE_SIZE)) == NULL) {
+        return -ENOMEM;
+    }
+
+    txq->mpool.first = NULL;
+    for (k = 0; k < block_num; k++) {
+        snprintf(z_name, sizeof(z_name), "PC802Tx_%2d_%2d_%4d",
+              dev->data->port_id, queue_id, k);
+        mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+        if (mz == NULL)
+            return -ENOMEM;
+        mblk = (PC802_Mem_Block_t *)mz->addr;
+        mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+        mblk->pkt_length = 0;
+        mblk->next = txq->mpool.first;
+        mblk->first = &txq->mpool.first;
+        mblk->alloced = 0;
+        txq->mpool.first = mblk;
+        DBLOG("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, k, mz->iova, mz->addr);
+        DBLOG("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+    }
+
+    txq->tx_ring = adapter->pDescs->dl[queue_id];
+    txep = txq->sw_ring;
+    for (k = 0; k < nb_desc; k++) {
+        txep->mblk = NULL;
+        txep++;
+    }
+
+    txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_id];
+    txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT[queue_id];
+    txq->nb_tx_desc = nb_desc;
+    txq->rc_cnt = 0;
+    txq->nb_tx_free = nb_desc;
+    txq->tx_free_thresh = 32;
+    txq->queue_id = queue_id;
+    txq->port_id = port_id;
+
+    PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+
+    return 0;
+}
+
+PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    PC802_Mem_Block_t *mblk;
+    mblk = txq->mpool.first;
+    if (NULL != mblk) {
+        txq->mpool.first = mblk->next;
+        mblk->next = NULL;
+        mblk->alloced = 1;
+    }
+    return mblk;
+}
+
+void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
+{
+    if (NULL == mblk)
+        return;
+    if (mblk->alloced == 0)
+        return;
+    mblk->next = *mblk->first;
+    *mblk->first = mblk;
+    mblk->alloced = 0;
+    return;
+}
+
+uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
+    PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    volatile PC802_Descriptor_t *rx_ring;
+    volatile PC802_Descriptor_t *rxdp;
+    struct pc802_rx_entry *sw_ring;
+    PC802_Mem_Block_t *rxm;
+    PC802_Mem_Block_t *nmb;
+    uint32_t mask = rxq->nb_rx_desc - 1;
+    uint32_t idx;
+    uint32_t ep_txed;
+    uint32_t rx_id;
+    uint16_t nb_rx;
+    uint16_t nb_hold;
+
+    nb_rx = 0;
+    nb_hold = rxq->nb_rx_hold;
+    rx_id = rxq->rc_cnt;
+    rx_ring = rxq->rx_ring;
+    sw_ring = rxq->sw_ring;
+    ep_txed = rxq->nb_rx_desc - (rxq->rc_cnt - *rxq->repcnt_mirror_addr);
+    nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
+    while (nb_rx < nb_blks) {
+        idx = rx_id & mask;
+        rxdp = &rx_ring[idx];
+
+        nmb = rxq->mpool.first;
+        if (nmb == NULL) {
+            PMD_RX_LOG(DEBUG, "RX mblk alloc failed port_id=%u "
+                   "queue_id=%u",
+                   (unsigned) rxq->port_id,
+                   (unsigned) rxq->queue_id);
+            break;
+        }
+        rxq->mpool.first = nmb->next;
+        nmb->next = NULL;
+        nmb->alloced = 1;
+
+        rxm = sw_ring[idx].mblk;
+        rte_prefetch0(rxm);
+
+        if ((idx & 0x3) == 0) {
+            rte_prefetch0(&rx_ring[idx]);
+            rte_prefetch0(&sw_ring[idx]);
+        }
+
+        rxm->pkt_length = rxdp->length;
+        rxm->pkt_type = rxdp->type;
+        rxm->eop = rxdp->eop;
+        rte_prefetch0(&rxm[1]);
+        DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
+            queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+        rx_blks[nb_rx++] = rxm;
+
+        sw_ring[idx].mblk = nmb;
+        rxdp->phy_addr = nmb->buf_phy_addr;
+        rxdp->length = 0;
+
+        rx_id++;
+        nb_hold++;
+    }
+
+    rxq->rc_cnt = rx_id;
+    if (nb_hold > rxq->rx_free_thresh) {
+        rte_io_wmb();
+        *rxq->rrccnt_reg_addr = rxq->rc_cnt;
+        nb_hold = 0;
+    }
+    rxq->nb_rx_hold = nb_hold;
+    return nb_rx;
+}
+
+uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
+    PC802_Mem_Block_t **tx_blks, uint16_t nb_blks)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    struct pc802_tx_entry *sw_ring = txq->sw_ring;
+    struct pc802_tx_entry *txe;
+    volatile PC802_Descriptor_t *tx_ring = txq->tx_ring;
+    volatile PC802_Descriptor_t *txd;
+    PC802_Mem_Block_t     *tx_blk;
+    uint32_t mask = txq->nb_tx_desc - 1;
+    uint32_t idx;
+    uint32_t tx_id = txq->rc_cnt;
+    uint16_t nb_tx;
+
+    if (txq->nb_tx_free < txq->tx_free_thresh) {
+        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
+    }
+
+    nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
+    for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
+        tx_blk = *tx_blks++;
+        idx = tx_id & mask;
+        txe = &sw_ring[idx];
+        txd = &tx_ring[idx];
+
+        if ((txe->mblk) && (txd->type)) {
+            pc802_free_mem_block(txe->mblk);
+        }
+
+        txd->phy_addr = tx_blk->buf_phy_addr;
+        txd->length = tx_blk->pkt_length;
+        txd->type = tx_blk->pkt_type;
+        txd->eop = tx_blk->eop;
+        DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
+            queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
+        txe->mblk = tx_blk;
+        tx_blk->next =  NULL;
+        tx_id++;
+    }
+
+
+    PMD_TX_LOG(DEBUG, "port_id=%u queue_id=%u tx_tail=%u nb_tx=%u",
+        (unsigned) txq->port_id, (unsigned) txq->queue_id,
+        (unsigned) tx_id, (unsigned) nb_tx);
+    txq->nb_tx_free -= nb_blks;
+    txq->rc_cnt = tx_id;
+    rte_wmb();
+    *txq->trccnt_reg_addr = tx_id;
+
+    return nb_tx;
+}
+
+static void
+eth_pc802_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
+{
+    //struct e1000_hw *hw = E1000_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+    dev = dev;
+
+    dev_info->min_rx_bufsize = 128; /* See BSIZE field of RCTL register. */
+    dev_info->max_rx_pktlen = 1500; //em_get_max_pktlen(dev);
+    dev_info->max_mac_addrs = 1; //hw->mac.rar_entry_count;
+
+    /*
+     * Starting with 631xESB hw supports 2 TX/RX queues per port.
+     * Unfortunatelly, all these nics have just one TX context.
+     * So we have few choises for TX:
+     * - Use just one TX queue.
+     * - Allow cksum offload only for one TX queue.
+     * - Don't allow TX cksum offload at all.
+     * For now, option #1 was chosen.
+     * To use second RX queue we have to use extended RX descriptor
+     * (Multiple Receive Queues are mutually exclusive with UDP
+     * fragmentation and are not supported when a legacy receive
+     * descriptor format is used).
+     * Which means separate RX routinies - as legacy nics (82540, 82545)
+     * don't support extended RXD.
+     * To avoid it we support just one RX queue for now (no RSS).
+     */
+
+    dev_info->max_rx_queues = 1;
+    dev_info->max_tx_queues = 1;
+
+    dev_info->rx_queue_offload_capa = 0;
+    dev_info->rx_offload_capa = 0;
+    dev_info->tx_queue_offload_capa = 0;
+    dev_info->tx_offload_capa = 0;
+
+    dev_info->rx_desc_lim = (struct rte_eth_desc_lim) {
+        .nb_max = MAX_DESC_NUM,
+        .nb_min = 64,
+        .nb_align = 16,
+    };
+
+    dev_info->tx_desc_lim = (struct rte_eth_desc_lim) {
+        .nb_max = MAX_DESC_NUM,
+        .nb_min = 64,
+        .nb_align = 16,
+        .nb_seg_max = 16,
+        .nb_mtu_seg_max = 16,
+    };
+
+    dev_info->speed_capa = ETH_LINK_SPEED_10M_HD | ETH_LINK_SPEED_10M |
+            ETH_LINK_SPEED_100M_HD | ETH_LINK_SPEED_100M |
+            ETH_LINK_SPEED_1G;
+
+    /* Preferred queue parameters */
+    dev_info->default_rxportconf.nb_queues = 1;
+    dev_info->default_txportconf.nb_queues = 1;
+    dev_info->default_txportconf.ring_size = 256;
+    dev_info->default_rxportconf.ring_size = 256;
+}
+
+static int
+eth_pc802_configure(struct rte_eth_dev *dev)
+{
+
+    PMD_INIT_FUNC_TRACE();
+
+    dev = dev;
+
+    PMD_INIT_FUNC_TRACE();
+
+    return 0;
+}
+
+static void
+pc802_rx_queue_release_mbufs(struct pc802_rx_queue *rxq)
+{
+    unsigned i;
+
+    if (rxq->sw_ring != NULL) {
+        for (i = 0; i != rxq->nb_rx_desc; i++) {
+            if (rxq->sw_ring[i].mbuf != NULL) {
+                rte_pktmbuf_free_seg(rxq->sw_ring[i].mbuf);
+                rxq->sw_ring[i].mbuf = NULL;
+            }
+        }
+    }
+}
+
+static void
+pc802_rx_queue_release(struct pc802_rx_queue *rxq)
+{
+    if (rxq != NULL) {
+        pc802_rx_queue_release_mbufs(rxq);
+        rte_free(rxq->sw_ring);
+    }
+}
+
+/* Reset dynamic em_rx_queue fields back to defaults */
+static void
+pc802_reset_rx_queue(struct pc802_rx_queue *rxq)
+{
+    //rxq->ep_cnt = 0;
+    rxq->nb_rx_hold = 0;
+    //rxq->pkt_first_seg = NULL;
+    //rxq->pkt_last_seg = NULL;
+}
+
+static int
+eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
+        uint16_t queue_idx,
+        uint16_t nb_desc,
+        unsigned int socket_id,
+        const struct rte_eth_rxconf *rx_conf,
+        struct rte_mempool *mp)
+{
+    struct pc802_rx_queue *rxq;
+
+    struct pc802_adapter *adapter =
+            PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    socket_id = socket_id;
+    rx_conf = rx_conf;
+
+    if (!isPowerOf2(nb_desc))
+            return -(EINVAL);
+
+    /* Free memory prior to re-allocation if needed. */
+    if (dev->data->rx_queues[queue_idx] != NULL) {
+        pc802_rx_queue_release(dev->data->rx_queues[queue_idx]);
+        dev->data->rx_queues[queue_idx] = NULL;
+    }
+
+    rxq = &adapter->rxq[queue_idx];
+
+    /* Allocate software ring. */
+    if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
+            sizeof (rxq->sw_ring[0]) * nb_desc,
+            RTE_CACHE_LINE_SIZE)) == NULL) {
+        pc802_rx_queue_release(rxq);
+        return -ENOMEM;
+    }
+
+    rxq->mb_pool = mp;
+    rxq->nb_rx_desc = nb_desc;
+    rxq->rx_free_thresh = 32; //rx_conf->rx_free_thresh;
+    rxq->queue_id = queue_idx;
+    rxq->port_id = dev->data->port_id;
+
+    rxq->rrccnt_reg_addr = &bar->RRCCNT[queue_idx];
+    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_idx];
+    rxq->rx_ring = adapter->pDescs->ul[queue_idx];
+    //rxq->rx_ring_phys_addr = adapter->descs_phy_addr + get_ul_desc_offset(queue_idx, 0);
+
+    //PMD_INIT_LOG(DEBUG, "sw_ring=%p hw_ring=%p dma_addr=0x%"PRIx64,
+    //       rxq->sw_ring, rxq->rx_ring, rxq->rx_ring_phys_addr);
+
+    dev->data->rx_queues[queue_idx] = rxq;
+    //pc802_reset_rx_queue(rxq);
+    return 0;
+}
+
+static void
+pc802_tx_queue_release_mbufs(struct pc802_tx_queue *txq)
+{
+    unsigned i;
+
+    if (txq->sw_ring != NULL) {
+        for (i = 0; i != txq->nb_tx_desc; i++) {
+            if (txq->sw_ring[i].mbuf != NULL) {
+                rte_pktmbuf_free_seg(txq->sw_ring[i].mbuf);
+                txq->sw_ring[i].mbuf = NULL;
+            }
+        }
+    }
+}
+
+static void
+pc802_tx_queue_release(struct pc802_tx_queue *txq)
+{
+    if (txq != NULL) {
+        pc802_tx_queue_release_mbufs(txq);
+        rte_free(txq->sw_ring);
+    }
+}
+
+/* (Re)set dynamic em_tx_queue fields to defaults */
+static void
+pc802_reset_tx_queue(struct pc802_tx_queue *txq)
+{
+    uint16_t i, nb_desc;
+    static const PC802_Descriptor_t txd_init = {
+        .phy_addr = 0,
+        .length = 0,
+        .eop = 1,
+        .type = 1
+    };
+
+    nb_desc = txq->nb_tx_desc;
+
+    /* Initialize ring entries */
+
+    //prev = (uint16_t) (nb_desc - 1);
+
+    for (i = 0; i < nb_desc; i++) {
+        txq->tx_ring[i] = txd_init;
+        txq->sw_ring[i].mbuf = NULL;
+        //txq->sw_ring[i].last_id = i;
+        //txq->sw_ring[prev].next_id = i;
+        //prev = i;
+    }
+
+    txq->nb_tx_free = nb_desc;
+    //txq->last_desc_cleaned = (uint16_t)(nb_desc - 1);
+    //txq->nb_tx_used = 0;
+    //txq->tx_tail = 0;
+}
+
+static int
+eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
+        uint16_t queue_idx,
+        uint16_t nb_desc,
+        unsigned int socket_id,
+        const struct rte_eth_txconf *tx_conf)
+{
+    struct pc802_tx_queue *txq;
+    //struct e1000_hw     *hw;
+    //uint32_t tsize;
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+
+    if (!isPowerOf2(nb_desc))
+        return -(EINVAL);
+
+    socket_id = socket_id;
+    tx_conf = tx_conf;
+
+    /* Free memory prior to re-allocation if needed... */
+    if (dev->data->tx_queues[queue_idx] != NULL) {
+        pc802_tx_queue_release(dev->data->tx_queues[queue_idx]);
+        dev->data->tx_queues[queue_idx] = NULL;
+    }
+
+    txq = &adapter->txq[queue_idx];
+
+    /* Allocate software ring */
+    if ((txq->sw_ring = rte_zmalloc("txq->sw_ring",
+            sizeof(txq->sw_ring[0]) * nb_desc,
+            RTE_CACHE_LINE_SIZE)) == NULL) {
+        pc802_tx_queue_release(txq);
+        return -ENOMEM;
+    }
+
+    txq->nb_tx_desc = nb_desc;
+    txq->nb_tx_free = nb_desc;
+    txq->tx_free_thresh = 32;
+    txq->queue_id = queue_idx;
+    txq->port_id = dev->data->port_id;
+
+    //txq->tx_ring_phys_addr = adapter->descs_phy_addr + get_dl_desc_offset(queue_idx, 0);
+    txq->tx_ring = adapter->pDescs->dl[queue_idx];
+    txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_idx];
+    txq->tepcnt_mirror_addr =(volatile uint32_t *)&adapter->pDescs->mr.TEPCNT[queue_idx];
+
+    //PMD_INIT_LOG(DEBUG, "sw_ring=%p hw_ring=%p dma_addr=0x%"PRIx64,
+    //       txq->sw_ring, txq->tx_ring, txq->tx_ring_phys_addr);
+
+    pc802_reset_tx_queue(txq);
+
+    dev->data->tx_queues[queue_idx] = txq;
+    return 0;
+}
+
+static void
+eth_pc802_promiscuous_enable(struct rte_eth_dev *dev)
+{
+    dev = dev;
+    return;
+}
+
+static void
+pc802_dev_clear_queues(struct rte_eth_dev *dev)
+{
+    uint16_t i;
+    struct pc802_tx_queue *txq;
+    struct pc802_rx_queue *rxq;
+
+    for (i = 0; i < dev->data->nb_tx_queues; i++) {
+        txq = dev->data->tx_queues[i];
+        if (txq != NULL) {
+            pc802_tx_queue_release_mbufs(txq);
+            pc802_reset_tx_queue(txq);
+        }
+    }
+
+    for (i = 0; i < dev->data->nb_rx_queues; i++) {
+        rxq = dev->data->rx_queues[i];
+        if (rxq != NULL) {
+            pc802_rx_queue_release_mbufs(rxq);
+            pc802_reset_rx_queue(rxq);
+        }
+    }
+}
+
+/**
+ * Interrupt handler which shall be registered at first.
+ *
+ * @param handle
+ *  Pointer to interrupt handle.
+ * @param param
+ *  The address of parameter (struct rte_eth_dev *) regsitered before.
+ *
+ * @return
+ *  void
+ */
+static void
+eth_pc802_interrupt_handler(void *param)
+{
+    struct rte_eth_dev *dev = (struct rte_eth_dev *)param;
+
+    //eth_em_interrupt_get_status(dev);
+    //eth_em_interrupt_action(dev, dev->intr_handle);
+    _rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
+}
+
+/*********************************************************************
+ *
+ *  This routine disables all traffic on the adapter by issuing a
+ *  global reset on the MAC.
+ *
+ **********************************************************************/
+static void
+eth_pc802_stop(struct rte_eth_dev *dev)
+{
+    //struct pc802_adapter *adapter =
+    //        PC802_DEV_PRIVATE(dev->data->dev_private);
+    //PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct rte_eth_link link;
+    struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
+    struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
+
+    pc802_dev_clear_queues(dev);
+
+    /* clear the recorded link status */
+    memset(&link, 0, sizeof(link));
+    rte_eth_linkstatus_set(dev, &link);
+
+    if (!rte_intr_allow_others(intr_handle))
+        /* resume to the default handler */
+        rte_intr_callback_register(intr_handle,
+                       eth_pc802_interrupt_handler,
+                       (void *)dev);
+
+    /* Clean datapath event and queue/vec mapping */
+    rte_intr_efd_disable(intr_handle);
+    if (intr_handle->intr_vec != NULL) {
+        rte_free(intr_handle->intr_vec);
+        intr_handle->intr_vec = NULL;
+    }
+}
+
+/*********************************************************************
+ *
+ *  Enable transmit unit.
+ *
+ **********************************************************************/
+static void
+eth_pc802_tx_init(struct rte_eth_dev *dev)
+{
+    struct pc802_adapter *adapter =
+            PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_tx_queue *txq;
+    uint16_t i;
+
+    /* Setup the Base and Length of the Tx Descriptor Rings. */
+    for (i = 0; i < dev->data->nb_tx_queues; i++) {
+        txq = dev->data->tx_queues[i];
+        PC802_WRITE_REG(bar->TDNUM[i], txq->nb_tx_desc);
+    }
+}
+
+static int
+pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
+{
+    struct pc802_rx_entry *rxe = rxq->sw_ring;
+    uint64_t dma_addr;
+    unsigned i;
+
+    /* Initialize software ring entries */
+    for (i = 0; i < rxq->nb_rx_desc; i++) {
+        volatile PC802_Descriptor_t *rxd;
+        struct rte_mbuf *mbuf = rte_mbuf_raw_alloc(rxq->mb_pool);
+
+        if (mbuf == NULL) {
+            PMD_INIT_LOG(ERR, "RX mbuf alloc failed "
+                     "queue_id=%hu", rxq->queue_id);
+            return -ENOMEM;
+        }
+
+        dma_addr =
+            rte_cpu_to_le_64(rte_mbuf_data_iova_default(mbuf));
+
+        /* Clear HW ring memory */
+        rxd = &rxq->rx_ring[i];
+        rxd->phy_addr = dma_addr;
+        rxd->length = 0;
+        rxe[i].mbuf = mbuf;
+    }
+
+    return 0;
+}
+
+
+/*********************************************************************
+ *
+ *  Enable receive unit.
+ *
+ **********************************************************************/
+static int
+eth_pc802_rx_init(struct rte_eth_dev *dev)
+{
+    struct pc802_adapter *adapter =
+            PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_rx_queue *rxq;
+    //struct rte_eth_rxmode *rxmode;
+    //uint32_t rctl;
+    //uint32_t rfctl;
+    //uint32_t rxcsum;
+    //uint32_t rctl_bsize;
+    uint16_t i;
+    int ret;
+
+
+    //dev->rx_pkt_burst = (eth_rx_burst_t)eth_em_recv_pkts;
+
+    /* Configure and enable each RX queue. */
+    for (i = 0; i < dev->data->nb_rx_queues; i++) {
+        //uint64_t bus_addr;
+        //uint32_t rxdctl;
+
+        rxq = dev->data->rx_queues[i];
+
+        /* Allocate buffers for descriptor rings and setup queue */
+        ret = pc802_alloc_rx_queue_mbufs(rxq);
+        if (ret)
+            return ret;
+
+        rxq->rc_cnt = rxq->nb_rx_desc;
+        PC802_WRITE_REG(bar->RDNUM[i], rxq->nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT[i], rxq->nb_rx_desc);
+    }
+
+    return 0;
+}
+
+static int
+eth_pc802_start(struct rte_eth_dev *dev)
+{
+    struct pc802_adapter *adapter =
+            PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
+    //struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
+    int ret;
+    //uint32_t intr_vector = 0;
+    //uint32_t *speeds;
+    //int num_speeds;
+    //bool autoneg;
+    int socket_id;
+    const struct rte_memzone *mz;
+
+    PMD_INIT_FUNC_TRACE();
+
+    eth_pc802_stop(dev);
+
+    eth_pc802_tx_init(dev);
+
+    ret = eth_pc802_rx_init(dev);
+    if (ret) {
+        PMD_INIT_LOG(ERR, "Unable to initialize RX hardware");
+        pc802_dev_clear_queues(dev);
+        return ret;
+    }
+
+    adapter->stopped = 0;
+
+    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
+    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
+    PC802_WRITE_REG(bar->DBAL, laddr);
+    PC802_WRITE_REG(bar->DBAH, haddr);
+    printf("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
+
+    socket_id = dev->device->numa_node;
+    mz = rte_memzone_reserve_aligned("PC802DBG", 256*1024, socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+    if (mz == NULL)
+        return -ENOMEM;
+    adapter->dbg_rccnt = 0;
+    adapter->dbg = mz->addr;
+    haddr = (uint32_t)(mz->iova >> 32);
+    laddr = (uint32_t)mz->iova;
+    PC802_WRITE_REG(bar->DBGRCAL, laddr);
+    PC802_WRITE_REG(bar->DBGRCAH, haddr);
+    printf("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
+
+    usleep(1000);
+    PC802_WRITE_REG(bar->DEVEN, 1);
+
+    volatile uint32_t devRdy;
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (!devRdy);
+
+    PMD_INIT_LOG(DEBUG, "<<");
+
+    return 0;
+}
+
+static uint16_t
+eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
+        uint16_t nb_pkts)
+{
+    struct pc802_tx_queue *txq;
+    struct pc802_tx_entry *sw_ring;
+    struct pc802_tx_entry *txe;
+    volatile PC802_Descriptor_t *tx_ring;
+    volatile PC802_Descriptor_t *txd;
+    struct rte_mbuf     *tx_pkt;
+    uint32_t mask;
+    uint32_t idx;
+    uint32_t tx_id;
+    uint16_t nb_tx_free;
+    uint16_t nb_tx;
+
+    txq = tx_queue;
+    sw_ring = txq->sw_ring;
+    tx_ring = txq->tx_ring;
+    mask = txq->nb_tx_desc - 1;
+    tx_id   = txq->rc_cnt;
+
+    /* Determine if the descriptor ring needs to be cleaned. */
+     if (txq->nb_tx_free < txq->tx_free_thresh) {
+        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
+     }
+
+    nb_tx_free = txq->nb_tx_free;
+    nb_pkts = (nb_tx_free < nb_pkts) ? nb_tx_free : nb_pkts;
+    /* TX loop */
+    for (nb_tx = 0; nb_tx < nb_pkts; nb_tx++) {
+        tx_pkt = *tx_pkts++;
+        idx = tx_id & mask;
+        txe = &sw_ring[idx];
+
+        if (txe->mbuf) {
+            rte_pktmbuf_free_seg(txe->mbuf);
+        }
+        txd = &tx_ring[idx];
+        txd->phy_addr = rte_mbuf_data_iova(tx_pkt);
+        txd->length = tx_pkt->data_len;
+        txd->eop = (tx_pkt->next == NULL);
+        txd->type = tx_pkt->packet_type;
+        txe->mbuf = tx_pkt;
+        tx_id++;
+    }
+    nb_tx_free -= nb_pkts;
+
+    /*
+     * Set the Transmit Descriptor Tail (TDT)
+     */
+    PMD_TX_LOG(DEBUG, "port_id=%u queue_id=%u tx_tail=%u nb_tx=%u",
+        (unsigned) txq->port_id, (unsigned) txq->queue_id,
+        (unsigned) tx_id, (unsigned) nb_tx);
+    txq->nb_tx_free = nb_tx_free;
+    txq->rc_cnt = tx_id;
+    rte_wmb();
+    *txq->trccnt_reg_addr = tx_id;
+
+    return nb_tx;
+}
+
+static uint16_t
+eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
+        uint16_t nb_pkts)
+{
+    struct pc802_rx_queue *rxq;
+    volatile PC802_Descriptor_t *rx_ring;
+    volatile PC802_Descriptor_t *rxdp;
+    struct pc802_rx_entry *sw_ring;
+    struct rte_mbuf *rxm;
+    struct rte_mbuf *nmb;
+    uint32_t mask;
+    uint32_t idx;
+    uint32_t rx_id;
+    uint32_t ep_txed;
+    uint16_t pkt_len;
+    uint16_t nb_rx;
+    uint16_t nb_hold;
+
+    rxq = rx_queue;
+    mask = rxq->nb_rx_desc - 1;
+
+    nb_rx = 0;
+    nb_hold = rxq->nb_rx_hold;
+    rx_id = rxq->rc_cnt;
+    rx_ring = rxq->rx_ring;
+    sw_ring = rxq->sw_ring;
+    ep_txed = rxq->nb_rx_desc - (rxq->rc_cnt - *rxq->repcnt_mirror_addr);
+    nb_pkts = (ep_txed < nb_pkts) ? ep_txed : nb_pkts;
+    while (nb_rx < nb_pkts) {
+        idx = rx_id & mask;
+        rxdp = &rx_ring[idx];
+
+        nmb = rte_mbuf_raw_alloc(rxq->mb_pool);
+        if (nmb == NULL) {
+            PMD_RX_LOG(DEBUG, "RX mbuf alloc failed port_id=%u "
+                   "queue_id=%u",
+                   (unsigned) rxq->port_id,
+                   (unsigned) rxq->queue_id);
+            rte_eth_devices[rxq->port_id].data->rx_mbuf_alloc_failed++;
+            break;
+        }
+
+        /* Prefetch next mbuf while processing current one. */
+        rte_prefetch0(sw_ring[idx].mbuf);
+
+        /*
+         * When next RX descriptor is on a cache-line boundary,
+         * prefetch the next 4 RX descriptors and the next 8 pointers
+         * to mbufs.
+         */
+        if ((idx & 0x3) == 0) {
+            rte_prefetch0(&rx_ring[idx]);
+            rte_prefetch0(&sw_ring[idx]);
+        }
+
+        rxm = sw_ring[idx].mbuf;
+        pkt_len = (uint16_t)rte_le_to_cpu_16(rxdp->length);
+        rxm->data_off = RTE_PKTMBUF_HEADROOM;
+        rte_prefetch0((char *)rxm->buf_addr + rxm->data_off);
+        rxm->nb_segs = 1;
+        rxm->next = NULL;
+        rxm->pkt_len = pkt_len;
+        rxm->data_len = pkt_len;
+        rxm->packet_type = rxdp->type;
+        rxm->port = rxq->port_id;
+
+        rxm->ol_flags = 0;
+        rx_pkts[nb_rx++] = rxm;
+
+        sw_ring[idx].mbuf = nmb;
+        rxdp->phy_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(nmb));
+        rxdp->length = 0;
+        rxdp->eop = 1;
+        rxdp->type = 1;
+
+        rx_id++;
+        nb_hold++;
+    }
+
+    rxq->rc_cnt = rx_id;
+    if (nb_hold > rxq->rx_free_thresh) {
+        rte_io_wmb();
+        *rxq->rrccnt_reg_addr = rxq->rc_cnt;
+        nb_hold = 0;
+    }
+    rxq->nb_rx_hold = nb_hold;
+    return nb_rx;
+}
+
+uint64_t *pc802_get_debug_mem(uint16_t port_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    return adapter->dbg;
+}
+
+void pc802_read_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    uint32_t epcnt;
+
+    PC802_WRITE_REG(bar->DBGEPADDR, startAddr);
+    PC802_WRITE_REG(bar->DBGBYTESNUM, bytesNum);
+    PC802_WRITE_REG(bar->DBGCMD, 0);
+    adapter->dbg_rccnt++;
+    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
+
+    do {
+        usleep(10);
+        epcnt = PC802_READ_REG(bar->DBGEPCNT);
+    } while(epcnt != adapter->dbg_rccnt);
+    return;
+}
+
+void pc802_show_pcie_counter(uint16_t port_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    uint16_t queue_id;
+    struct pc802_tx_queue *txq;
+    struct pc802_rx_queue *rxq;
+    static const char *qname[] = {"Ethernet  ", "EMBB_Data ", "EMBB_Ctrl "};
+    for (queue_id = 0; queue_id <= PC802_TRAFFIC_5G_EMBB_CTRL; queue_id++) {
+        txq = &adapter->txq[queue_id];
+        rxq = &adapter->rxq[queue_id];
+        printf("DL %s: RC = %3u   EP = %3u\n", qname[queue_id],
+            *txq->trccnt_reg_addr, *txq->tepcnt_mirror_addr);
+        printf("UL %s: RC = %3u   EP = %3u    RC_HOLD = %3u\n", qname[queue_id],
+            *rxq->rrccnt_reg_addr, *rxq->repcnt_mirror_addr, rxq->nb_rx_hold);
+    }
+}
+
+void pc802_show_tx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    volatile PC802_Descriptor_t *txd;
+    PC802_Mem_Block_t     *tx_blk;
+    rc_counter &= (txq->nb_tx_desc - 1);
+    txd = &txq->tx_ring[rc_counter];
+    tx_blk = txq->sw_ring[rc_counter].mblk;
+    printf("DL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
+        port_id, queue_id, rc_counter, txd->phy_addr, txd->length, txd->type, txd->eop);
+    printf("DL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
+        &tx_blk[1], tx_blk->buf_phy_addr, tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
+    uint8_t *p = (uint8_t *)&tx_blk[1];
+    uint32_t L, C;
+    for (L = 0; L < 4; L++) {
+        printf("DL_Data[%1u]: ", L);
+        for (C = 0; C < 16; C++) {
+            printf("%02X ", *p++);
+        }
+        printf("\n");
+    }
+}
+
+void pc802_show_rx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    volatile PC802_Descriptor_t *rxd;
+    PC802_Mem_Block_t     *rx_blk;
+    rc_counter &= (rxq->nb_rx_desc - 1);
+    rxd = &rxq->rx_ring[rc_counter];
+    rx_blk = rxq->sw_ring[rc_counter].mblk;
+    printf("UL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
+        port_id, queue_id, rc_counter, rxd->phy_addr, rxd->length, rxd->type, rxd->eop);
+    printf("UL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
+        &rx_blk[1], rx_blk->buf_phy_addr, rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
+    uint8_t *p = (uint8_t *)&rx_blk[1];
+    uint32_t L, C;
+    for (L = 0; L < 4; L++) {
+        printf("UL_Data[%1u]: ", L);
+        for (C = 0; C < 16; C++) {
+            printf("%02X ", *p++);
+        }
+        printf("\n");
+    }
+}
+
+void pc802_show_tx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    volatile PC802_Descriptor_t *txd;
+    PC802_Mem_Block_t     *tx_blk;
+    rc_counter &= (txq->nb_tx_desc - 1);
+    txd = &txq->tx_ring[rc_counter];
+    tx_blk = txq->sw_ring[rc_counter].mblk;
+    printf("DL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
+        port_id, queue_id, rc_counter, txd->phy_addr, txd->length, txd->type, txd->eop);
+    printf("DL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
+        &tx_blk[1], tx_blk->buf_phy_addr, tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
+    uint8_t *p = (uint8_t *)&tx_blk[1];
+    uint32_t LL = (tx_blk->pkt_length + 15) >> 4;
+    uint32_t L, C;
+    for (L = 0; L < LL; L++) {
+        printf("DL_Data[%4u]: ", L);
+        for (C = 0; C < 16; C++) {
+            printf("%02X ", *p++);
+        }
+        printf("\n");
+    }
+}
+
+void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    volatile PC802_Descriptor_t *rxd;
+    PC802_Mem_Block_t     *rx_blk;
+    rc_counter &= (rxq->nb_rx_desc - 1);
+    rxd = &rxq->rx_ring[rc_counter];
+    rx_blk = rxq->sw_ring[rc_counter].mblk;
+    printf("UL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
+        port_id, queue_id, rc_counter, rxd->phy_addr, rxd->length, rxd->type, rxd->eop);
+    printf("UL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
+        &rx_blk[1], rx_blk->buf_phy_addr, rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
+    uint8_t *p = (uint8_t *)&rx_blk[1];
+    uint32_t LL = (rx_blk->pkt_length + 15) >> 4;
+    uint32_t L, C;
+    for (L = 0; L < LL; L++) {
+        printf("UL_Data[%4u]: ", L);
+        for (C = 0; C < 16; C++) {
+            printf("%02X ", *p++);
+        }
+        printf("\n");
+    }
+}
+
+
+static const struct eth_dev_ops eth_pc802_ops = {
+    .dev_configure        = eth_pc802_configure,
+    .dev_start            = eth_pc802_start,
+    .dev_stop             = eth_pc802_stop,
+    .promiscuous_enable   = eth_pc802_promiscuous_enable,
+    .dev_infos_get        = eth_pc802_infos_get,
+    .rx_queue_setup       = eth_pc802_rx_queue_setup,
+    .tx_queue_setup       = eth_pc802_tx_queue_setup,
+};
+
+static int
+eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
+{
+    struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(eth_dev->data->dev_private);
+
+    eth_dev->dev_ops = &eth_pc802_ops;
+    eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
+    eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
+
+    rte_eth_copy_pci_info(eth_dev, pci_dev);
+
+    adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
+    gbar = (PC802_BAR_t *)adapter->bar0_addr;
+
+    const struct rte_memzone *mz;
+    uint32_t tsize = sizeof(PC802_Descs_t);
+    mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
+            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+    if (mz == NULL)
+        return -ENOMEM;
+    memset(mz->addr, 0, tsize);
+    adapter->pDescs = (PC802_Descs_t *)mz->addr;
+    adapter->descs_phy_addr = mz->iova;
+    printf("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
+    printf("descs_virt_addr = %p\n", adapter->pDescs);
+
+    adapter->started = 1;
+
+    PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
+             eth_dev->data->port_id, pci_dev->id.vendor_id,
+             pci_dev->id.device_id);
+
+    return 0;
+}
+
+static int
+eth_pc802_dev_uninit(struct rte_eth_dev *eth_dev)
+{
+    //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(eth_dev->data->dev_private);
+
+    PMD_INIT_FUNC_TRACE();
+
+    if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+        return -EPERM;
+
+    adapter->started = 0;
+
+    return 0;
+}
+
+static int eth_pc802_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
+    struct rte_pci_device *pci_dev)
+{
+    return rte_eth_dev_pci_generic_probe(pci_dev,
+        sizeof(struct pc802_adapter), eth_pc802_dev_init);
+}
+
+static int eth_pc802_pci_remove(struct rte_pci_device *pci_dev)
+{
+    return rte_eth_dev_pci_generic_remove(pci_dev, eth_pc802_dev_uninit);
+}
+
+static struct rte_pci_driver rte_pc802_pmd = {
+    .id_table = pci_id_pc802_map,
+    .drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC |
+             RTE_PCI_DRV_IOVA_AS_VA,
+    .probe = eth_pc802_pci_probe,
+    .remove = eth_pc802_pci_remove,
+};
+
+RTE_PMD_REGISTER_PCI(net_pc802, rte_pc802_pmd);
+RTE_PMD_REGISTER_PCI_TABLE(net_pc802, pci_id_pc802_map);
+RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
+
+/* see e1000_logs.c */
+RTE_INIT(picocom_pc802_init_log)
+{
+    pc802_init_log();
+}
+
+int picocom_pc802_startup(void);
+int picocom_pc802_startup(void)
+{
+    printf("Hello, I am PC802 built AT %s ON %s\n", __TIME__, __DATE__);
+    return 0;
+}
