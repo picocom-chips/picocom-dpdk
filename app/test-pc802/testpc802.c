@@ -54,6 +54,7 @@
 #include <cmdline.h>
 
 #include <pc802_ethdev.h>
+#include <pc802_atl.h>
 
 struct rte_mempool *mpool_pc802_tx;
 
@@ -88,6 +89,14 @@ static const struct rte_eth_conf dev_conf = {
 	    },
     };
 
+static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
+static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
+static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
+static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
+
+static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
+static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
+
 static int port_init(uint16_t port)
 {
     struct rte_mempool *mbuf_pool;
@@ -116,11 +125,9 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_5G_EMBB_DATA, 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_5G_EMBB_DATA, 256*1024, 256, 128));
+    pcxxDataOpen(&data_cb_info);
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_5G_EMBB_CTRL, 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_5G_EMBB_CTRL, 256*1024, 256, 128));
+    pcxxCtrlOpen(&ctrl_cb_info);
 
     rte_eth_dev_start(port);
 
@@ -310,6 +317,77 @@ static int case1(void)
     return re;
 }
 
+static union {
+    const char *cc;
+    uint32_t   *up;
+} dl_a[17];
+static uint32_t dl_a_num;
+static int      atl_test_result;
+
+static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
+{
+    payloadSize = payloadSize;
+    dl_a[dl_a_num].cc = buf;
+    dl_a_num++;
+    return 0;
+}
+
+static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
+{
+    uint64_t addr = (uint64_t)buf;
+    uint32_t *ul_msg = (uint32_t *)addr;
+    swap_msg(ul_msg, payloadSize);
+    uint32_t *dl_msg;
+    dl_msg = dl_a[dl_a_num - 1].up;
+    if (check_same(&dl_msg, 1, ul_msg)) {
+        atl_test_result |= 1;
+    }
+    dl_a_num = 0;
+    return payloadSize;
+}
+
+static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
+{
+    payloadSize = payloadSize;
+    dl_a[dl_a_num].cc = buf;
+    dl_a_num++;
+    return 0;
+}
+
+static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
+{
+    uint64_t addr = (uint64_t)buf;
+    uint32_t *ul_msg = (uint32_t *)addr;
+    swap_msg(ul_msg, payloadSize);
+    uint32_t **dl_msg;
+    dl_msg = &dl_a[0].up;
+    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
+        atl_test_result |= 2;
+    }
+    return payloadSize;
+}
+
+static int case101(void)
+{
+    char *a;
+    uint32_t *A;
+    uint32_t N;
+    uint32_t avail;
+
+    pcxxSendStart();
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail));
+    A = (uint32_t *)a;
+    produce_dl_src_data(A);
+    N = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a, N);
+    pcxxSendEnd();
+
+    while (-1 == pcxxCtrlRecv());
+    int re = atl_test_result;
+    atl_test_result = 0;
+    return re;
+}
+
 static int case2(void)
 {
     uint32_t N;
@@ -352,6 +430,41 @@ static int case2(void)
     free_blk(b[0]);
     free_blk(b[1]);
     return 0;
+}
+
+static int case102(void)
+{
+    char *a[2];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+
+    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+
+    pcxxSendStart();
+
+    produce_dl_src_data(tmp);
+    length = sizeof(uint32_t) * (tmp[1] + 2);
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
+    memcpy(a[0], tmp, length);
+    pcxxDataSend(offset, length);
+
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[1], &avail));
+    A = (uint32_t *)a[1];
+    produce_dl_src_data(A);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[1], length);
+
+    pcxxSendEnd();
+
+    while (-1 == pcxxCtrlRecv());
+
+    int re = atl_test_result;
+    atl_test_result = 0;
+    free_blk(tmp);
+    return re;
 }
 
 static int case3(void)
@@ -405,6 +518,46 @@ static int case3(void)
     return 0;
 }
 
+static int case103(void)
+{
+    char *a[3];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+
+    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+
+    pcxxSendStart();
+
+    produce_dl_src_data(tmp);
+    length = sizeof(uint32_t) * (tmp[1] + 2);
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
+    memcpy(a[0], tmp, length);
+    pcxxDataSend(offset, length);
+
+    produce_dl_src_data(tmp);
+    length = sizeof(uint32_t) * (tmp[1] + 2);
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[1], &offset));
+    memcpy(a[1], tmp, length);
+    pcxxDataSend(offset, length);
+
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[2], &avail));
+    A = (uint32_t *)a[2];
+    produce_dl_src_data(A);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[2], length);
+
+    pcxxSendEnd();
+
+    while (-1 == pcxxCtrlRecv());
+
+    int re = atl_test_result;
+    atl_test_result = 0;
+    free_blk(tmp);
+    return re;
+}
 static int case4(uint16_t D)
 {
     uint32_t N;
@@ -456,7 +609,64 @@ static int case4(uint16_t D)
     return 0;
 }
 
+static int case104(uint16_t D)
+{
+    char *a[17];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+    int k;
+
+    if (D > 16) D = 16;
+    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+
+    pcxxSendStart();
+
+    for (k = 0; k < D; k++) {
+        produce_dl_src_data(tmp);
+        length = sizeof(uint32_t) * (tmp[1] + 2);
+        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset));
+        memcpy(a[k], tmp, length);
+        pcxxDataSend(offset, length);
+    }
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail));
+    A = (uint32_t *)a[k];
+    produce_dl_src_data(A);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[k], length);
+
+    pcxxSendEnd();
+
+    while (-1 == pcxxCtrlRecv());
+
+    int re = atl_test_result;
+    atl_test_result = 0;
+    free_blk(tmp);
+    return re;
+}
+
 static int case5(void)
+{
+    uint32_t D, n;
+    uint32_t L = (uint32_t)rand();
+    L = 16 + (L & 7);
+
+    printf("Case 5 will execute Case 104 for %u times!\n", L);
+    n = 0;
+    while (L) {
+        D = (uint32_t)rand();
+        D = (D & 15) + 1;
+        printf("... Test Case 104 with %u users for No. %u\n", D, n++);
+        if (case4(D))
+            return -1;
+        L--;
+    }
+    return 0;
+}
+
+static int case105(void)
 {
     uint32_t D, n;
     uint32_t L = (uint32_t)rand();
@@ -468,7 +678,7 @@ static int case5(void)
         D = (uint32_t)rand();
         D = (D & 15) + 1;
         printf("... Test Case 4 with %u users for No. %u\n", D, n++);
-        if (case4(D))
+        if (case104(D))
             return -1;
         L--;
     }
@@ -501,53 +711,79 @@ static int prompt(void* arg)
 
 int test_case_No;
 
-static void run_case1(void)
+static void run_case(int caseNo)
 {
     int diag;
-    printf("Begin Test Case 1\n");
-    diag = case1();
-    disp_test_result(1, diag);
-}
-
-static void run_case2(void)
-{
-    int diag;
-    printf("Begin Test Case 2\n");
-    diag = case2();
-    disp_test_result(2, diag);
-}
-
-static void run_case3(void)
-{
-    int diag;
-    printf("Begin Test Case 3\n");
-    diag = case3();
-    disp_test_result(3, diag);
-}
-
-static void run_case4(void)
-{
-    int diag;
-    printf("Begin Test Case 4\n");
-    diag = case4(16);
-    disp_test_result(4, diag);
-}
-
-static void run_case5(void)
-{
-    int diag;
-    printf("Begin Test Case 5\n");
-    diag = case5();
-    disp_test_result(5, diag);
-}
-
-static void run_case_all(void)
-{
-    run_case1();
-    run_case2();
-    run_case3();
-    run_case4();
-    run_case5();
+    if (0 == caseNo)
+        return;
+    printf("Begin Test Case %d\n", caseNo);
+    switch(caseNo) {
+    case 1:
+        diag = case1();
+        disp_test_result(caseNo, diag);
+        break;
+    case 2:
+        diag = case2();
+        disp_test_result(caseNo, diag);
+        break;
+    case 3:
+        diag = case3();
+        disp_test_result(caseNo, diag);
+        break;
+    case 4:
+        diag = case4(16);
+        disp_test_result(caseNo, diag);
+        break;
+    case 5:
+        diag = case5();
+        disp_test_result(caseNo, diag);
+        break;
+    case 101:
+        diag = case101();
+        disp_test_result(caseNo, diag);
+        break;
+    case 102:
+        diag = case102();
+        disp_test_result(caseNo, diag);
+        break;
+    case 103:
+        diag = case103();
+        disp_test_result(caseNo, diag);
+        break;
+    case 104:
+        diag = case104(16);
+        disp_test_result(caseNo, diag);
+        break;
+    case 105:
+        diag = case105();
+        disp_test_result(caseNo, diag);
+        break;
+    case -1:
+        diag = case1();
+        disp_test_result(caseNo, diag);
+        diag = case2();
+        disp_test_result(caseNo, diag);
+        diag = case3();
+        disp_test_result(caseNo, diag);
+        diag = case4(16);
+        disp_test_result(caseNo, diag);
+        diag = case5();
+        disp_test_result(caseNo, diag);
+        diag = case101();
+        disp_test_result(caseNo, diag);
+        diag = case102();
+        disp_test_result(caseNo, diag);
+        diag = case103();
+        disp_test_result(caseNo, diag);
+        diag = case104(16);
+        disp_test_result(caseNo, diag);
+        diag = case105();
+        disp_test_result(caseNo, diag);
+        break;
+    default:
+        printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1\n");
+    }
+    test_case_No = 0;
 }
 
 int main_stop = 0;
@@ -571,36 +807,7 @@ int main(int argc, char** argv)
 
     while(!main_stop) {
         usleep(10);
-        switch (test_case_No) {
-        case 0:
-            break;
-        case 1:
-            run_case1();
-            test_case_No = 0;
-            break;
-        case 2:
-            run_case2();
-            test_case_No = 0;
-            break;
-        case 3:
-            run_case3();
-            test_case_No = 0;
-            break;
-        case 4:
-            run_case4();
-            test_case_No = 0;
-            break;
-        case 5:
-            run_case5();
-            test_case_No = 0;
-            break;
-        case -1:
-            run_case_all();
-            test_case_No = 0;
-            break;
-        default:
-            printf("Wrong case number, it should be 1/2/3/4/5/-1\n");
-        }
+        run_case(test_case_No);
     }
 
     usleep(5000);

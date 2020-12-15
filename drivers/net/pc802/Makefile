@@ -55,5 +55,6 @@ endif
 #
 SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_logs.c
 SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_atl.c
 
 include $(RTE_SDK)/mk/rte.lib.mk
