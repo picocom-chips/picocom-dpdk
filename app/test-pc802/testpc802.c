@@ -653,15 +653,15 @@ static int case5(void)
     uint32_t L = (uint32_t)rand();
     L = 16 + (L & 7);
 
-    printf("Case 5 will execute Case 104 for %u times!\n", L);
+    printf("Case 5 will execute Case 4 for %u times!\n", L);
     n = 0;
     while (L) {
         D = (uint32_t)rand();
         D = (D & 15) + 1;
-        printf("... Test Case 104 with %u users for No. %u\n", D, n++);
+        L--;
+        printf("... Test Case 4 with %u users for No. %u, Left %u times.\n", D, n++, L);
         if (case4(D))
             return -1;
-        L--;
     }
     return 0;
 }
@@ -672,15 +672,15 @@ static int case105(void)
     uint32_t L = (uint32_t)rand();
     L = 16 + (L & 7);
 
-    printf("Case 5 will execute Case 4 for %u times!\n", L);
+    printf("Case 105 will execute Case 104 for %u times!\n", L);
     n = 0;
     while (L) {
         D = (uint32_t)rand();
         D = (D & 15) + 1;
-        printf("... Test Case 4 with %u users for No. %u\n", D, n++);
+        L--;
+        printf("... Test Case 104 with %u users for No. %u, Left %u times\n", D, n++, L);
         if (case104(D))
             return -1;
-        L--;
     }
     return 0;
 }
@@ -760,25 +760,25 @@ static void run_case(int caseNo)
         break;
     case -1:
         diag = case1();
-        disp_test_result(caseNo, diag);
+        disp_test_result(1, diag);
         diag = case2();
-        disp_test_result(caseNo, diag);
+        disp_test_result(2, diag);
         diag = case3();
-        disp_test_result(caseNo, diag);
+        disp_test_result(3, diag);
         diag = case4(16);
-        disp_test_result(caseNo, diag);
+        disp_test_result(4, diag);
         diag = case5();
-        disp_test_result(caseNo, diag);
+        disp_test_result(5, diag);
         diag = case101();
-        disp_test_result(caseNo, diag);
+        disp_test_result(101, diag);
         diag = case102();
-        disp_test_result(caseNo, diag);
+        disp_test_result(102, diag);
         diag = case103();
-        disp_test_result(caseNo, diag);
+        disp_test_result(103, diag);
         diag = case104(16);
-        disp_test_result(caseNo, diag);
+        disp_test_result(104, diag);
         diag = case105();
-        disp_test_result(caseNo, diag);
+        disp_test_result(105, diag);
         break;
     default:
         printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1\n");

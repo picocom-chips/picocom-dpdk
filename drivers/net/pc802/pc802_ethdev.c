@@ -292,6 +292,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->queue_id = queue_id;
     txq->port_id = port_id;
 
+    PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
     PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
 
     return 0;
@@ -968,7 +969,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     volatile uint32_t devRdy;
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (!devRdy);
+    } while (2 != devRdy);
 
     PMD_INIT_LOG(DEBUG, "<<");
 
@@ -1297,6 +1298,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
+    PC802_BAR_t *bar;
 
     eth_dev->dev_ops = &eth_pc802_ops;
     eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
@@ -1305,7 +1307,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     rte_eth_copy_pci_info(eth_dev, pci_dev);
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
-    gbar = (PC802_BAR_t *)adapter->bar0_addr;
+    gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
     const struct rte_memzone *mz;
     uint32_t tsize = sizeof(PC802_Descs_t);
@@ -1318,6 +1320,14 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->descs_phy_addr = mz->iova;
     printf("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
     printf("descs_virt_addr = %p\n", adapter->pDescs);
+
+    PC802_WRITE_REG(bar->DEVEN, 0);
+    usleep(1000);
+
+    volatile uint32_t devRdy;
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (1 != devRdy);
 
     adapter->started = 1;
 
