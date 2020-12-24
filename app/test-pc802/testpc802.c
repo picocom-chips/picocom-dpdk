@@ -69,8 +69,6 @@ typedef union {
     };
 } DataBuf_t;
 
-int picocom_pc802_startup(void);
-
 static void
 signal_handler(int signum)
 {
@@ -685,6 +683,142 @@ static int case105(void)
     return 0;
 }
 
+static int case201(void)
+{
+    struct rte_mbuf *tx_pkts[16];
+    struct rte_mbuf *rx_pkts[16];
+    uint32_t n;
+    uint32_t N, M;
+    uint16_t offset;
+    uint8_t *tx_src_addr;
+    uint8_t *tx_dst_addr;
+    uint8_t *rx_dst_addr;
+    uint8_t *rx_src_addr;
+    uint16_t *tx_type;
+    uint16_t *rx_type;
+    uint16_t *tx_sdata;
+    uint32_t *tx_data;
+    uint8_t  *tx_cdata;
+    uint8_t  *rx_cdata;
+    uint16_t tx_length;
+    uint16_t rx_length;
+    uint16_t k;
+    uint8_t tdata;
+    uint8_t rdata;
+    int ret = 0;
+
+    N = (uint32_t)rand();
+    N = 1 + (N & 7);
+    for (n = 0; n < N; n++) {
+        tx_pkts[n] = rte_mbuf_raw_alloc(mpool_pc802_tx);
+        rte_pktmbuf_reset_headroom(tx_pkts[n]);
+
+        offset = 0;
+        tx_dst_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
+        offset += 6;
+        eth_random_addr(tx_dst_addr);
+
+        tx_src_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
+        offset += 6;
+        eth_random_addr(tx_src_addr);
+
+        tx_type = rte_pktmbuf_mtod_offset(tx_pkts[n], uint16_t *, offset);
+        offset += 2;
+        *tx_type = (uint16_t)rand();
+
+        tx_length = 46 + ((uint32_t)rand())% 1455;
+        tx_sdata = rte_pktmbuf_mtod_offset(tx_pkts[n], uint16_t *, offset);
+        offset += 2;
+        *tx_sdata = (uint16_t)rand();
+
+        tx_data = rte_pktmbuf_mtod_offset(tx_pkts[n], uint32_t *, offset);
+        for (k = 2; k < tx_length; k += sizeof(uint32_t))
+            *tx_data++ = (uint32_t)rand();
+
+        tx_pkts[n]->nb_segs = 1;
+        tx_pkts[n]->pkt_len = tx_pkts[n]->data_len = 14 + tx_length;
+        tx_pkts[n]->next = NULL;
+        DBLOG("TX-pkt[%u]: DST-Addr = %02X %02X %02X %02X %02X %02X\n",
+            n, tx_dst_addr[0], tx_dst_addr[1], tx_dst_addr[2],
+            tx_dst_addr[3], tx_dst_addr[4], tx_dst_addr[5]);
+        DBLOG("TX-pkt[%u]: SRC-Addr = %02X %02X %02X %02X %02X %02X\n",
+            n, tx_src_addr[0], tx_src_addr[1], tx_src_addr[2],
+            tx_src_addr[3], tx_src_addr[4], tx_src_addr[5]);
+        DBLOG("TX-pkt[%u]: Type = %04X, Data-Len = %u\n", n, *tx_type, tx_length);
+    }
+    RTE_ASSERT(N == rte_eth_tx_burst(0, 0, tx_pkts, N));
+
+    k = 0;
+    M = N;
+    do {
+        n = rte_eth_rx_burst(0, 0, &rx_pkts[k], M);
+        k += n;
+        M -= n;
+    } while (M);
+
+    for (n = 0; n < N; n++) {
+        if (rx_pkts[n]->pkt_len != tx_pkts[n]->pkt_len) {
+            DBLOG("Wrong pkt %u: rx_pkt_len = %u, tx_pkt_len = %u\n",
+                n, rx_pkts[n]->pkt_len, tx_pkts[n]->pkt_len);
+            ret = -1;
+            break;
+        }
+
+        offset = 0;
+        tx_dst_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
+        rx_dst_addr = rte_pktmbuf_mtod_offset(rx_pkts[n], uint8_t *, offset);
+        offset += 6;
+
+        tx_src_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
+        rx_src_addr = rte_pktmbuf_mtod_offset(rx_pkts[n], uint8_t *, offset);
+        offset += 6;
+
+        for (k = 0; k < 6; k++) {
+            if (rx_dst_addr[k] != tx_src_addr[k]) {
+                DBLOG("Wrong pkt %u: rx_dst_addr[%hu] = 0x%02X tx_src_addr[%hu] = 0x%02X\n",
+                    n, k, rx_dst_addr[k], k, tx_src_addr[k]);
+            }
+        }
+        for (k = 0; k < 6; k++) {
+            if (rx_src_addr[k] != tx_dst_addr[k]) {
+                DBLOG("Wrong pkt %u: rx_src_addr[%hu] = 0x%02X tx_dst_addr[%hu] = 0x%02X\n",
+                    n, k, rx_src_addr[k], k, tx_dst_addr[k]);
+                ret = -2;
+                break;
+            }
+        }
+
+        tx_type = rte_pktmbuf_mtod_offset(tx_pkts[n], uint16_t *, offset);
+        rx_type = rte_pktmbuf_mtod_offset(rx_pkts[n], uint16_t *, offset);
+        offset += 2;
+        if (*tx_type != *rx_type) {
+            DBLOG("Wrong pkt %u: tx_type = 0x%04X rx_type = 0x%04X\n",
+                n, *tx_type, *rx_type);
+            ret = -3;
+            break;
+        }
+
+        tx_cdata = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
+        rx_cdata = rte_pktmbuf_mtod_offset(rx_pkts[n], uint8_t *, offset);
+        rx_length = rx_pkts[n]->pkt_len - 14;
+        for (k = 0; k < rx_length; k++) {
+            tdata = *tx_cdata++;
+            rdata = *rx_cdata++;
+            if (0xFF != (rdata + tdata)) {
+                DBLOG("Wrong pkt %u: tx_cdata[%hu] = 0x%02X rx_cdata[%hu] = 0x%02X\n",
+                    n, k, tdata, k, rdata);
+                ret = -4;
+                break;
+            }
+        }
+        rte_pktmbuf_free(rx_pkts[n]);
+    }
+    for (; n < N; n++)
+        rte_pktmbuf_free(rx_pkts[n]);
+
+    return ret;
+}
+
 static void disp_test_result(int caseNo, int result)
 {
     if (result)
@@ -758,6 +892,10 @@ static void run_case(int caseNo)
         diag = case105();
         disp_test_result(caseNo, diag);
         break;
+    case 201:
+        diag = case201();
+        disp_test_result(201, diag);
+        break;
     case -1:
         diag = case1();
         disp_test_result(1, diag);
@@ -792,7 +930,8 @@ int main(int argc, char** argv)
 {
     int diag;
 
-    picocom_pc802_startup();
+    printf("%s\n", picocom_pc802_version());
+    printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
