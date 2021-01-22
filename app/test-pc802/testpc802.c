@@ -82,9 +82,9 @@ signal_handler(int signum)
 }
 
 static const struct rte_eth_conf dev_conf = {
-	    .rxmode = {
-		    .max_rx_pkt_len = ETHER_MAX_LEN,
-	    },
+        .rxmode = {
+            .max_rx_pkt_len = ETHER_MAX_LEN,
+        },
     };
 
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
@@ -777,16 +777,21 @@ static int case201(void)
             if (rx_dst_addr[k] != tx_src_addr[k]) {
                 DBLOG("Wrong pkt %u: rx_dst_addr[%hu] = 0x%02X tx_src_addr[%hu] = 0x%02X\n",
                     n, k, rx_dst_addr[k], k, tx_src_addr[k]);
-            }
-        }
-        for (k = 0; k < 6; k++) {
-            if (rx_src_addr[k] != tx_dst_addr[k]) {
-                DBLOG("Wrong pkt %u: rx_src_addr[%hu] = 0x%02X tx_dst_addr[%hu] = 0x%02X\n",
-                    n, k, rx_src_addr[k], k, tx_dst_addr[k]);
                 ret = -2;
                 break;
             }
         }
+        if (ret) break;
+
+        for (k = 0; k < 6; k++) {
+            if (rx_src_addr[k] != tx_dst_addr[k]) {
+                DBLOG("Wrong pkt %u: rx_src_addr[%hu] = 0x%02X tx_dst_addr[%hu] = 0x%02X\n",
+                    n, k, rx_src_addr[k], k, tx_dst_addr[k]);
+                ret = -3;
+                break;
+            }
+        }
+        if (ret) break;
 
         tx_type = rte_pktmbuf_mtod_offset(tx_pkts[n], uint16_t *, offset);
         rx_type = rte_pktmbuf_mtod_offset(rx_pkts[n], uint16_t *, offset);
@@ -794,23 +799,41 @@ static int case201(void)
         if (*tx_type != *rx_type) {
             DBLOG("Wrong pkt %u: tx_type = 0x%04X rx_type = 0x%04X\n",
                 n, *tx_type, *rx_type);
-            ret = -3;
+            ret = -4;
             break;
         }
 
         tx_cdata = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
         rx_cdata = rte_pktmbuf_mtod_offset(rx_pkts[n], uint8_t *, offset);
+        k = 0;
         rx_length = rx_pkts[n]->pkt_len - 14;
-        for (k = 0; k < rx_length; k++) {
-            tdata = *tx_cdata++;
-            rdata = *rx_cdata++;
-            if (0xFF != (rdata + tdata)) {
+        if (*tx_type == 0x0008) { //IP
+            uint16_t hlen = 20;
+            if (tx_cdata[9] == 0x17) //UDP
+                hlen += 8;
+            for (; k < hlen; k++) {
+                if (tx_cdata[k] != rx_cdata[k]) {
+                    DBLOG("Wrong pkt %u: IP/UDP Head: tx_data[%hu] = %02X rx_data[%hu] = %02X\n",
+                        n, k, tx_cdata[k], k, rx_cdata[k]);
+                    ret = -5;
+                    break;
+                }
+            }
+        }
+        if (ret) break;
+
+        for (; k < rx_length; k++) {
+            tdata = tx_cdata[k];
+            rdata = rx_cdata[k];
+			tdata++;
+            if (rdata != tdata) {
                 DBLOG("Wrong pkt %u: tx_cdata[%hu] = 0x%02X rx_cdata[%hu] = 0x%02X\n",
                     n, k, tdata, k, rdata);
-                ret = -4;
+                ret = -6;
                 break;
             }
         }
+        if (ret) break;
         rte_pktmbuf_free(rx_pkts[n]);
     }
     for (; n < N; n++)
@@ -830,17 +853,17 @@ static void disp_test_result(int caseNo, int result)
 extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
-	struct cmdline *cl;
+    struct cmdline *cl;
     arg = arg;
 
-	cl = cmdline_stdin_new(main_ctx, "PC802>> ");
-	if (cl == NULL) {
-		return -1;
-	}
-	cmdline_interact(cl);
-	cmdline_stdin_exit(cl);
+    cl = cmdline_stdin_new(main_ctx, "PC802>> ");
+    if (cl == NULL) {
+        return -1;
+    }
+    cmdline_interact(cl);
+    cmdline_stdin_exit(cl);
 
-	return 0;
+    return 0;
 }
 
 int test_case_No;
