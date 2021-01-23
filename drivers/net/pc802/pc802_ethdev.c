@@ -221,14 +221,15 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
     rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
-    rxq->nb_rx_desc = rxq->rc_cnt = nb_desc;
+    rxq->nb_rx_desc = nb_desc;
+    rxq->rc_cnt = 0;
     rxq->nb_rx_hold = 0;
     rxq->rx_free_thresh = 32;
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
 
     PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
-    PC802_WRITE_REG(bar->RRCCNT[queue_id], nb_desc);
+    PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
 
     return 0;
 }
@@ -359,7 +360,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-    ep_txed = rxq->nb_rx_desc - (rxq->rc_cnt - *rxq->repcnt_mirror_addr);
+    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
     while (nb_rx < nb_blks) {
         idx = rx_id & mask;
@@ -918,9 +919,9 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         if (ret)
             return ret;
 
-        rxq->rc_cnt = rxq->nb_rx_desc;
+        rxq->rc_cnt = 0;
         PC802_WRITE_REG(bar->RDNUM[i], rxq->nb_rx_desc);
-        PC802_WRITE_REG(bar->RRCCNT[i], rxq->nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT[i], 0);
     }
 
     return 0;
@@ -1081,7 +1082,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-    ep_txed = rxq->nb_rx_desc - (rxq->rc_cnt - *rxq->repcnt_mirror_addr);
+    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     mb_pkts = (ep_txed < nb_pkts) ? ep_txed : nb_pkts;
     while (nb_rx < mb_pkts) {
         idx = rx_id & mask;
