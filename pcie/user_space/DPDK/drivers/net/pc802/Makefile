@@ -57,4 +57,9 @@ SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_logs.c
 SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_ethdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_PC802_PMD) += pc802_atl.c
 
+# install this header file
+SYMLINK-$(CONFIG_RTE_LIBRTE_PC802_PMD)-include += pc802_common.h
+SYMLINK-$(CONFIG_RTE_LIBRTE_PC802_PMD)-include += pc802_ethdev.h
+SYMLINK-$(CONFIG_RTE_LIBRTE_PC802_PMD)-include += pc802_atl.h
+
 include $(RTE_SDK)/mk/rte.lib.mk

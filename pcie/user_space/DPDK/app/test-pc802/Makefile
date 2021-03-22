@@ -14,7 +14,7 @@ CFLAGS += -DALLOW_EXPERIMENTAL_API
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
 CFLAGS += -Wno-deprecated-declarations
-CFLAGS += -I$(RTE_SDK)/drivers/net/pc802
+#CFLAGS += -I$(RTE_SDK)/drivers/net/pc802
 
 #
 # all source are stored in SRCS-y
