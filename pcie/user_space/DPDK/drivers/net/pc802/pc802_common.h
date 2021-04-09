@@ -65,6 +65,25 @@ typedef struct PC802_BAR_t {
         PC802_CacheLine_t _cahce_line_repcnt;
         uint32_t REPCNT[PC802_TRAFFIC_NUM];
     };
+	union {
+        PC802_CacheLine_t _cahce_line_brccnt;
+		struct {
+			uint32_t BOOTSRCL;
+			uint32_t BOOTSRCH;
+			uint32_t BOOTDST;
+			uint32_t BOOTSZ;
+			uint32_t BOOTRCCNT;
+			uint32_t BOOTRSPL;
+			uint32_t BOOTRSPH;
+		};
+    };
+	union {
+        PC802_CacheLine_t _cahce_line_bepcnt;
+		struct {
+			uint32_t BOOTEPCNT;
+			uint32_t BOOTERROR;
+		};
+    };
     union {
         PC802_CacheLine_t _cahce_line_debug_rcm;
         struct {

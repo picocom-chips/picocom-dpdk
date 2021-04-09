@@ -40,6 +40,10 @@ typedef struct pc802_mem_block PC802_Mem_Block_t;
 #define PC802_READ_REG(reg) \
     pc802_read_reg((volatile uint32_t *)&(reg))
 
+PC802_BAR_t * pc802_get_BAR(uint16_t port_id);
+
+int pc802_get_socket_id(uint16_t port_id);
+
 char * picocom_pc802_version(void);
 
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc);

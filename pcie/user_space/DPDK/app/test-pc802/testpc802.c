@@ -949,6 +949,64 @@ static void run_case(int caseNo)
 
 int main_stop = 0;
 
+int test_boot_download(uint16_t port);
+int test_boot_download(uint16_t port)
+{
+    PC802_BAR_t *bar = pc802_get_BAR(port);
+    uint32_t sz;
+	volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
+	volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
+
+	printf("Begin test_boot_download !\n");
+	*BOOTRCCNT = 0;
+	const struct rte_memzone *mz;
+    uint32_t tsize = 0x100000;
+	int socket_id = pc802_get_socket_id(port);
+    mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
+            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+	const struct rte_memzone *mz1;
+	mz1 = rte_memzone_reserve_aligned("PC802_BOOT_RSP", tsize, socket_id,
+            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+
+	uint32_t *pReq = (uint32_t *)mz->addr;
+	uint32_t *pRsp = (uint32_t *)mz1->addr;
+	uint32_t k;
+	bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
+	bar->BOOTSRCH = (uint32_t)(mz->phys_addr >> 32);
+	bar->BOOTDST = 0x11400000; // SRAM2
+	bar->BOOTRSPL = (uint32_t)(mz1->phys_addr);
+	bar->BOOTRSPH = (uint32_t)(mz1->phys_addr >> 32);
+	for (sz = 4; sz <= 0x100000; sz <<= 1) {
+		for (k = 0; k  < (sz/sizeof(uint32_t)); k++) {
+			pReq[k] = (uint32_t)rand();
+		}
+		memset(pRsp, 0, 0x100000);
+		printf("Test Boot Size = 0x%08X\n", sz);
+		bar->BOOTSZ = sz;
+		rte_wmb();
+		(*BOOTRCCNT)++;
+		printf("BAR->BOOTRCCNT = %u\n", bar->BOOTRCCNT);
+		while(*BOOTRCCNT != *BOOTEPCNT)
+			usleep(1);
+
+		int boot_ok = 1;
+		for (k = 0; k  < (sz/sizeof(uint32_t)); k++) {
+			if (pReq[k] != pRsp[k]) {
+				boot_ok = 0;
+				printf("BOOT FAIL: Req[%u] = 0x%08X Rsp[%u] = 0x%08X\n",
+					k, pReq[k], k, pRsp[k]);
+				break;
+			}
+		}
+		if (boot_ok)
+			printf("BOOT OK when Size = 0x%08X\n", sz);
+	}
+
+	*BOOTRCCNT = 0xFFFFFFFF;
+	printf("Finish test_boot_download !\n");
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
     int diag;
@@ -962,6 +1020,8 @@ int main(int argc, char** argv)
     diag = rte_eal_init(argc, argv);
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
+
+	test_boot_download(0);
 
     port_init(0);
 

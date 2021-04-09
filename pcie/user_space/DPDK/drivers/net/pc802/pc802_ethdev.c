@@ -152,6 +152,21 @@ struct pc802_adapter {
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
 
+PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+	return bar;
+}
+
+int pc802_get_socket_id(uint16_t port_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+	return dev->data->numa_node;
+}
+
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
 {
     if (!isPowerOf2(nb_desc) || (nb_desc > MAX_DESC_NUM) || (nb_desc < MIN_DESC_NUM))
