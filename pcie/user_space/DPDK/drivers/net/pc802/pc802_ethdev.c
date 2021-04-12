@@ -991,13 +991,15 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PC802_WRITE_REG(bar->DBGRCAH, haddr);
     printf("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
+    volatile uint32_t devRdy;
+
     usleep(1000);
+    rte_wmb();
     PC802_WRITE_REG(bar->DEVEN, 1);
 
-    volatile uint32_t devRdy;
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (2 != devRdy);
+    } while (3 != devRdy);
 
     PMD_INIT_LOG(DEBUG, "<<");
 

@@ -1003,7 +1003,13 @@ int test_boot_download(uint16_t port)
 	}
 
 	*BOOTRCCNT = 0xFFFFFFFF;
-	printf("Finish test_boot_download !\n");
+
+    volatile uint32_t devRdy;
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (2 != devRdy);
+
+    printf("Finish test_boot_download !\n");
 	return 0;
 }
 
@@ -1021,7 +1027,7 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-	test_boot_download(0);
+    test_boot_download(0);
 
     port_init(0);
 
