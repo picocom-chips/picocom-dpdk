@@ -842,14 +842,6 @@ static int case201(void)
     return ret;
 }
 
-static void disp_test_result(int caseNo, int result)
-{
-    if (result)
-        printf("Case %d  ---  FAILED\n", caseNo);
-    else
-        printf("Case %1d --- PASSED\n", caseNo);
-}
-
 extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
@@ -867,6 +859,15 @@ static int prompt(void* arg)
 }
 
 int test_case_No;
+
+#define disp_test_result(caseNo, result) do { \
+    if (result) { \
+        printf("Case %d --- FAILED\n", caseNo); \
+        break; \
+    } else { \
+        printf("Case %d --- PASSED\n", caseNo); \
+    } \
+ } while(0)
 
 static void run_case(int caseNo)
 {
@@ -920,6 +921,22 @@ static void run_case(int caseNo)
         disp_test_result(201, diag);
         break;
     case -1:
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case201();
+        disp_test_result(201, diag);
         diag = case1();
         disp_test_result(1, diag);
         diag = case2();
@@ -941,8 +958,20 @@ static void run_case(int caseNo)
         diag = case105();
         disp_test_result(105, diag);
         break;
+    case -2:
+        diag = case201();
+        disp_test_result(201, diag);
+        diag = case1();
+        disp_test_result(1, diag);
+        diag = case2();
+        disp_test_result(2, diag);
+        diag = case3();
+        disp_test_result(3, diag);
+        diag = case4(16);
+        disp_test_result(4, diag);
+        break;
     default:
-        printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1\n");
+        printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
     }
     test_case_No = 0;
 }
