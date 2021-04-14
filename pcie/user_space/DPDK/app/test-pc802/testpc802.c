@@ -986,6 +986,10 @@ int test_boot_download(uint16_t port)
 	volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
 	volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
 
+    if (0xFFFFFFFF == *BOOTRCCNT) {
+        printf("PC802 ELF image has already been downloaded and is running !\n");
+        goto _boot_downloading_finished;
+    }
 	printf("Begin test_boot_download !\n");
 	*BOOTRCCNT = 0;
 	const struct rte_memzone *mz;
@@ -1031,6 +1035,7 @@ int test_boot_download(uint16_t port)
 			printf("BOOT OK when Size = 0x%08X\n", sz);
 	}
 
+_boot_downloading_finished:
 	*BOOTRCCNT = 0xFFFFFFFF;
 
     volatile uint32_t devRdy;
