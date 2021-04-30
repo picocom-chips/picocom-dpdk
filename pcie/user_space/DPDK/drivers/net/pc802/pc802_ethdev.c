@@ -1469,6 +1469,13 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
 
+    pc802_download_boot_image(data->port_id);
+
+    bar->BOOTRCCNT = 0xFFFFFFFF;
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (2 != devRdy);
+
     return 0;
 }
 
@@ -1525,3 +1532,12 @@ char * picocom_pc802_version(void)
     snprintf(ver, sizeof(ver), "PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
     return ver;
 }
+
+__attribute__((__weak__))
+int pc802_download_boot_image(uint16_t port_id)
+{
+    printf("Begin WEAK pc802_download_boot_image,  port_id = %hu\n", port_id);
+    port_id = port_id;
+	return 0;
+}
+
