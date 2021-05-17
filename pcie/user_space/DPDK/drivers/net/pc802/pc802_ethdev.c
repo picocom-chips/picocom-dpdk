@@ -980,7 +980,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     printf("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     socket_id = dev->device->numa_node;
-    mz = rte_memzone_reserve_aligned("PC802DBG", 256*1024, socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+    mz = rte_memzone_reserve_aligned("PC802DBG", ((uint32_t)160 << 20), socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
     if (mz == NULL)
         return -ENOMEM;
     adapter->dbg_rccnt = 0;
@@ -1249,7 +1249,7 @@ uint64_t *pc802_get_debug_mem(uint16_t port_id)
     return adapter->dbg;
 }
 
-void pc802_read_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum)
+void pc802_access_ep_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum, uint32_t cmd)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
@@ -1259,7 +1259,7 @@ void pc802_read_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum)
 
     PC802_WRITE_REG(bar->DBGEPADDR, startAddr);
     PC802_WRITE_REG(bar->DBGBYTESNUM, bytesNum);
-    PC802_WRITE_REG(bar->DBGCMD, 0);
+    PC802_WRITE_REG(bar->DBGCMD, cmd);
     adapter->dbg_rccnt++;
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
 
