@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <rte_debug.h>
 #include <cmdline_parse.h>
@@ -13,28 +15,28 @@
 extern int main_stop;
 
 struct cmd_quit_result {
-	cmdline_fixed_string_t quit;
+    cmdline_fixed_string_t quit;
 };
 
 static void cmd_quit_parsed(__attribute__((unused)) void *parsed_result,
-			    struct cmdline *cl,
-			    __attribute__((unused)) void *data)
+                struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     main_stop = 1;
-	cmdline_quit(cl);
+    cmdline_quit(cl);
 }
 
 cmdline_parse_token_string_t cmd_quit_quit =
-	TOKEN_STRING_INITIALIZER(struct cmd_quit_result, quit, "quit");
+    TOKEN_STRING_INITIALIZER(struct cmd_quit_result, quit, "quit");
 
 cmdline_parse_inst_t cmd_quit = {
-	.f = cmd_quit_parsed,
-	.data = NULL,
-	.help_str = "quit: Exit application",
-	.tokens = {
-		(void *)&cmd_quit_quit,
-		NULL,
-	},
+    .f = cmd_quit_parsed,
+    .data = NULL,
+    .help_str = "quit: Exit application",
+    .tokens = {
+        (void *)&cmd_quit_quit,
+        NULL,
+    },
 };
 
 extern int test_case_No;
@@ -53,8 +55,8 @@ cmdline_parse_token_num_t cmd_run_test_case_result_caseNo =
     TOKEN_NUM_INITIALIZER(struct cmd_run_test_case_result, caseNo, INT32);
 
 static void cmd_run_test_case_parsed(void *parsed_result,
-				__attribute__((unused)) struct cmdline *cl,
-				__attribute__((unused)) void *data)
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     struct cmd_run_test_case_result *res = parsed_result;
     test_case_No = res->caseNo;
@@ -74,7 +76,7 @@ cmdline_parse_inst_t run_test_case = {
 
 static void read_pc802_memory(uint32_t startAddr, uint32_t bytesNum)
 {
-    pc802_read_mem(0, startAddr, bytesNum);
+    pc802_access_ep_mem(0, startAddr, bytesNum, 0);
     uint8_t *p = (uint8_t *)pc802_get_debug_mem(0);
     uint32_t k, r;
     for (k = 0; k < bytesNum; k++) {
@@ -124,8 +126,8 @@ cmdline_parse_token_num_t cmd_read_memory_result_bytesNum =
     TOKEN_NUM_INITIALIZER(struct cmd_read_memory_result, bytesNum, UINT32);
 
 static void cmd_read_memory_result_parsed(void *parsed_result,
-				__attribute__((unused)) struct cmdline *cl,
-				__attribute__((unused)) void *data)
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     struct cmd_read_memory_result *res = parsed_result;
     uint64_t startAddr;
@@ -176,8 +178,8 @@ cmdline_parse_token_string_t cmd_show_pcie_counter_result_counter =
     TOKEN_STRING_INITIALIZER(struct cmd_show_pcie_counter_result, counter, "counter");
 
 static void cmd_show_pcie_counter_parsed(void *parsed_result,
-				__attribute__((unused)) struct cmdline *cl,
-				__attribute__((unused)) void *data)
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     struct cmd_show_pcie_counter_result *res = parsed_result;
     RTE_ASSERT(!strcmp(res->show, "show"));
@@ -218,8 +220,8 @@ cmdline_parse_token_num_t cmd_show_pc802_info_result_idx =
     TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_info_result, idx, UINT16);
 
 static void cmd_show_pc802_info_parsed(void *parsed_result,
-				__attribute__((unused)) struct cmdline *cl,
-				__attribute__((unused)) void *data)
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     struct cmd_show_pc802_info_result *res = parsed_result;
     uint16_t dir;
@@ -283,8 +285,8 @@ cmdline_parse_token_num_t cmd_show_pc802_data_result_idx =
     TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_data_result, idx, UINT16);
 
 static void cmd_show_pc802_data_parsed(void *parsed_result,
-				__attribute__((unused)) struct cmdline *cl,
-				__attribute__((unused)) void *data)
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
 {
     struct cmd_show_pc802_data_result *res = parsed_result;
     uint16_t dir;
@@ -328,6 +330,164 @@ cmdline_parse_inst_t show_pc802_data = {
         },
 };
 
+struct cmd_download_test_vector_result {
+    cmdline_fixed_string_t download;
+    uint32_t               pc802_mem;
+    uint32_t               byte_num;
+};
+
+cmdline_parse_token_string_t cmd_download_test_vector_result_download =
+    TOKEN_STRING_INITIALIZER(struct cmd_download_test_vector_result, download, "download");
+cmdline_parse_token_num_t cmd_download_test_vector_result_pc802_mem =
+    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, pc802_mem, UINT32);
+cmdline_parse_token_num_t cmd_download_test_vector_result_byte_num =
+    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, byte_num, UINT32);
+
+static void cmd_download_test_vector_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_download_test_vector_result *res = parsed_result;
+    FILE *fp = fopen("DL_test_vector.dat", "wb");
+    RTE_ASSERT(NULL != fp);
+    uint64_t *p0 = pc802_get_debug_mem(0);
+    uint32_t k;
+
+    uint32_t *p = (uint32_t *)p0;
+    for (k = 0; k < res->byte_num; k += sizeof(uint32_t))
+        *p++ = rand();
+
+    uint64_t s, ns;
+    struct timespec t_start, t_end;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_start);
+
+    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, 1);
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_end);
+    ns = ((t_end.tv_sec - t_start.tv_sec) * 1E9);
+    ns += (t_end.tv_nsec - t_start.tv_nsec);
+    s = (t_end.tv_sec - t_start.tv_sec);
+
+    printf("Download Test Vector: NPU --->>> PC802\n");
+    printf("\tbyte_num = %9u  took  %lu (0x%lX) ns\n", res->byte_num, ns, ns);
+    printf("\t\t about %lu second \n", s);
+
+    fwrite(p0, 1, res->byte_num, fp);
+    fclose(fp);
+}
+
+cmdline_parse_inst_t download_test_vector = {
+    .f = cmd_download_test_vector_parsed,
+    .data = NULL,
+    .help_str = "Test time used to download test vector",
+    .tokens = {
+        (void *)&cmd_download_test_vector_result_download,
+        (void *)&cmd_download_test_vector_result_pc802_mem,
+        (void *)&cmd_download_test_vector_result_byte_num,
+        NULL,
+        },
+};
+
+static unsigned long get_file_size(const char *filename)
+{
+    unsigned long size;
+    FILE* fp = fopen( filename, "rb" );
+    if(fp==NULL)
+    {
+        printf("ERROR: Open file %s failed.\n", filename);
+        return 0;
+    }
+    fseek( fp, SEEK_SET, SEEK_END );
+    size=ftell(fp);
+    fclose(fp);
+    return size;
+}
+
+static void check_down_up(void)
+{
+    unsigned long sz1, sz2;
+    sz1 = get_file_size("DL_test_vector.dat");
+    sz2 = get_file_size("UL_test_vector.dat");
+    if (sz1 != sz2) {
+        printf("Download and UPload File Size Not Equal !!!\n");
+        return;
+    }
+    uint8_t d1, d2;
+    unsigned long k;
+    FILE *fp1, *fp2;
+    RTE_ASSERT(NULL != (fp1 = fopen("DL_test_vector.dat", "rb")));
+    RTE_ASSERT(NULL != (fp2 = fopen("UL_test_vector.dat", "rb")));
+    int flag = 1;
+    for (k = 0; flag && (k < sz1); k++) {
+        fread(&d1, 1, 1, fp1);
+        fread(&d2, 1, 1, fp2);
+        flag = (d1 == d2);
+    }
+    fclose(fp1);
+    fclose(fp2);
+    if (flag) {
+        printf("Download File == Upload File !\n");
+    } else {
+        printf("Download File != Upload File at k = %lu!\n", k);
+    }
+}
+
+struct cmd_upload_test_vector_result {
+    cmdline_fixed_string_t upload;
+    uint32_t               pc802_mem;
+    uint32_t               byte_num;
+};
+
+cmdline_parse_token_string_t cmd_upload_test_vector_result_download =
+    TOKEN_STRING_INITIALIZER(struct cmd_upload_test_vector_result, upload, "upload");
+cmdline_parse_token_num_t cmd_upload_test_vector_result_pc802_mem =
+    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, pc802_mem, UINT32);
+cmdline_parse_token_num_t cmd_upload_test_vector_result_byte_num =
+    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, byte_num, UINT32);
+
+static void cmd_upload_test_vector_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_upload_test_vector_result *res = parsed_result;
+    FILE *fp = fopen("UL_test_vector.dat", "wb");
+    RTE_ASSERT(NULL != fp);
+    uint64_t *p0 = pc802_get_debug_mem(0);
+    memset(p0, 0, res->byte_num);
+
+    uint64_t s, ns;
+    struct timespec t_start, t_end;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_start);
+
+    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, 0);
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t_end);
+    ns = ((t_end.tv_sec - t_start.tv_sec) * 1E9);
+    ns += (t_end.tv_nsec - t_start.tv_nsec);
+    s = (t_end.tv_sec - t_start.tv_sec);
+
+    printf("Upload Test Vector: NPU <<<--- PC802\n");
+    printf("\tbyte_num = %9u  took  %lu (0x%lX) ns\n", res->byte_num, ns, ns);
+    printf("\t\t about %lu second \n", s);
+
+    fwrite(p0, 1, res->byte_num, fp);
+    fclose(fp);
+
+    check_down_up();
+}
+
+cmdline_parse_inst_t upload_test_vector = {
+    .f = cmd_upload_test_vector_parsed,
+    .data = NULL,
+    .help_str = "Test time used to download test vector",
+    .tokens = {
+        (void *)&cmd_upload_test_vector_result_download,
+        (void *)&cmd_upload_test_vector_result_pc802_mem,
+        (void *)&cmd_upload_test_vector_result_byte_num,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -335,6 +495,8 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&show_pcie_counter,
     (cmdline_parse_inst_t *)&show_pc802_info,
     (cmdline_parse_inst_t *)&show_pc802_data,
+    (cmdline_parse_inst_t *)&download_test_vector,
+    (cmdline_parse_inst_t *)&upload_test_vector,
     NULL,
 };
 
