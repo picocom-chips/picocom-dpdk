@@ -89,10 +89,13 @@ static const struct rte_eth_conf dev_conf = {
 
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
+static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize);
+static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 
 static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
+static pcxxInfo_s   oam_cb_info  = {process_ul_oam_msg,  process_dl_oam_msg };
 static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 
 static int port_init(uint16_t port)
@@ -126,6 +129,8 @@ static int port_init(uint16_t port)
     pcxxDataOpen(&data_cb_info);
 
     pcxxCtrlOpen(&ctrl_cb_info);
+
+    pcxxOamOpen(&oam_cb_info);
 
     rte_eth_dev_start(port);
 
@@ -286,6 +291,7 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 
 #define QID_DATA    PC802_TRAFFIC_5G_EMBB_DATA
 #define QID_CTRL    PC802_TRAFFIC_5G_EMBB_CTRL
+#define QID_OAM     PC802_TRAFFIC_OAM
 
 static int case1(void)
 {
@@ -341,6 +347,28 @@ static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
         atl_test_result |= 1;
     }
     dl_a_num = 0;
+    return payloadSize;
+}
+
+static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
+{
+    buf = buf;
+    payloadSize = payloadSize;
+    dl_a[dl_a_num].cc = buf;
+    dl_a_num++;
+    return 0;
+}
+
+static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize)
+{
+    uint64_t addr = (uint64_t)buf;
+    uint32_t *ul_msg = (uint32_t *)addr;
+    swap_msg(ul_msg, payloadSize);
+    uint32_t **dl_msg;
+    dl_msg = &dl_a[0].up;
+    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
+        atl_test_result |= 4;
+    }
     return payloadSize;
 }
 
@@ -842,6 +870,27 @@ static int case201(void)
     return ret;
 }
 
+static int case301(void)
+{
+    char *a;
+    uint32_t *A;
+    uint32_t N;
+    uint32_t avail;
+
+    pcxxSendStart();
+    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail));
+    A = (uint32_t *)a;
+    produce_dl_src_data(A);
+    N = sizeof(uint32_t) * (A[1] + 2);
+    pcxxOamSend(a, N);
+    pcxxSendEnd();
+
+    while (-1 == pcxxOamRecv());
+    int re = atl_test_result;
+    atl_test_result = 0;
+    return re;
+}
+
 extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
@@ -920,6 +969,10 @@ static void run_case(int caseNo)
         diag = case201();
         disp_test_result(201, diag);
         break;
+    case 301:
+        diag = case301();
+        disp_test_result(301, diag);
+        break;
     case -1:
         diag = case201();
         disp_test_result(201, diag);
@@ -961,6 +1014,8 @@ static void run_case(int caseNo)
     case -2:
         diag = case201();
         disp_test_result(201, diag);
+        diag = case301();
+        disp_test_result(301, diag);
         diag = case1();
         disp_test_result(1, diag);
         diag = case2();
