@@ -3,7 +3,7 @@
 #include <rte_debug.h>
 
 #include "pc802_ethdev.h"
-#include "pc802_atl.h"
+#include "pcxx_ipc.h"
 
 /*Predefined Block num*/
 #define DL_CTRL_BLOCK_NUM 4

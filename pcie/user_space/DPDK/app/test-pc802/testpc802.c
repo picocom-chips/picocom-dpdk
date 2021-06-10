@@ -54,7 +54,7 @@
 #include <cmdline.h>
 
 #include <pc802_ethdev.h>
-#include <pc802_atl.h>
+#include <pcxx_ipc.h>
 
 struct rte_mempool *mpool_pc802_tx;
 
