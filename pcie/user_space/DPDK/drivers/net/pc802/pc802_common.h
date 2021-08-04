@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define DIR_PCIE_DMA_DOWNLINK   1
+#define DIR_PCIE_DMA_UPLINK     0
+
 #define MIN_DESC_NUM    8
 #define MAX_DESC_NUM  128
 

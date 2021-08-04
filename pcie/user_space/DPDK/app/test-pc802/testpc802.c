@@ -54,7 +54,7 @@
 #include <cmdline.h>
 
 #include <pc802_ethdev.h>
-#include <pcxx_ipc.h>
+#include <pc802_atl.h>
 
 struct rte_mempool *mpool_pc802_tx;
 
@@ -204,7 +204,10 @@ static int produce_dl_src_data(uint32_t *buf)
 {
     static uint32_t idx = 0;
     uint32_t N, s, d, k;
-    *buf++ = s = (uint32_t)rand();
+    do {
+        s = (uint32_t)rand();
+    } while (s == 0x4b3c2d1e);
+    *buf++ = s;
     N = (uint32_t)rand();
     N &= 511;
     if (N < 10) N = 10;
@@ -1048,7 +1051,7 @@ int pc802_download_boot_image(uint16_t port)
 	printf("Begin test_boot_download !\n");
 	*BOOTRCCNT = 0;
 	const struct rte_memzone *mz;
-    uint32_t tsize = 0x100000;
+    uint32_t tsize = 0x2000000;
 	int socket_id = pc802_get_socket_id(port);
     mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 0x10000);
@@ -1061,7 +1064,7 @@ int pc802_download_boot_image(uint16_t port)
 	uint32_t k;
 	bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
 	bar->BOOTSRCH = (uint32_t)(mz->phys_addr >> 32);
-	bar->BOOTDST = 0x11400000; // SRAM2
+	bar->BOOTDST  = 0xC0000000; //DDR
 	bar->BOOTRSPL = (uint32_t)(mz1->phys_addr);
 	bar->BOOTRSPH = (uint32_t)(mz1->phys_addr >> 32);
 	for (sz = 4; sz <= 128 * 1024; sz <<= 1) {
@@ -1090,8 +1093,105 @@ int pc802_download_boot_image(uint16_t port)
 			printf("BOOT OK when Size = 0x%08X\n", sz);
 	}
 
+    rte_memzone_free(mz1);
+    rte_memzone_free(mz);
+
     printf("Finish STRONG test_boot_download !\n");
 	return 0;
+}
+
+void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num);
+
+void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
+{
+    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(0);
+    uint32_t k, n;
+    if (byte_num > ((uint32_t)160 << 20)) {
+        DBLOG("The size for mem dump should be <= 160 M bytes !\n");
+        return;
+    }
+    uint64_t *p0 = rte_malloc("test_memdump", byte_num, 8);
+    if (NULL == p0) {
+        DBLOG("Out of memory!\n");
+        return;
+    }
+    for (n = k = 0; k < byte_num; k += sizeof(uint32_t), n++)
+        pd[n] = rand();
+    DBLOG("pd = %p p0 = %p\n", pd, p0);
+    memcpy(p0, pd, byte_num);
+    pc802_access_ep_mem(0, pc802_mem, byte_num, DIR_PCIE_DMA_DOWNLINK);
+
+    PC802_Mem_Block_t *mblk;
+    mblk = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_OAM);
+    if (NULL == mblk) {
+        DBLOG("Test MemDump Failed !\n");
+        return;
+    }
+    uint32_t *msg = (uint32_t *)&mblk[1];
+    msg[0] = 0x4b3c2d1e;
+    msg[1] = 0;
+    msg[2] = pc802_mem;
+    msg[3] = byte_num;
+    mblk->pkt_length = 16;
+    mblk->pkt_type = 2;
+    mblk->eop = 1;
+    pc802_tx_mblk_burst(0, PC802_TRAFFIC_OAM, &mblk, 1);
+
+    uint16_t P;
+    do {
+        P = pc802_rx_mblk_burst(0, PC802_TRAFFIC_OAM, &mblk, 1);
+    } while (0 == P);
+    msg = (uint32_t *)&mblk[1];
+    if (  (msg[0] != 0x4b3c2d1e)
+        ||(msg[1] != 0)
+        ||(msg[2] != pc802_mem)
+        ||(msg[3] != byte_num)) {
+        DBLOG("Test MemDump Failed !\n");
+        pc802_free_mem_block(mblk);
+        return;
+    }
+
+    pc802_access_ep_mem(0, pc802_mem, byte_num, DIR_PCIE_DMA_UPLINK);
+
+    uint8_t *ps = (uint8_t *)p0;
+    uint8_t *pt = (uint8_t *)pd;
+    for (k = 0; k < byte_num; k++) {
+        if (ps[k] != pt[k]) {
+            DBLOG("Test MemDump Failed at k = %u !\n", k);
+            pc802_free_mem_block(mblk);
+            return;
+        }
+    }
+
+    pc802_free_mem_block(mblk);
+    rte_free(p0);
+
+    mblk = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_OAM);
+    if (NULL == mblk) {
+        DBLOG("Test MemDump Failed !\n");
+        return;
+    }
+    msg = (uint32_t *)&mblk[1];
+    msg[0] = 0x4b3c2d1e;
+    msg[1] = 100;
+    mblk->pkt_length = 8;
+    mblk->pkt_type = 2;
+    mblk->eop = 1;
+    pc802_tx_mblk_burst(0, PC802_TRAFFIC_OAM, &mblk, 1);
+
+    do {
+        P = pc802_rx_mblk_burst(0, PC802_TRAFFIC_OAM, &mblk, 1);
+    } while (0 == P);
+    msg = (uint32_t *)&mblk[1];
+    if (  (msg[0] != 0x4b3c2d1e)
+        ||(msg[1] != 100)) {
+        DBLOG("Test MemDump Failed !\n");
+        pc802_free_mem_block(mblk);
+        return;
+    }
+    pc802_free_mem_block(mblk);
+    DBLOG("Test memdump Passed when address = 0x%08X length = %u\n",
+        pc802_mem, byte_num);
 }
 
 int main(int argc, char** argv)

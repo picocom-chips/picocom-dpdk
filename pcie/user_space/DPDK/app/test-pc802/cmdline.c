@@ -76,7 +76,7 @@ cmdline_parse_inst_t run_test_case = {
 
 static void read_pc802_memory(uint32_t startAddr, uint32_t bytesNum)
 {
-    pc802_access_ep_mem(0, startAddr, bytesNum, 0);
+    pc802_access_ep_mem(0, startAddr, bytesNum, DIR_PCIE_DMA_UPLINK);
     uint8_t *p = (uint8_t *)pc802_get_debug_mem(0);
     uint32_t k, r;
     for (k = 0; k < bytesNum; k++) {
@@ -361,7 +361,7 @@ static void cmd_download_test_vector_parsed(void *parsed_result,
     struct timespec t_start, t_end;
     clock_gettime(CLOCK_MONOTONIC_RAW, &t_start);
 
-    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, 1);
+    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, DIR_PCIE_DMA_DOWNLINK);
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &t_end);
     ns = ((t_end.tv_sec - t_start.tv_sec) * 1E9);
@@ -459,7 +459,7 @@ static void cmd_upload_test_vector_parsed(void *parsed_result,
     struct timespec t_start, t_end;
     clock_gettime(CLOCK_MONOTONIC_RAW, &t_start);
 
-    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, 0);
+    pc802_access_ep_mem(0, res->pc802_mem, res->byte_num, DIR_PCIE_DMA_UPLINK);
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &t_end);
     ns = ((t_end.tv_sec - t_start.tv_sec) * 1E9);
@@ -488,6 +488,45 @@ cmdline_parse_inst_t upload_test_vector = {
         },
 };
 
+struct cmd_test_memdump_result {
+    cmdline_fixed_string_t test;
+    cmdline_fixed_string_t memdump;
+    uint32_t               pc802_mem;
+    uint32_t               byte_num;
+};
+
+cmdline_parse_token_string_t cmd_test_memdump_result_test =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_memdump_result, test, "test");
+cmdline_parse_token_string_t cmd_test_memdump_result_memdump =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_memdump_result, memdump, "memdump");
+cmdline_parse_token_num_t cmd_test_memdump_result_pc802_mem =
+    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, pc802_mem, UINT32);
+cmdline_parse_token_num_t cmd_test_memdump_result_byte_num =
+    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, byte_num, UINT32);
+
+void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num);
+
+static void cmd_test_memdump_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_test_memdump_result *res = parsed_result;
+    test_pc802_mem_dump(res->pc802_mem, res->byte_num);
+}
+
+cmdline_parse_inst_t test_memdump = {
+    .f = cmd_test_memdump_parsed,
+    .data = NULL,
+    .help_str = "Test memdump from PC802",
+    .tokens = {
+        (void *)&cmd_test_memdump_result_test,
+        (void *)&cmd_test_memdump_result_memdump,
+        (void *)&cmd_test_memdump_result_pc802_mem,
+        (void *)&cmd_test_memdump_result_byte_num,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -497,6 +536,7 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&show_pc802_data,
     (cmdline_parse_inst_t *)&download_test_vector,
     (cmdline_parse_inst_t *)&upload_test_vector,
+    (cmdline_parse_inst_t *)&test_memdump,
     NULL,
 };
 
