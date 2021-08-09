@@ -989,6 +989,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     laddr = (uint32_t)mz->iova;
     PC802_WRITE_REG(bar->DBGRCAL, laddr);
     PC802_WRITE_REG(bar->DBGRCAH, haddr);
+    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     printf("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     volatile uint32_t devRdy;
@@ -1000,6 +1001,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (3 != devRdy);
+    DBLOG("bar->DEVRDY = 3\n");
 
     PMD_INIT_LOG(DEBUG, "<<");
 

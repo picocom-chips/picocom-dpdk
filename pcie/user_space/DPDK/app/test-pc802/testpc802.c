@@ -54,7 +54,7 @@
 #include <cmdline.h>
 
 #include <pc802_ethdev.h>
-#include <pc802_atl.h>
+#include <pcxx_ipc.h>
 
 struct rte_mempool *mpool_pc802_tx;
 
@@ -1013,6 +1013,7 @@ static void run_case(int caseNo)
         disp_test_result(104, diag);
         diag = case105();
         disp_test_result(105, diag);
+        printf("Case -1 Passed !\n");
         break;
     case -2:
         diag = case201();
@@ -1027,6 +1028,7 @@ static void run_case(int caseNo)
         disp_test_result(3, diag);
         diag = case4(16);
         disp_test_result(4, diag);
+        printf("Case -2 Passed !\n");
         break;
     default:
         printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
@@ -1150,6 +1152,8 @@ void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
         pc802_free_mem_block(mblk);
         return;
     }
+
+    memset(pd, 0, byte_num);
 
     pc802_access_ep_mem(0, pc802_mem, byte_num, DIR_PCIE_DMA_UPLINK);
 
