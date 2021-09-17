@@ -242,7 +242,7 @@ int pcxxCtrlRecv(void)
             pccxxReadHandle[PCXX_DATA](rx_data_buf, mblk_data->pkt_length);
         }
     }
-    uint16_t _len = mblk_ctrl->pkt_length;
+    uint32_t _len = mblk_ctrl->pkt_length;
     offset = 0;
     while (_len > 0) {
         if (NULL == pccxxReadHandle[PCXX_CTRL])
@@ -315,7 +315,7 @@ int pcxxOamRecv(void)
     if (NULL == rx_oam_buf)
         return -1;
     mblk_oam = (PC802_Mem_Block_t *)(rx_oam_buf - sizeof(PC802_Mem_Block_t));
-    uint16_t _len = mblk_oam->pkt_length;
+    uint32_t _len = mblk_oam->pkt_length;
     offset = 0;
     while (_len > 0) {
         if (NULL == pccxxReadHandle[PCXX_OAM])
