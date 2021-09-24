@@ -1066,7 +1066,7 @@ int pc802_download_boot_image(uint16_t port)
 	uint32_t k;
 	bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
 	bar->BOOTSRCH = (uint32_t)(mz->phys_addr >> 32);
-	bar->BOOTDST  = 0xC0000000; //DDR
+	bar->BOOTDST  = 0x11400000; //SRAM2, Not initialize DDR before here
 	bar->BOOTRSPL = (uint32_t)(mz1->phys_addr);
 	bar->BOOTRSPH = (uint32_t)(mz1->phys_addr >> 32);
 	for (sz = 4; sz <= 128 * 1024; sz <<= 1) {
