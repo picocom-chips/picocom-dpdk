@@ -1003,6 +1003,11 @@ eth_pc802_start(struct rte_eth_dev *dev)
     } while (3 != devRdy);
     DBLOG("bar->DEVRDY = 3\n");
 
+    volatile uint32_t macAddrL;
+    macAddrL = PC802_READ_REG(bar->MACADDRL);
+    adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
+    adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
+
     PMD_INIT_LOG(DEBUG, "<<");
 
     return 0;
@@ -1434,7 +1439,13 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     data->nb_tx_queues = 1;
     data->dev_link = pmd_link;
     data->mac_addrs = &adapter->eth_addr;
-    eth_random_addr(adapter->eth_addr.addr_bytes);
+
+    adapter->eth_addr.addr_bytes[0] = 0x8C;
+    adapter->eth_addr.addr_bytes[1] = 0x1F;
+    adapter->eth_addr.addr_bytes[2] = 0x64;
+    adapter->eth_addr.addr_bytes[3] = 0xB4;
+    adapter->eth_addr.addr_bytes[4] = 0xC0;
+    adapter->eth_addr.addr_bytes[5] = 0x00;
 
     eth_dev->dev_ops = &eth_pc802_ops;
     eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;

@@ -88,6 +88,12 @@ typedef struct PC802_BAR_t {
 		};
     };
     union {
+        PC802_CacheLine_t _cahce_line_macaddr;
+        struct {
+            uint32_t MACADDRL;
+        };
+    };
+    union {
         PC802_CacheLine_t _cahce_line_debug_rcm;
         struct {
             uint32_t DBGRCAL;
