@@ -27,13 +27,13 @@
 #include "pc802_logs.h"
 #include "pc802_ethdev.h"
 
-#define PCI_VENDOR_ID_SYNOPSYS        0x16c3
-#define PCI_DEVICE_ID_SYNOPSYS_HAPSUSB31    0xabcf
+#define PCI_VENDOR_PICOCOM          0x1EC4
+#define PCI_DEVICE_PICOCOM_PC802    0x1001
 
 static PC802_BAR_t *gbar;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
-    { RTE_PCI_DEVICE(PCI_VENDOR_ID_SYNOPSYS, PCI_DEVICE_ID_SYNOPSYS_HAPSUSB31) },
+    { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
     { .vendor_id = 0, /* sentinel */ },
 };
 
