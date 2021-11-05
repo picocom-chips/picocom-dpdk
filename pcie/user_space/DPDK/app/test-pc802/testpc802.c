@@ -1061,8 +1061,7 @@ int main_stop = 0;
 int pc802_download_boot_image(uint16_t port)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
-    uint32_t sz;
-	volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
+    volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
 	volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
 
     printf("Begin STRONG pc802_download_boot_image,  port = %hu\n", port);
@@ -1073,49 +1072,33 @@ int pc802_download_boot_image(uint16_t port)
 	printf("Begin test_boot_download !\n");
 	*BOOTRCCNT = 0;
 	const struct rte_memzone *mz;
-    uint32_t tsize = 0x2000000;
+    uint32_t tsize = 0x600000;
 	int socket_id = pc802_get_socket_id(port);
     mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 0x10000);
-	const struct rte_memzone *mz1;
-	mz1 = rte_memzone_reserve_aligned("PC802_BOOT_RSP", tsize, socket_id,
-            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
 
-	uint32_t *pReq = (uint32_t *)mz->addr;
-	uint32_t *pRsp = (uint32_t *)mz1->addr;
-	uint32_t k;
-	bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
+	uint8_t *pimg = (uint8_t *)mz->addr;
+
+    FILE *fp = fopen("PC802.img", "rb");
+    if (NULL==fp) {
+        DBLOG("Failed to open PC802.img .\n");
+        return -1;
+    }
+    uint32_t N = fread(pimg, 1, tsize, fp);
+    fclose(fp);
+    DBLOG("Read %u bytes from PC802.img\n", N);
+
+    bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
 	bar->BOOTSRCH = (uint32_t)(mz->phys_addr >> 32);
-	bar->BOOTDST  = 0x11400000; //SRAM2, Not initialize DDR before here
-	bar->BOOTRSPL = (uint32_t)(mz1->phys_addr);
-	bar->BOOTRSPH = (uint32_t)(mz1->phys_addr >> 32);
-	for (sz = 4; sz <= 128 * 1024; sz <<= 1) {
-		for (k = 0; k  < (sz/sizeof(uint32_t)); k++) {
-			pReq[k] = (uint32_t)rand();
-		}
-		memset(pRsp, 0, 0x100000);
-		printf("Test Boot Size = 0x%08X\n", sz);
-		bar->BOOTSZ = sz;
-		rte_wmb();
-		(*BOOTRCCNT)++;
-		printf("BAR->BOOTRCCNT = %u\n", bar->BOOTRCCNT);
-		while(*BOOTRCCNT != *BOOTEPCNT)
-			usleep(1);
+	bar->BOOTDST  = 0;
+	bar->BOOTSZ = 0;
+	rte_wmb();
+	(*BOOTRCCNT)++;
+    printf("BOOT Image Size = %d\n", N);
+	printf("BAR->BOOTRCCNT = %u\n", bar->BOOTRCCNT);
+	while(*BOOTRCCNT != *BOOTEPCNT)
+		usleep(1);
 
-		int boot_ok = 1;
-		for (k = 0; k  < (sz/sizeof(uint32_t)); k++) {
-			if (pReq[k] != pRsp[k]) {
-				boot_ok = 0;
-				printf("BOOT FAIL: Req[%u] = 0x%08X Rsp[%u] = 0x%08X\n",
-					k, pReq[k], k, pRsp[k]);
-				break;
-			}
-		}
-		if (boot_ok)
-			printf("BOOT OK when Size = 0x%08X\n", sz);
-	}
-
-    rte_memzone_free(mz1);
     rte_memzone_free(mz);
 
     printf("Finish STRONG test_boot_download !\n");
