@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright (c) 2017-2018 Solarflare Communications Inc.
- * All rights reserved.
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2017-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -12,15 +12,14 @@
 #include <stdbool.h>
 
 #include <rte_byteorder.h>
-#include <rte_mbuf_ptype.h>
 #include <rte_mbuf.h>
 #include <rte_io.h>
 
-#include "efx.h"
 #include "efx_types.h"
-#include "efx_regs.h"
 #include "efx_regs_ef10.h"
+#include "efx.h"
 
+#include "sfc_debug.h"
 #include "sfc_tweak.h"
 #include "sfc_dp_rx.h"
 #include "sfc_kvargs.h"
@@ -48,7 +47,7 @@
  * Each HW Rx descriptor has many Rx buffers. The number of buffers
  * in one HW Rx descriptor is equal to size of contiguous block
  * provided by Rx buffers memory pool. The contiguous block size
- * depends on CONFIG_RTE_DRIVER_MEMPOOL_BUCKET_SIZE_KB and rte_mbuf
+ * depends on RTE_DRIVER_MEMPOOL_BUCKET_SIZE_KB and rte_mbuf
  * data size specified on the memory pool creation. Typical rte_mbuf
  * data size is about 2k which makes a bit less than 32 buffers in
  * contiguous block with default bucket size equal to 64k.
@@ -126,7 +125,7 @@ sfc_ef10_essb_next_mbuf(const struct sfc_ef10_essb_rxq *rxq,
 	struct rte_mbuf *m;
 
 	m = (struct rte_mbuf *)((uintptr_t)mbuf + rxq->buf_stride);
-	MBUF_RAW_ALLOC_CHECK(m);
+	__rte_mbuf_raw_sanity_check(m);
 	return m;
 }
 
@@ -137,7 +136,7 @@ sfc_ef10_essb_mbuf_by_index(const struct sfc_ef10_essb_rxq *rxq,
 	struct rte_mbuf *m;
 
 	m = (struct rte_mbuf *)((uintptr_t)mbuf + idx * rxq->buf_stride);
-	MBUF_RAW_ALLOC_CHECK(m);
+	__rte_mbuf_raw_sanity_check(m);
 	return m;
 }
 
@@ -221,7 +220,8 @@ sfc_ef10_essb_rx_qrefill(struct sfc_ef10_essb_rxq *rxq)
 
 	SFC_ASSERT(rxq->added != added);
 	rxq->added = added;
-	sfc_ef10_rx_qpush(rxq->doorbell, added, rxq_ptr_mask);
+	sfc_ef10_rx_qpush(rxq->doorbell, added, rxq_ptr_mask,
+			  &rxq->dp.dpq.rx_dbells);
 }
 
 static bool
@@ -305,6 +305,27 @@ sfc_ef10_essb_rx_process_ev(struct sfc_ef10_essb_rxq *rxq, efx_qword_t rx_ev)
 		}
 	} while (ready > 0);
 }
+
+/*
+ * Below function relies on the following length and layout of the
+ * Rx prefix.
+ */
+static const efx_rx_prefix_layout_t sfc_ef10_essb_rx_prefix_layout = {
+	.erpl_length	= ES_EZ_ESSB_RX_PREFIX_LEN,
+	.erpl_fields	= {
+#define	SFC_EF10_ESSB_RX_PREFIX_FIELD(_efx, _ef10) \
+	EFX_RX_PREFIX_FIELD(_efx, ES_EZ_ESSB_RX_PREFIX_ ## _ef10, B_FALSE)
+
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(LENGTH, DATA_LEN),
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(USER_MARK, MARK),
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(RSS_HASH_VALID, HASH_VALID),
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(USER_MARK_VALID, MARK_VALID),
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(USER_FLAG, MATCH_FLAG),
+		SFC_EF10_ESSB_RX_PREFIX_FIELD(RSS_HASH, HASH),
+
+#undef	SFC_EF10_ESSB_RX_PREFIX_FIELD
+	}
+};
 
 static unsigned int
 sfc_ef10_essb_rx_get_pending(struct sfc_ef10_essb_rxq *rxq,
@@ -487,6 +508,7 @@ sfc_ef10_essb_rx_pool_ops_supported(const char *pool)
 static sfc_dp_rx_qsize_up_rings_t sfc_ef10_essb_rx_qsize_up_rings;
 static int
 sfc_ef10_essb_rx_qsize_up_rings(uint16_t nb_rx_desc,
+				struct sfc_dp_rx_hw_limits *limits,
 				struct rte_mempool *mb_pool,
 				unsigned int *rxq_entries,
 				unsigned int *evq_entries,
@@ -513,11 +535,11 @@ sfc_ef10_essb_rx_qsize_up_rings(uint16_t nb_rx_desc,
 	nb_hw_rx_desc = RTE_MAX(SFC_DIV_ROUND_UP(nb_rx_desc,
 						 mp_info.contig_block_size),
 				SFC_EF10_RX_WPTR_ALIGN + 1);
-	if (nb_hw_rx_desc <= EFX_RXQ_MINNDESCS) {
-		*rxq_entries = EFX_RXQ_MINNDESCS;
+	if (nb_hw_rx_desc <= limits->rxq_min_entries) {
+		*rxq_entries = limits->rxq_min_entries;
 	} else {
 		*rxq_entries = rte_align32pow2(nb_hw_rx_desc);
-		if (*rxq_entries > EFX_RXQ_MAXNDESCS)
+		if (*rxq_entries > limits->rxq_max_entries)
 			return EINVAL;
 	}
 
@@ -527,8 +549,8 @@ sfc_ef10_essb_rx_qsize_up_rings(uint16_t nb_rx_desc,
 		1 /* Rx error */ + 1 /* flush */ + 1 /* head-tail space */;
 
 	*evq_entries = rte_align32pow2(max_events);
-	*evq_entries = RTE_MAX(*evq_entries, (unsigned int)EFX_EVQ_MINNEVS);
-	*evq_entries = RTE_MIN(*evq_entries, (unsigned int)EFX_EVQ_MAXNEVS);
+	*evq_entries = RTE_MAX(*evq_entries, limits->evq_min_entries);
+	*evq_entries = RTE_MIN(*evq_entries, limits->evq_max_entries);
 
 	/*
 	 * May be even maximum event queue size is insufficient to handle
@@ -597,6 +619,8 @@ sfc_ef10_essb_rx_qcreate(uint16_t port_id, uint16_t queue_id,
 			ER_DZ_RX_DESC_UPD_REG_OFST +
 			(info->hw_index << info->vi_window_shift);
 
+	sfc_ef10_essb_rx_info(&rxq->dp.dpq, "RxQ doorbell is %p",
+			      rxq->doorbell);
 	sfc_ef10_essb_rx_info(&rxq->dp.dpq,
 			      "block size is %u, buf stride is %u",
 			      rxq->block_size, rxq->buf_stride);
@@ -632,9 +656,17 @@ sfc_ef10_essb_rx_qdestroy(struct sfc_dp_rxq *dp_rxq)
 
 static sfc_dp_rx_qstart_t sfc_ef10_essb_rx_qstart;
 static int
-sfc_ef10_essb_rx_qstart(struct sfc_dp_rxq *dp_rxq, unsigned int evq_read_ptr)
+sfc_ef10_essb_rx_qstart(struct sfc_dp_rxq *dp_rxq, unsigned int evq_read_ptr,
+			const efx_rx_prefix_layout_t *pinfo)
 {
 	struct sfc_ef10_essb_rxq *rxq = sfc_ef10_essb_rxq_by_dp_rxq(dp_rxq);
+
+	if (pinfo->erpl_length != sfc_ef10_essb_rx_prefix_layout.erpl_length)
+		return ENOTSUP;
+
+	if (efx_rx_prefix_layout_check(pinfo,
+				       &sfc_ef10_essb_rx_prefix_layout) != 0)
+		return ENOTSUP;
 
 	rxq->evq_read_ptr = evq_read_ptr;
 
@@ -713,8 +745,10 @@ struct sfc_dp_rx sfc_ef10_essb_rx = {
 				  SFC_DP_HW_FW_CAP_RX_ES_SUPER_BUFFER,
 	},
 	.features		= SFC_DP_RX_FEAT_FLOW_FLAG |
-				  SFC_DP_RX_FEAT_FLOW_MARK |
-				  SFC_DP_RX_FEAT_CHECKSUM,
+				  SFC_DP_RX_FEAT_FLOW_MARK,
+	.dev_offload_capa	= DEV_RX_OFFLOAD_CHECKSUM |
+				  DEV_RX_OFFLOAD_RSS_HASH,
+	.queue_offload_capa	= 0,
 	.get_dev_info		= sfc_ef10_essb_rx_get_dev_info,
 	.pool_ops_supported	= sfc_ef10_essb_rx_pool_ops_supported,
 	.qsize_up_rings		= sfc_ef10_essb_rx_qsize_up_rings,

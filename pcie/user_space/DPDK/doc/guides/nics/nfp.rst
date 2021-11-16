@@ -1,32 +1,6 @@
-..  BSD LICENSE
+..  SPDX-License-Identifier: BSD-3-Clause
     Copyright(c) 2015-2017 Netronome Systems, Inc. All rights reserved.
     All rights reserved.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions
-    are met:
-
-    * Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in
-    the documentation and/or other materials provided with the
-    distribution.
-    * Neither the name of Intel Corporation nor the names of its
-    contributors may be used to endorse or promote products derived
-    from this software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 NFP poll mode driver library
 ============================
@@ -74,10 +48,6 @@ Although NFP PMD has Netronome´s BSP dependencies, it is possible to
 compile it along with other DPDK PMDs even if no BSP was installed previously.
 Of course, a DPDK app will require such a BSP installed for using the
 NFP PMD, along with a specific NFP firmware application.
-
-Default PMD configuration is at the **common_linuxapp configuration** file:
-
-- **CONFIG_RTE_LIBRTE_NFP_PMD=y**
 
 Once the DPDK is built all the DPDK apps and examples include support for
 the NFP PMD.
@@ -128,29 +98,46 @@ directory per firmware application. Options 1 and 2 for firmware filenames allow
 more than one SmartNIC, same type of SmartNIC or different ones, and to upload a
 different firmware to each SmartNIC.
 
+   .. Note::
+      Currently the NFP PMD supports using the PF with Agilio Basic Firmware. See
+      https://help.netronome.com/support/solutions for more information on the
+      various firmwares supported by the Netronome Agilio CX smartNIC.
 
 PF multiport support
 --------------------
 
-Some NFP cards support several physical ports with just one single PCI device.
-The DPDK core is designed with a 1:1 relationship between PCI devices and DPDK
-ports, so NFP PMD PF support requires handling the multiport case specifically.
-During NFP PF initialization, the PMD will extract the information about the
-number of PF ports from the firmware and will create as many DPDK ports as
-needed.
+The NFP PMD can work with up to 8 ports on the same PF device. The number of
+available ports is firmware and hardware dependent, and the driver looks for a
+firmware symbol during initialization to know how many can be used.
 
-Because the unusual relationship between a single PCI device and several DPDK
-ports, there are some limitations when using more than one PF DPDK port: there
-is no support for RX interrupts and it is not possible either to use those PF
-ports with the device hotplug functionality.
+DPDK apps work with ports, and a port is usually a PF or a VF PCI device.
+However, with the NFP PF multiport there is just one PF PCI device. Supporting
+this particular configuration requires the PMD to create ports in a special way,
+although once they are created, DPDK apps should be able to use them as normal
+PCI ports.
 
+NFP ports belonging to same PF can be seen inside PMD initialization with a
+suffix added to the PCI ID: wwww:xx:yy.z_portn. For example, a PF with PCI ID
+0000:03:00.0 and four ports is seen by the PMD code as:
+
+   .. code-block:: console
+
+      0000:03:00.0_port0
+      0000:03:00.0_port1
+      0000:03:00.0_port2
+      0000:03:00.0_port3
+
+   .. Note::
+
+      There are some limitations with multiport support: RX interrupts and
+      device hot-plugging are not supported.
 
 PF multiprocess support
 -----------------------
 
 Due to how the driver needs to access the NFP through a CPP interface, which implies
-to use specific registers inside the chip, the number of secondary proceses with PF
-ports is limitted to only one.
+to use specific registers inside the chip, the number of secondary processes with PF
+ports is limited to only one.
 
 This limitation will be solved in future versions but having basic multiprocess support
 is important for allowing development and debugging through the PF using a secondary

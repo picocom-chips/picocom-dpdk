@@ -4,7 +4,7 @@
 
 #include <inttypes.h>
 
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_common.h>
 #include "fm10k.h"
 #include "base/fm10k_type.h"
@@ -52,8 +52,10 @@ fm10k_desc_to_olflags_v(__m128i descs[4], struct rte_mbuf **rx_pkts)
 
 	const __m128i pkttype_msk = _mm_set_epi16(
 			0x0000, 0x0000, 0x0000, 0x0000,
-			PKT_RX_VLAN, PKT_RX_VLAN,
-			PKT_RX_VLAN, PKT_RX_VLAN);
+			PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED,
+			PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED,
+			PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED,
+			PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED);
 
 	/* mask everything except rss type */
 	const __m128i rsstype_msk = _mm_set_epi16(
@@ -201,7 +203,7 @@ fm10k_desc_to_pktype_v(__m128i descs[4], struct rte_mbuf **rx_pkts)
 #define fm10k_desc_to_pktype_v(desc, rx_pkts) do {} while (0)
 #endif
 
-int __attribute__((cold))
+int __rte_cold
 fm10k_rx_vec_condition_check(struct rte_eth_dev *dev)
 {
 #ifndef RTE_LIBRTE_IEEE1588
@@ -229,7 +231,7 @@ fm10k_rx_vec_condition_check(struct rte_eth_dev *dev)
 #endif
 }
 
-int __attribute__((cold))
+int __rte_cold
 fm10k_rxq_vec_setup(struct fm10k_rx_queue *rxq)
 {
 	uintptr_t p;
@@ -347,7 +349,7 @@ fm10k_rxq_rearm(struct fm10k_rx_queue *rxq)
 	FM10K_PCI_REG_WRITE(rxq->tail_ptr, rx_id);
 }
 
-void __attribute__((cold))
+void __rte_cold
 fm10k_rx_queue_release_mbufs_vec(struct fm10k_rx_queue *rxq)
 {
 	const unsigned mask = rxq->nb_desc - 1;
@@ -357,8 +359,15 @@ fm10k_rx_queue_release_mbufs_vec(struct fm10k_rx_queue *rxq)
 		return;
 
 	/* free all mbufs that are valid in the ring */
-	for (i = rxq->next_dd; i != rxq->rxrearm_start; i = (i + 1) & mask)
-		rte_pktmbuf_free_seg(rxq->sw_ring[i]);
+	if (rxq->rxrearm_nb == 0) {
+		for (i = 0; i < rxq->nb_desc; i++)
+			if (rxq->sw_ring[i] != NULL)
+				rte_pktmbuf_free_seg(rxq->sw_ring[i]);
+	} else {
+		for (i = rxq->next_dd; i != rxq->rxrearm_start;
+				i = (i + 1) & mask)
+			rte_pktmbuf_free_seg(rxq->sw_ring[i]);
+	}
 	rxq->rxrearm_nb = rxq->nb_desc;
 
 	/* set all entries to NULL */
@@ -636,18 +645,15 @@ fm10k_reassemble_packets(struct fm10k_rx_queue *rxq,
 	return pkt_idx;
 }
 
-/*
- * vPMD receive routine that reassembles scattered packets
+/**
+ * vPMD receive routine that reassembles single burst of 32 scattered packets
  *
  * Notice:
  * - don't support ol_flags for rss and csum err
- * - nb_pkts > RTE_FM10K_MAX_RX_BURST, only scan RTE_FM10K_MAX_RX_BURST
- *   numbers of DD bit
  */
-uint16_t
-fm10k_recv_scattered_pkts_vec(void *rx_queue,
-				struct rte_mbuf **rx_pkts,
-				uint16_t nb_pkts)
+static uint16_t
+fm10k_recv_scattered_burst_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
+			       uint16_t nb_pkts)
 {
 	struct fm10k_rx_queue *rxq = rx_queue;
 	uint8_t split_flags[RTE_FM10K_MAX_RX_BURST] = {0};
@@ -676,22 +682,49 @@ fm10k_recv_scattered_pkts_vec(void *rx_queue,
 			i++;
 		if (i == nb_bufs)
 			return nb_bufs;
+		rxq->pkt_first_seg = rx_pkts[i];
 	}
 	return i + fm10k_reassemble_packets(rxq, &rx_pkts[i], nb_bufs - i,
 		&split_flags[i]);
+}
+
+/**
+ * vPMD receive routine that reassembles scattered packets.
+ */
+uint16_t
+fm10k_recv_scattered_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
+			      uint16_t nb_pkts)
+{
+	uint16_t retval = 0;
+
+	while (nb_pkts > RTE_FM10K_MAX_RX_BURST) {
+		uint16_t burst;
+
+		burst = fm10k_recv_scattered_burst_vec(rx_queue,
+						       rx_pkts + retval,
+						       RTE_FM10K_MAX_RX_BURST);
+		retval += burst;
+		nb_pkts -= burst;
+		if (burst < RTE_FM10K_MAX_RX_BURST)
+			return retval;
+	}
+
+	return retval + fm10k_recv_scattered_burst_vec(rx_queue,
+						       rx_pkts + retval,
+						       nb_pkts);
 }
 
 static const struct fm10k_txq_ops vec_txq_ops = {
 	.reset = fm10k_reset_tx_queue,
 };
 
-void __attribute__((cold))
+void __rte_cold
 fm10k_txq_vec_setup(struct fm10k_tx_queue *txq)
 {
 	txq->ops = &vec_txq_ops;
 }
 
-int __attribute__((cold))
+int __rte_cold
 fm10k_tx_vec_condition_check(struct fm10k_tx_queue *txq)
 {
 	/* Vector TX can't offload any features yet */
@@ -709,7 +742,7 @@ vtx1(volatile struct fm10k_tx_desc *txdp,
 		struct rte_mbuf *pkt, uint64_t flags)
 {
 	__m128i descriptor = _mm_set_epi64x(flags << 56 |
-			pkt->vlan_tci << 16 | pkt->data_len,
+			(uint64_t)pkt->vlan_tci << 16 | (uint64_t)pkt->data_len,
 			MBUF_DMA_ADDR(pkt));
 	_mm_store_si128((__m128i *)txdp, descriptor);
 }
@@ -854,7 +887,7 @@ fm10k_xmit_fixed_burst_vec(void *tx_queue, struct rte_mbuf **tx_pkts,
 	return nb_pkts;
 }
 
-static void __attribute__((cold))
+static void __rte_cold
 fm10k_reset_tx_queue(struct fm10k_tx_queue *txq)
 {
 	static const struct fm10k_tx_desc zeroed_desc = {0};

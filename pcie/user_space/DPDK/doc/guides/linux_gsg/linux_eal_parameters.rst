@@ -40,6 +40,10 @@ Device-related options
 
     Use specified interrupt mode for devices bound to VFIO kernel driver.
 
+*   ``--vfio-vf-token <uuid>``
+
+    Use specified VF token for devices bound to VFIO kernel driver.
+
 Multiprocessing-related options
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -48,12 +52,6 @@ Multiprocessing-related options
     Use a different shared data file prefix for a DPDK process. This option
     allows running multiple independent DPDK primary/secondary processes under
     different prefixes.
-
-*   ``--base-virtaddr <address>``
-
-    Attempt to use a different starting address for all memory maps of the
-    primary DPDK process. This can be helpful if secondary processes cannot
-    start due to conflicts in address map.
 
 Memory-related options
 ~~~~~~~~~~~~~~~~~~~~~~

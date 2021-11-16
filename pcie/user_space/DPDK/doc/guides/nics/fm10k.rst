@@ -19,7 +19,7 @@ resource tag) information, rather than the mac and vlan table. Currently this
 feature works only on PF.
 
 To enable this feature, the user should pass a devargs parameter to the eal
-like "-w 84:00.0,enable_ftag=1", and the application should make sure an
+like "-a 84:00.0,enable_ftag=1", and the application should make sure an
 appropriate FTAG is inserted for every frame on TX side.
 
 Vector PMD for FM10K
@@ -34,10 +34,6 @@ on the number of instructions when bulk processing packets.
 There is no change to the PMD API. The RX/TX handlers are the only two entries for
 vPMD packet I/O. They are transparently registered at runtime RX/TX execution
 if all required conditions are met.
-
-1.  To date, only an SSE version of FM10K vPMD is available.
-    To ensure that vPMD is in the binary code, set
-    ``CONFIG_RTE_LIBRTE_FM10K_INC_VECTOR=y`` in the configure file.
 
 Some constraints apply as pre-conditions for specific optimizations on bulk
 packet transfers. The following sections explain RX and TX constraints in the
@@ -119,7 +115,7 @@ Switch manager
 
 The Intel FM10000 family of NICs integrate a hardware switch and multiple host
 interfaces. The FM10000 PMD driver only manages host interfaces. For the
-switch component another switch driver has to be loaded prior to to the
+switch component another switch driver has to be loaded prior to the
 FM10000 PMD driver. The switch driver can be acquired from Intel support.
 Only Testpoint is validated with DPDK, the latest version that has been
 validated with DPDK is 4.1.6.
@@ -135,8 +131,8 @@ the Rx/Tx queues. When switch comes up, a LSC event indicating ``LINK_UP`` is
 sent to the app, which can then restart the FM10000 port to resume network
 processing.
 
-CRC striping
-~~~~~~~~~~~~
+CRC stripping
+~~~~~~~~~~~~~
 
 The FM10000 family of NICs strip the CRC for every packets coming into the
 host interface. So, keeping CRC is not supported.

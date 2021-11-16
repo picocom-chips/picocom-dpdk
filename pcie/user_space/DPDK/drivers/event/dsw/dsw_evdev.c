@@ -5,9 +5,10 @@
 #include <stdbool.h>
 
 #include <rte_cycles.h>
-#include <rte_eventdev_pmd.h>
-#include <rte_eventdev_pmd_vdev.h>
+#include <eventdev_pmd.h>
+#include <eventdev_pmd_vdev.h>
 #include <rte_random.h>
+#include <rte_ring_elem.h>
 
 #include "dsw_evdev.h"
 
@@ -46,9 +47,11 @@ dsw_port_setup(struct rte_eventdev *dev, uint8_t port_id,
 	snprintf(ring_name, sizeof(ring_name), "dswctl%d_p%u",
 		 dev->data->dev_id, port_id);
 
-	ctl_in_ring = rte_ring_create(ring_name, DSW_CTL_IN_RING_SIZE,
-				      dev->data->socket_id,
-				      RING_F_SC_DEQ|RING_F_EXACT_SZ);
+	ctl_in_ring = rte_ring_create_elem(ring_name,
+					   sizeof(struct dsw_ctl_msg),
+					   DSW_CTL_IN_RING_SIZE,
+					   dev->data->socket_id,
+					   RING_F_SC_DEQ|RING_F_EXACT_SZ);
 
 	if (ctl_in_ring == NULL) {
 		rte_event_ring_free(in_ring);
@@ -57,8 +60,6 @@ dsw_port_setup(struct rte_eventdev *dev, uint8_t port_id,
 
 	port->in_ring = in_ring;
 	port->ctl_in_ring = ctl_in_ring;
-
-	rte_atomic16_init(&port->load);
 
 	port->load_update_interval =
 		(DSW_LOAD_UPDATE_INTERVAL * rte_get_timer_hz()) / US_PER_S;
@@ -102,9 +103,6 @@ dsw_queue_setup(struct rte_eventdev *dev, uint8_t queue_id,
 	if (RTE_EVENT_QUEUE_CFG_ALL_TYPES & conf->event_queue_cfg)
 		return -ENOTSUP;
 
-	if (conf->schedule_type == RTE_SCHED_TYPE_ORDERED)
-		return -ENOTSUP;
-
 	/* SINGLE_LINK is better off treated as TYPE_ATOMIC, since it
 	 * avoid the "fake" TYPE_PARALLEL flow_id assignment. Since
 	 * the queue will only have a single serving port, no
@@ -113,8 +111,12 @@ dsw_queue_setup(struct rte_eventdev *dev, uint8_t queue_id,
 	 */
 	if (RTE_EVENT_QUEUE_CFG_SINGLE_LINK & conf->event_queue_cfg)
 		queue->schedule_type = RTE_SCHED_TYPE_ATOMIC;
-	else /* atomic or parallel */
+	else {
+		if (conf->schedule_type == RTE_SCHED_TYPE_ORDERED)
+			return -ENOTSUP;
+		/* atomic or parallel */
 		queue->schedule_type = conf->schedule_type;
+	}
 
 	queue->num_serving_ports = 0;
 
@@ -217,7 +219,10 @@ dsw_info_get(struct rte_eventdev *dev __rte_unused,
 		.max_event_port_enqueue_depth = DSW_MAX_PORT_ENQUEUE_DEPTH,
 		.max_num_events = DSW_MAX_EVENTS,
 		.event_dev_cap = RTE_EVENT_DEV_CAP_BURST_MODE|
-		RTE_EVENT_DEV_CAP_DISTRIBUTED_SCHED
+		RTE_EVENT_DEV_CAP_DISTRIBUTED_SCHED|
+		RTE_EVENT_DEV_CAP_NONSEQ_MODE|
+		RTE_EVENT_DEV_CAP_MULTIPLE_QUEUE_PORT|
+		RTE_EVENT_DEV_CAP_CARRY_FLOW_ID
 	};
 }
 
@@ -267,7 +272,7 @@ dsw_start(struct rte_eventdev *dev)
 	uint16_t i;
 	uint64_t now;
 
-	rte_atomic32_init(&dsw->credits_on_loan);
+	dsw->credits_on_loan = 0;
 
 	initial_flow_to_port_assignment(dsw);
 
@@ -365,6 +370,34 @@ dsw_close(struct rte_eventdev *dev)
 	return 0;
 }
 
+static int
+dsw_eth_rx_adapter_caps_get(const struct rte_eventdev *dev __rte_unused,
+			    const struct rte_eth_dev *eth_dev __rte_unused,
+			    uint32_t *caps)
+{
+	*caps = RTE_EVENT_ETH_RX_ADAPTER_SW_CAP;
+	return 0;
+}
+
+static int
+dsw_timer_adapter_caps_get(const struct rte_eventdev *dev __rte_unused,
+			   uint64_t flags  __rte_unused, uint32_t *caps,
+			   const struct rte_event_timer_adapter_ops **ops)
+{
+	*caps = 0;
+	*ops = NULL;
+	return 0;
+}
+
+static int
+dsw_crypto_adapter_caps_get(const struct rte_eventdev *dev  __rte_unused,
+			    const struct rte_cryptodev *cdev  __rte_unused,
+			    uint32_t *caps)
+{
+	*caps = RTE_EVENT_CRYPTO_ADAPTER_SW_CAP;
+	return 0;
+}
+
 static struct rte_eventdev_ops dsw_evdev_ops = {
 	.port_setup = dsw_port_setup,
 	.port_def_conf = dsw_port_def_conf,
@@ -379,6 +412,9 @@ static struct rte_eventdev_ops dsw_evdev_ops = {
 	.dev_start = dsw_start,
 	.dev_stop = dsw_stop,
 	.dev_close = dsw_close,
+	.eth_rx_adapter_caps_get = dsw_eth_rx_adapter_caps_get,
+	.timer_adapter_caps_get = dsw_timer_adapter_caps_get,
+	.crypto_adapter_caps_get = dsw_crypto_adapter_caps_get,
 	.xstats_get = dsw_xstats_get,
 	.xstats_get_names = dsw_xstats_get_names,
 	.xstats_get_by_name = dsw_xstats_get_by_name

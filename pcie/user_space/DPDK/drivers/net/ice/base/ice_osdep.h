@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2018 Intel Corporation
+ * Copyright(c) 2018-2021 Intel Corporation
  */
 
 #ifndef _ICE_OSDEP_H_
@@ -21,10 +21,14 @@
 #include <rte_cycles.h>
 #include <rte_spinlock.h>
 #include <rte_log.h>
-#include <rte_random.h>
 #include <rte_io.h>
 
+#include "ice_alloc.h"
+
 #include "../ice_logs.h"
+
+#ifndef __INTEL_NET_BASE_OSDEP__
+#define __INTEL_NET_BASE_OSDEP__
 
 #define INLINE inline
 #define STATIC static
@@ -37,17 +41,6 @@ typedef uint32_t        u32;
 typedef int32_t         s32;
 typedef uint64_t        u64;
 typedef uint64_t        s64;
-
-#define __iomem
-#define hw_dbg(hw, S, A...) do {} while (0)
-#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
-#define lower_32_bits(n) ((u32)(n))
-#define low_16_bits(x)   ((x) & 0xFFFF)
-#define high_16_bits(x)  (((x) & 0xFFFF0000) >> 16)
-
-#ifndef ETH_ADDR_LEN
-#define ETH_ADDR_LEN                  6
-#endif
 
 #ifndef __le16
 #define __le16          uint16_t
@@ -68,34 +61,90 @@ typedef uint64_t        s64;
 #define __be64          uint64_t
 #endif
 
+/* Avoid macro redefinition warning on Windows */
+#ifdef RTE_EXEC_ENV_WINDOWS
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#endif
+#define min(a, b) RTE_MIN(a, b)
+#define max(a, b) RTE_MAX(a, b)
+
+#define FIELD_SIZEOF(t, f) RTE_SIZEOF_FIELD(t, f)
+#define ARRAY_SIZE(arr) RTE_DIM(arr)
+
+#define CPU_TO_LE16(o) rte_cpu_to_le_16(o)
+#define CPU_TO_LE32(s) rte_cpu_to_le_32(s)
+#define CPU_TO_LE64(h) rte_cpu_to_le_64(h)
+#define LE16_TO_CPU(a) rte_le_to_cpu_16(a)
+#define LE32_TO_CPU(c) rte_le_to_cpu_32(c)
+#define LE64_TO_CPU(k) rte_le_to_cpu_64(k)
+
+#define CPU_TO_BE16(o) rte_cpu_to_be_16(o)
+#define CPU_TO_BE32(o) rte_cpu_to_be_32(o)
+#define CPU_TO_BE64(o) rte_cpu_to_be_64(o)
+#define BE16_TO_CPU(o) rte_be_to_cpu_16(o)
+
+#define NTOHS(a) rte_be_to_cpu_16(a)
+#define NTOHL(a) rte_be_to_cpu_32(a)
+#define HTONS(a) rte_cpu_to_be_16(a)
+#define HTONL(a) rte_cpu_to_be_32(a)
+
+static __rte_always_inline uint32_t
+readl(volatile void *addr)
+{
+	return rte_le_to_cpu_32(rte_read32(addr));
+}
+
+static __rte_always_inline void
+writel(uint32_t value, volatile void *addr)
+{
+	rte_write32(rte_cpu_to_le_32(value), addr);
+}
+
+static __rte_always_inline void
+writel_relaxed(uint32_t value, volatile void *addr)
+{
+	rte_write32_relaxed(rte_cpu_to_le_32(value), addr);
+}
+
+static __rte_always_inline uint64_t
+readq(volatile void *addr)
+{
+	return rte_le_to_cpu_64(rte_read64(addr));
+}
+
+static __rte_always_inline void
+writeq(uint64_t value, volatile void *addr)
+{
+	rte_write64(rte_cpu_to_le_64(value), addr);
+}
+
+#define wr32(a, reg, value) writel((value), (a)->hw_addr + (reg))
+#define rd32(a, reg)        readl((a)->hw_addr + (reg))
+#define wr64(a, reg, value) writeq((value), (a)->hw_addr + (reg))
+#define rd64(a, reg)        readq((a)->hw_addr + (reg))
+
+#endif /* __INTEL_NET_BASE_OSDEP__ */
+
 #ifndef __always_unused
-#define __always_unused  __attribute__((unused))
+#define __always_unused  __rte_unused
 #endif
 #ifndef __maybe_unused
-#define __maybe_unused  __attribute__((unused))
+#define __maybe_unused  __rte_unused
 #endif
 #ifndef __packed
-#define __packed  __attribute__((packed))
+#define __packed  __rte_packed
 #endif
 
 #ifndef BIT_ULL
 #define BIT_ULL(a) (1ULL << (a))
 #endif
 
-#define FALSE           0
-#define TRUE            1
-#define false           0
-#define true            1
-
-#define min(a, b) RTE_MIN(a, b)
-#define max(a, b) RTE_MAX(a, b)
-
-#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
-#define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #define MAKEMASK(m, s) ((m) << (s))
-
-#define DEBUGOUT(S, A...) PMD_DRV_LOG_RAW(DEBUG, S, ##A)
-#define DEBUGFUNC(F) PMD_DRV_LOG_RAW(DEBUG, F)
 
 #define ice_debug(h, m, s, ...)					\
 do {								\
@@ -123,119 +172,19 @@ do {									\
 #define SNPRINTF ice_snprintf
 #endif
 
-#define ICE_PCI_REG(reg)     rte_read32(reg)
-#define ICE_PCI_REG_ADDR(a, reg) \
-	((volatile uint32_t *)((char *)(a)->hw_addr + (reg)))
-static inline uint32_t ice_read_addr(volatile void *addr)
-{
-	return rte_le_to_cpu_32(ICE_PCI_REG(addr));
-}
+#define ICE_PCI_REG_WRITE(reg, value) writel(value, reg)
+#define ICE_PCI_REG_WC_WRITE(reg, value) rte_write32_wc(value, reg)
 
-#define ICE_PCI_REG_WRITE(reg, value) \
-	rte_write32((rte_cpu_to_le_32(value)), reg)
+#define ICE_READ_REG(hw, reg)         rd32(hw, reg)
+#define ICE_WRITE_REG(hw, reg, value) wr32(hw, reg, value)
 
 #define ice_flush(a)   ICE_READ_REG((a), GLGEN_STAT)
 #define icevf_flush(a) ICE_READ_REG((a), VFGEN_RSTAT)
-#define ICE_READ_REG(hw, reg) ice_read_addr(ICE_PCI_REG_ADDR((hw), (reg)))
-#define ICE_WRITE_REG(hw, reg, value) \
-	ICE_PCI_REG_WRITE(ICE_PCI_REG_ADDR((hw), (reg)), (value))
 
-#define rd32(a, reg) ice_read_addr(ICE_PCI_REG_ADDR((a), (reg)))
-#define wr32(a, reg, value) \
-	ICE_PCI_REG_WRITE(ICE_PCI_REG_ADDR((a), (reg)), (value))
-#define flush(a) ice_read_addr(ICE_PCI_REG_ADDR((a), (GLGEN_STAT)))
+#define flush(a) ICE_READ_REG((a), GLGEN_STAT)
 #define div64_long(n, d) ((n) / (d))
 
 #define BITS_PER_BYTE       8
-typedef u32 ice_bitmap_t;
-#define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
-#define BITS_TO_CHUNKS(nr)   DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(ice_bitmap_t))
-#define ice_declare_bitmap(name, bits) \
-	ice_bitmap_t name[BITS_TO_CHUNKS(bits)]
-
-#define BITS_CHUNK_MASK(nr)	(((ice_bitmap_t)~0) >>			\
-		((BITS_PER_BYTE * sizeof(ice_bitmap_t)) -		\
-		(((nr) - 1) % (BITS_PER_BYTE * sizeof(ice_bitmap_t))	\
-		 + 1)))
-#define BITS_PER_CHUNK          (BITS_PER_BYTE * sizeof(ice_bitmap_t))
-#define BIT_CHUNK(nr)           ((nr) / BITS_PER_CHUNK)
-#define BIT_IN_CHUNK(nr)        BIT((nr) % BITS_PER_CHUNK)
-
-static inline bool ice_is_bit_set(const ice_bitmap_t *bitmap, u16 nr)
-{
-	return !!(bitmap[BIT_CHUNK(nr)] & BIT_IN_CHUNK(nr));
-}
-
-#define ice_and_bitmap(d, b1, b2, sz) \
-	ice_intersect_bitmaps((u8 *)d, (u8 *)b1, (const u8 *)b2, (u16)sz)
-static inline int
-ice_intersect_bitmaps(u8 *dst, const u8 *bmp1, const u8 *bmp2, u16 sz)
-{
-	u32 res = 0;
-	int cnt;
-	u16 i;
-
-	/* Utilize 32-bit operations */
-	cnt = (sz % BITS_PER_BYTE) ?
-		(sz / BITS_PER_BYTE) + 1 : sz / BITS_PER_BYTE;
-	for (i = 0; i < cnt / 4; i++) {
-		((u32 *)dst)[i] = ((const u32 *)bmp1)[i] &
-		((const u32 *)bmp2)[i];
-		res |= ((u32 *)dst)[i];
-	}
-
-	for (i *= 4; i < cnt; i++) {
-		if ((sz % 8 == 0) || (i + 1 < cnt)) {
-			dst[i] = bmp1[i] & bmp2[i];
-		} else {
-			/* Remaining bits that do not occupy the whole byte */
-			u8 mask = ~0u >> (8 - (sz % 8));
-
-			dst[i] = bmp1[i] & bmp2[i] & mask;
-		}
-
-		res |= dst[i];
-	}
-
-	return res != 0;
-}
-
-static inline int ice_find_first_bit(ice_bitmap_t *name, u16 size)
-{
-	u16 i;
-
-	for (i = 0; i < BITS_PER_BYTE * (size / BITS_PER_BYTE); i++)
-		if (ice_is_bit_set(name, i))
-			return i;
-	return size;
-}
-
-static inline int ice_find_next_bit(ice_bitmap_t *name, u16 size, u16 bits)
-{
-	u16 i;
-
-	for (i = bits; i < BITS_PER_BYTE * (size / BITS_PER_BYTE); i++)
-		if (ice_is_bit_set(name, i))
-			return i;
-	return bits;
-}
-
-#define for_each_set_bit(bit, addr, size)				\
-	for ((bit) = ice_find_first_bit((addr), (size));		\
-	(bit) < (size);							\
-	(bit) = ice_find_next_bit((addr), (size), (bit) + 1))
-
-static inline bool ice_is_any_bit_set(ice_bitmap_t *bitmap, u32 bits)
-{
-	u32 max_index = BITS_TO_CHUNKS(bits);
-	u32 i;
-
-	for (i = 0; i < max_index; i++) {
-		if (bitmap[i])
-			return true;
-	}
-	return false;
-}
 
 /* memory allocation tracking */
 struct ice_dma_mem {
@@ -243,114 +192,19 @@ struct ice_dma_mem {
 	u64 pa;
 	u32 size;
 	const void *zone;
-} __attribute__((packed));
+} __rte_packed;
 
 struct ice_virt_mem {
 	void *va;
 	u32 size;
-} __attribute__((packed));
+} __rte_packed;
 
 #define ice_malloc(h, s)    rte_zmalloc(NULL, s, 0)
-#define ice_calloc(h, c, s) rte_zmalloc(NULL, (c) * (s), 0)
+#define ice_calloc(h, c, s) rte_calloc(NULL, c, s, 0)
 #define ice_free(h, m)         rte_free(m)
 
 #define ice_memset(a, b, c, d) memset((a), (b), (c))
 #define ice_memcpy(a, b, c, d) rte_memcpy((a), (b), (c))
-#define ice_memdup(a, b, c, d) rte_memcpy(ice_malloc(a, c), b, c)
-
-#define CPU_TO_BE16(o) rte_cpu_to_be_16(o)
-#define CPU_TO_BE32(o) rte_cpu_to_be_32(o)
-#define CPU_TO_BE64(o) rte_cpu_to_be_64(o)
-#define CPU_TO_LE16(o) rte_cpu_to_le_16(o)
-#define CPU_TO_LE32(s) rte_cpu_to_le_32(s)
-#define CPU_TO_LE64(h) rte_cpu_to_le_64(h)
-#define LE16_TO_CPU(a) rte_le_to_cpu_16(a)
-#define LE32_TO_CPU(c) rte_le_to_cpu_32(c)
-#define LE64_TO_CPU(k) rte_le_to_cpu_64(k)
-
-#define NTOHS(a) rte_be_to_cpu_16(a)
-#define NTOHL(a) rte_be_to_cpu_32(a)
-#define HTONS(a) rte_cpu_to_be_16(a)
-#define HTONL(a) rte_cpu_to_be_32(a)
-
-static inline void
-ice_set_bit(unsigned int nr, volatile ice_bitmap_t *addr)
-{
-	__sync_fetch_and_or(addr, (1UL << nr));
-}
-
-static inline void
-ice_clear_bit(unsigned int nr, volatile ice_bitmap_t *addr)
-{
-	__sync_fetch_and_and(addr, (0UL << nr));
-}
-
-static inline void
-ice_zero_bitmap(ice_bitmap_t *bmp, u16 size)
-{
-	unsigned long mask;
-	u16 i;
-
-	for (i = 0; i < BITS_TO_CHUNKS(size) - 1; i++)
-		bmp[i] = 0;
-	mask = BITS_CHUNK_MASK(size);
-	bmp[i] &= ~mask;
-}
-
-static inline void
-ice_or_bitmap(ice_bitmap_t *dst, const ice_bitmap_t *bmp1,
-	      const ice_bitmap_t *bmp2, u16 size)
-{
-	unsigned long mask;
-	u16 i;
-
-	/* Handle all but last chunk*/
-	for (i = 0; i < BITS_TO_CHUNKS(size) - 1; i++)
-		dst[i] = bmp1[i] | bmp2[i];
-
-	/* We want to only OR bits within the size. Furthermore, we also do
-	 * not want to modify destination bits which are beyond the specified
-	 * size. Use a bitmask to ensure that we only modify the bits that are
-	 * within the specified size.
-	 */
-	mask = BITS_CHUNK_MASK(size);
-	dst[i] &= ~mask;
-	dst[i] |= (bmp1[i] | bmp2[i]) & mask;
-}
-
-static inline void ice_cp_bitmap(ice_bitmap_t *dst, ice_bitmap_t *src, u16 size)
-{
-	ice_bitmap_t mask;
-	u16 i;
-
-	/* Handle all but last chunk*/
-	for (i = 0; i < BITS_TO_CHUNKS(size) - 1; i++)
-		dst[i] = src[i];
-
-	/* We want to only copy bits within the size.*/
-	mask = BITS_CHUNK_MASK(size);
-	dst[i] &= ~mask;
-	dst[i] |= src[i] & mask;
-}
-
-static inline bool
-ice_cmp_bitmap(ice_bitmap_t *bmp1, ice_bitmap_t *bmp2, u16 size)
-{
-	ice_bitmap_t mask;
-	u16 i;
-
-	/* Handle all but last chunk*/
-	for (i = 0; i < BITS_TO_CHUNKS(size) - 1; i++)
-		if (bmp1[i] != bmp2[i])
-			return false;
-
-	/* We want to only compare bits within the size.*/
-	mask = BITS_CHUNK_MASK(size);
-	if ((bmp1[i] & mask) != (bmp2[i] & mask))
-		return false;
-
-	return true;
-}
 
 /* SW spinlock */
 struct ice_lock {
@@ -376,23 +230,38 @@ ice_release_lock(struct ice_lock *sp)
 }
 
 static inline void
-ice_destroy_lock(__attribute__((unused)) struct ice_lock *sp)
+ice_destroy_lock(__rte_unused struct ice_lock *sp)
 {
 }
 
 struct ice_hw;
 
+static __rte_always_inline void *
+ice_memdup(__rte_unused struct ice_hw *hw, const void *src, size_t size,
+	   __rte_unused enum ice_memcpy_type dir)
+{
+	void *p;
+
+	p = ice_malloc(hw, size);
+	if (p)
+		rte_memcpy(p, src, size);
+
+	return p;
+}
+
 static inline void *
-ice_alloc_dma_mem(__attribute__((unused)) struct ice_hw *hw,
+ice_alloc_dma_mem(__rte_unused struct ice_hw *hw,
 		  struct ice_dma_mem *mem, u64 size)
 {
+	static uint64_t ice_dma_memzone_id;
 	const struct rte_memzone *mz = NULL;
 	char z_name[RTE_MEMZONE_NAMESIZE];
 
 	if (!mem)
 		return NULL;
 
-	snprintf(z_name, sizeof(z_name), "ice_dma_%"PRIu64, rte_rand());
+	snprintf(z_name, sizeof(z_name), "ice_dma_%" PRIu64,
+		__atomic_fetch_add(&ice_dma_memzone_id, 1, __ATOMIC_RELAXED));
 	mz = rte_memzone_reserve_bounded(z_name, size, SOCKET_ID_ANY, 0,
 					 0, RTE_PGSIZE_2M);
 	if (!mz)
@@ -400,7 +269,7 @@ ice_alloc_dma_mem(__attribute__((unused)) struct ice_hw *hw,
 
 	mem->size = size;
 	mem->va = mz->addr;
-	mem->pa = mz->phys_addr;
+	mem->pa = mz->iova;
 	mem->zone = (const void *)mz;
 	PMD_DRV_LOG(DEBUG, "memzone %s allocated with physical address: "
 		    "%"PRIu64, mz->name, mem->pa);
@@ -409,7 +278,7 @@ ice_alloc_dma_mem(__attribute__((unused)) struct ice_hw *hw,
 }
 
 static inline void
-ice_free_dma_mem(__attribute__((unused)) struct ice_hw *hw,
+ice_free_dma_mem(__rte_unused struct ice_hw *hw,
 		 struct ice_dma_mem *mem)
 {
 	PMD_DRV_LOG(DEBUG, "memzone %s to be freed with physical address: "
@@ -435,9 +304,23 @@ ice_hweight8(u32 num)
 	return bits;
 }
 
+static inline u8
+ice_hweight32(u32 num)
+{
+	u8 bits = 0;
+	u32 i;
+
+	for (i = 0; i < 32; i++) {
+		bits += (u8)(num & 0x1);
+		num >>= 1;
+	}
+
+	return bits;
+}
+
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
 #define DELAY(x) rte_delay_us(x)
-#define ice_usec_delay(x) rte_delay_us(x)
+#define ice_usec_delay(x, y) rte_delay_us(x)
 #define ice_msec_delay(x, y) rte_delay_us(1000 * (x))
 #define udelay(x) DELAY(x)
 #define msleep(x) DELAY(1000 * (x))
@@ -462,6 +345,22 @@ LIST_HEAD(ice_list_head, ice_list_entry);
 #define LIST_ADD(entry, list_head)    LIST_INSERT_HEAD(list_head, entry, next)
 #define LIST_ADD_AFTER(entry, list_entry) \
 	LIST_INSERT_AFTER(list_entry, entry, next)
+
+static inline void list_add_tail(struct ice_list_entry *entry,
+				 struct ice_list_head *head)
+{
+	struct ice_list_entry *tail = head->lh_first;
+
+	if (tail == NULL) {
+		LIST_INSERT_HEAD(head, entry, next);
+		return;
+	}
+	while (tail->next.le_next != NULL)
+		tail = tail->next.le_next;
+	LIST_INSERT_AFTER(tail, entry, next);
+}
+
+#define LIST_ADD_TAIL(entry, head) list_add_tail(entry, head)
 #define LIST_FOR_EACH_ENTRY(pos, head, type, member)			       \
 	for ((pos) = (head)->lh_first ?					       \
 		     container_of((head)->lh_first, struct type, member) :     \
@@ -471,6 +370,21 @@ LIST_HEAD(ice_list_head, ice_list_entry);
 		     container_of((pos)->member.next.le_next, struct type,     \
 				  member) :				       \
 		     0)
+
+#define LIST_FOR_EACH_ENTRY_SAFE(pos, tmp, head, type, member)		       \
+	for ((pos) = (head)->lh_first ?					       \
+		     container_of((head)->lh_first, struct type, member) :     \
+		     0,                                                        \
+		     (tmp) = (pos) == 0 ? 0 : ((pos)->member.next.le_next ?    \
+		     container_of((pos)->member.next.le_next, struct type,     \
+				  member) :				       \
+		     0);						       \
+	     (pos);							       \
+	     (pos) = (tmp),						       \
+	     (tmp) = (pos) == 0 ? 0 : ((tmp)->member.next.le_next ?	       \
+		     container_of((pos)->member.next.le_next, struct type,     \
+				  member) :				       \
+		     0))
 
 #define LIST_REPLACE_INIT(list_head, head) do {				\
 	(head)->lh_first = (list_head)->lh_first;			\
@@ -484,8 +398,6 @@ LIST_HEAD(ice_list_head, ice_list_entry);
 #define HLIST_EMPTY(list_head)                 LIST_EMPTY(list_head)
 #define HLIST_DEL(entry)                       LIST_DEL(entry)
 #define HLIST_FOR_EACH_ENTRY(pos, head, type, member) \
-	LIST_FOR_EACH_ENTRY(pos, head, type, member)
-#define LIST_FOR_EACH_ENTRY_SAFE(pos, tmp, head, type, member) \
 	LIST_FOR_EACH_ENTRY(pos, head, type, member)
 
 #ifndef ICE_DBG_TRACE

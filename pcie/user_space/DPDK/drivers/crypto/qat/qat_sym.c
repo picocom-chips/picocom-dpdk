@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2015-2018 Intel Corporation
+ * Copyright(c) 2015-2019 Intel Corporation
  */
 
 #include <openssl/evp.h>
@@ -11,6 +11,7 @@
 #include <rte_byteorder.h>
 
 #include "qat_sym.h"
+
 
 /** Decrypt a single partial block
  *  Depends on openssl libcrypto
@@ -61,7 +62,8 @@ qat_bpicipher_preprocess(struct qat_sym_session *ctx,
 		last_block = (uint8_t *) rte_pktmbuf_mtod_offset(sym_op->m_src,
 				uint8_t *, last_block_offset);
 
-		if (unlikely(sym_op->m_dst != NULL))
+		if (unlikely((sym_op->m_dst != NULL)
+				&& (sym_op->m_dst != sym_op->m_src)))
 			/* out-of-place operation (OOP) */
 			dst = (uint8_t *) rte_pktmbuf_mtod_offset(sym_op->m_dst,
 						uint8_t *, last_block_offset);
@@ -142,13 +144,80 @@ set_cipher_iv_ccm(uint16_t iv_length, uint16_t iv_offset,
 			iv_length);
 }
 
+/** Handle Single-Pass AES-GMAC on QAT GEN3 */
+static inline void
+handle_spc_gmac(struct qat_sym_session *ctx, struct rte_crypto_op *op,
+		struct qat_sym_op_cookie *cookie,
+		struct icp_qat_fw_la_bulk_req *qat_req)
+{
+	static const uint32_t ver_key_offset =
+			sizeof(struct icp_qat_hw_auth_setup) +
+			ICP_QAT_HW_GALOIS_128_STATE1_SZ +
+			ICP_QAT_HW_GALOIS_H_SZ + ICP_QAT_HW_GALOIS_LEN_A_SZ +
+			ICP_QAT_HW_GALOIS_E_CTR0_SZ +
+			sizeof(struct icp_qat_hw_cipher_config);
+	struct icp_qat_fw_cipher_cd_ctrl_hdr *cipher_cd_ctrl =
+			(void *) &qat_req->cd_ctrl;
+	struct icp_qat_fw_la_cipher_req_params *cipher_param =
+			(void *) &qat_req->serv_specif_rqpars;
+	uint32_t data_length = op->sym->auth.data.length;
+
+	/* Fill separate Content Descriptor for this op */
+	rte_memcpy(cookie->opt.spc_gmac.cd_cipher.key,
+			ctx->auth_op == ICP_QAT_HW_AUTH_GENERATE ?
+				ctx->cd.cipher.key :
+				RTE_PTR_ADD(&ctx->cd, ver_key_offset),
+			ctx->auth_key_length);
+	cookie->opt.spc_gmac.cd_cipher.cipher_config.val =
+			ICP_QAT_HW_CIPHER_CONFIG_BUILD(
+				ICP_QAT_HW_CIPHER_AEAD_MODE,
+				ctx->qat_cipher_alg,
+				ICP_QAT_HW_CIPHER_NO_CONVERT,
+				(ctx->auth_op == ICP_QAT_HW_AUTH_GENERATE ?
+					ICP_QAT_HW_CIPHER_ENCRYPT :
+					ICP_QAT_HW_CIPHER_DECRYPT));
+	QAT_FIELD_SET(cookie->opt.spc_gmac.cd_cipher.cipher_config.val,
+			ctx->digest_length,
+			QAT_CIPHER_AEAD_HASH_CMP_LEN_BITPOS,
+			QAT_CIPHER_AEAD_HASH_CMP_LEN_MASK);
+	cookie->opt.spc_gmac.cd_cipher.cipher_config.reserved =
+			ICP_QAT_HW_CIPHER_CONFIG_BUILD_UPPER(data_length);
+
+	/* Update the request */
+	qat_req->cd_pars.u.s.content_desc_addr =
+			cookie->opt.spc_gmac.cd_phys_addr;
+	qat_req->cd_pars.u.s.content_desc_params_sz = RTE_ALIGN_CEIL(
+			sizeof(struct icp_qat_hw_cipher_config) +
+			ctx->auth_key_length, 8) >> 3;
+	qat_req->comn_mid.src_length = data_length;
+	qat_req->comn_mid.dst_length = 0;
+
+	cipher_param->spc_aad_addr = 0;
+	cipher_param->spc_auth_res_addr = op->sym->auth.digest.phys_addr;
+	cipher_param->spc_aad_sz = data_length;
+	cipher_param->reserved = 0;
+	cipher_param->spc_auth_res_sz = ctx->digest_length;
+
+	qat_req->comn_hdr.service_cmd_id = ICP_QAT_FW_LA_CMD_CIPHER;
+	cipher_cd_ctrl->cipher_cfg_offset = 0;
+	ICP_QAT_FW_COMN_CURR_ID_SET(cipher_cd_ctrl, ICP_QAT_FW_SLICE_CIPHER);
+	ICP_QAT_FW_COMN_NEXT_ID_SET(cipher_cd_ctrl, ICP_QAT_FW_SLICE_DRAM_WR);
+	ICP_QAT_FW_LA_SINGLE_PASS_PROTO_FLAG_SET(
+			qat_req->comn_hdr.serv_specif_flags,
+			ICP_QAT_FW_LA_SINGLE_PASS_PROTO);
+	ICP_QAT_FW_LA_PROTO_SET(
+			qat_req->comn_hdr.serv_specif_flags,
+			ICP_QAT_FW_LA_NO_PROTO);
+}
+
 int
 qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		void *op_cookie, enum qat_device_gen qat_dev_gen)
 {
 	int ret = 0;
-	struct qat_sym_session *ctx;
+	struct qat_sym_session *ctx = NULL;
 	struct icp_qat_fw_la_cipher_req_params *cipher_param;
+	struct icp_qat_fw_la_cipher_20_req_params *cipher_param20;
 	struct icp_qat_fw_la_auth_req_params *auth_param;
 	register struct icp_qat_fw_la_bulk_req *qat_req;
 	uint8_t do_auth = 0, do_cipher = 0, do_aead = 0;
@@ -156,8 +225,11 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 	uint32_t auth_len = 0, auth_ofs = 0;
 	uint32_t min_ofs = 0;
 	uint64_t src_buf_start = 0, dst_buf_start = 0;
+	uint64_t auth_data_end = 0;
 	uint8_t do_sgl = 0;
-	uint8_t wireless_auth = 0, in_place = 1;
+	uint8_t in_place = 1;
+	int alignment_adjustment = 0;
+	int oop_shift = 0;
 	struct rte_crypto_op *op = (struct rte_crypto_op *)in_op;
 	struct qat_sym_op_cookie *cookie =
 				(struct qat_sym_op_cookie *)op_cookie;
@@ -173,10 +245,32 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		QAT_DP_LOG(ERR, "QAT PMD only supports session oriented"
 				" requests, op (%p) is sessionless.", op);
 		return -EINVAL;
+	} else if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
+		ctx = (struct qat_sym_session *)get_sym_session_private_data(
+				op->sym->session, qat_sym_driver_id);
+#ifdef RTE_LIB_SECURITY
+	} else {
+		ctx = (struct qat_sym_session *)get_sec_session_private_data(
+				op->sym->sec_session);
+		if (likely(ctx)) {
+			if (unlikely(ctx->bpi_ctx == NULL)) {
+				QAT_DP_LOG(ERR, "QAT PMD only supports security"
+						" operation requests for"
+						" DOCSIS, op (%p) is not for"
+						" DOCSIS.", op);
+				return -EINVAL;
+			} else if (unlikely(((op->sym->m_dst != NULL) &&
+					(op->sym->m_dst != op->sym->m_src)) ||
+					op->sym->m_src->nb_segs > 1)) {
+				QAT_DP_LOG(ERR, "OOP and/or multi-segment"
+						" buffers not supported for"
+						" DOCSIS security.");
+				op->status = RTE_CRYPTO_OP_STATUS_INVALID_ARGS;
+				return -EINVAL;
+			}
+		}
+#endif
 	}
-
-	ctx = (struct qat_sym_session *)get_sym_session_private_data(
-			op->sym->session, cryptodev_qat_driver_id);
 
 	if (unlikely(ctx == NULL)) {
 		QAT_DP_LOG(ERR, "Session was not created for this device");
@@ -193,10 +287,13 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 	rte_mov128((uint8_t *)qat_req, (const uint8_t *)&(ctx->fw_req));
 	qat_req->comn_mid.opaque_data = (uint64_t)(uintptr_t)op;
 	cipher_param = (void *)&qat_req->serv_specif_rqpars;
-	auth_param = (void *)((uint8_t *)cipher_param + sizeof(*cipher_param));
+	cipher_param20 = (void *)&qat_req->serv_specif_rqpars;
+	auth_param = (void *)((uint8_t *)cipher_param +
+			ICP_QAT_FW_HASH_REQUEST_PARAMETERS_OFFSET);
 
-	if (ctx->qat_cmd == ICP_QAT_FW_LA_CMD_HASH_CIPHER ||
-			ctx->qat_cmd == ICP_QAT_FW_LA_CMD_CIPHER_HASH) {
+	if ((ctx->qat_cmd == ICP_QAT_FW_LA_CMD_HASH_CIPHER ||
+			ctx->qat_cmd == ICP_QAT_FW_LA_CMD_CIPHER_HASH) &&
+			!ctx->is_gmac) {
 		/* AES-GCM or AES-CCM */
 		if (ctx->qat_hash_alg == ICP_QAT_HW_AUTH_ALGO_GALOIS_128 ||
 			ctx->qat_hash_alg == ICP_QAT_HW_AUTH_ALGO_GALOIS_64 ||
@@ -209,7 +306,7 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			do_auth = 1;
 			do_cipher = 1;
 		}
-	} else if (ctx->qat_cmd == ICP_QAT_FW_LA_CMD_AUTH) {
+	} else if (ctx->qat_cmd == ICP_QAT_FW_LA_CMD_AUTH || ctx->is_gmac) {
 		do_auth = 1;
 		do_cipher = 0;
 	} else if (ctx->qat_cmd == ICP_QAT_FW_LA_CMD_CIPHER) {
@@ -237,7 +334,7 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			cipher_ofs = op->sym->cipher.data.offset >> 3;
 
 		} else if (ctx->bpi_ctx) {
-			/* DOCSIS - only send complete blocks to device
+			/* DOCSIS - only send complete blocks to device.
 			 * Process any partial block using CFB mode.
 			 * Even if 0 complete blocks, still send this to device
 			 * to get into rx queue for post-process and dequeuing
@@ -270,7 +367,6 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			}
 			auth_ofs = op->sym->auth.data.offset >> 3;
 			auth_len = op->sym->auth.data.length >> 3;
-			wireless_auth = 1;
 
 			auth_param->u1.aad_adr =
 					rte_crypto_op_ctophys_offset(op,
@@ -290,15 +386,6 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			auth_param->u1.aad_adr = 0;
 			auth_param->u2.aad_sz = 0;
 
-			/*
-			 * If len(iv)==12B fw computes J0
-			 */
-			if (ctx->auth_iv.length == 12) {
-				ICP_QAT_FW_LA_GCM_IV_LEN_FLAG_SET(
-					qat_req->comn_hdr.serv_specif_flags,
-					ICP_QAT_FW_LA_GCM_IV_LEN_12_OCTETS);
-
-			}
 		} else {
 			auth_ofs = op->sym->auth.data.offset;
 			auth_len = op->sym->auth.data.length;
@@ -306,7 +393,8 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		}
 		min_ofs = auth_ofs;
 
-		if (likely(ctx->qat_hash_alg != ICP_QAT_HW_AUTH_ALGO_NULL))
+		if (ctx->qat_hash_alg != ICP_QAT_HW_AUTH_ALGO_NULL ||
+				ctx->auth_op == ICP_QAT_HW_AUTH_VERIFY)
 			auth_param->auth_res_addr =
 					op->sym->auth.digest.phys_addr;
 
@@ -322,14 +410,7 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 				ICP_QAT_HW_AUTH_ALGO_GALOIS_128 ||
 				ctx->qat_hash_alg ==
 					ICP_QAT_HW_AUTH_ALGO_GALOIS_64) {
-			/*
-			 * If len(iv)==12B fw computes J0
-			 */
-			if (ctx->cipher_iv.length == 12) {
-				ICP_QAT_FW_LA_GCM_IV_LEN_FLAG_SET(
-					qat_req->comn_hdr.serv_specif_flags,
-					ICP_QAT_FW_LA_GCM_IV_LEN_12_OCTETS);
-			}
+
 			set_cipher_iv(ctx->cipher_iv.length,
 					ctx->cipher_iv.offset,
 					cipher_param, op, qat_req);
@@ -425,7 +506,8 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		min_ofs = op->sym->aead.data.offset;
 	}
 
-	if (op->sym->m_src->next || (op->sym->m_dst && op->sym->m_dst->next))
+	if (op->sym->m_src->nb_segs > 1 ||
+			(op->sym->m_dst && op->sym->m_dst->nb_segs > 1))
 		do_sgl = 1;
 
 	/* adjust for chain case */
@@ -435,7 +517,8 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 	if (unlikely(min_ofs >= rte_pktmbuf_data_len(op->sym->m_src) && do_sgl))
 		min_ofs = 0;
 
-	if (unlikely(op->sym->m_dst != NULL)) {
+	if (unlikely((op->sym->m_dst != NULL) &&
+			(op->sym->m_dst != op->sym->m_src))) {
 		/* Out-of-place operation (OOP)
 		 * Don't align DMA start. DMA the minimum data-set
 		 * so as not to overwrite data in dest buffer
@@ -445,6 +528,7 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			rte_pktmbuf_iova_offset(op->sym->m_src, min_ofs);
 		dst_buf_start =
 			rte_pktmbuf_iova_offset(op->sym->m_dst, min_ofs);
+		oop_shift = min_ofs;
 
 	} else {
 		/* In-place operation
@@ -465,6 +549,10 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 								min_ofs);
 		}
 		dst_buf_start = src_buf_start;
+
+		/* remember any adjustment for later, note, can be +/- */
+		alignment_adjustment = src_buf_start -
+			rte_pktmbuf_iova_offset(op->sym->m_src, min_ofs);
 	}
 
 	if (do_cipher || do_aead) {
@@ -477,13 +565,17 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		cipher_param->cipher_length = 0;
 	}
 
-	if (do_auth || do_aead) {
-		auth_param->auth_off = (uint32_t)rte_pktmbuf_iova_offset(
+	if (!ctx->is_single_pass) {
+		/* Do not let to overwrite spc_aad len */
+		if (do_auth || do_aead) {
+			auth_param->auth_off =
+				(uint32_t)rte_pktmbuf_iova_offset(
 				op->sym->m_src, auth_ofs) - src_buf_start;
-		auth_param->auth_len = auth_len;
-	} else {
-		auth_param->auth_off = 0;
-		auth_param->auth_len = 0;
+			auth_param->auth_len = auth_len;
+		} else {
+			auth_param->auth_off = 0;
+			auth_param->auth_len = 0;
+		}
 	}
 
 	qat_req->comn_mid.dst_length =
@@ -492,6 +584,57 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 		> (auth_param->auth_off + auth_param->auth_len) ?
 		(cipher_param->cipher_offset + cipher_param->cipher_length)
 		: (auth_param->auth_off + auth_param->auth_len);
+
+	if (do_auth && do_cipher) {
+		/* Handle digest-encrypted cases, i.e.
+		 * auth-gen-then-cipher-encrypt and
+		 * cipher-decrypt-then-auth-verify
+		 */
+		 /* First find the end of the data */
+		if (do_sgl) {
+			uint32_t remaining_off = auth_param->auth_off +
+				auth_param->auth_len + alignment_adjustment + oop_shift;
+			struct rte_mbuf *sgl_buf =
+				(in_place ?
+					op->sym->m_src : op->sym->m_dst);
+
+			while (remaining_off >= rte_pktmbuf_data_len(sgl_buf)
+					&& sgl_buf->next != NULL) {
+				remaining_off -= rte_pktmbuf_data_len(sgl_buf);
+				sgl_buf = sgl_buf->next;
+			}
+
+			auth_data_end = (uint64_t)rte_pktmbuf_iova_offset(
+				sgl_buf, remaining_off);
+		} else {
+			auth_data_end = (in_place ?
+				src_buf_start : dst_buf_start) +
+				auth_param->auth_off + auth_param->auth_len;
+		}
+		/* Then check if digest-encrypted conditions are met */
+		if ((auth_param->auth_off + auth_param->auth_len <
+					cipher_param->cipher_offset +
+					cipher_param->cipher_length) &&
+				(op->sym->auth.digest.phys_addr ==
+					auth_data_end)) {
+			/* Handle partial digest encryption */
+			if (cipher_param->cipher_offset +
+					cipher_param->cipher_length <
+					auth_param->auth_off +
+					auth_param->auth_len +
+					ctx->digest_length)
+				qat_req->comn_mid.dst_length =
+					qat_req->comn_mid.src_length =
+					auth_param->auth_off +
+					auth_param->auth_len +
+					ctx->digest_length;
+			struct icp_qat_fw_comn_req_hdr *header =
+				&qat_req->comn_hdr;
+			ICP_QAT_FW_LA_DIGEST_IN_BUFFER_SET(
+				header->serv_specif_flags,
+				ICP_QAT_FW_LA_DIGEST_IN_BUFFER);
+		}
+	}
 
 	if (do_sgl) {
 
@@ -508,7 +651,7 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			return ret;
 		}
 
-		if (likely(op->sym->m_dst == NULL))
+		if (in_place)
 			qat_req->comn_mid.dest_data_addr =
 				qat_req->comn_mid.src_data_addr =
 				cookie->qat_sgl_src_phys_addr;
@@ -530,21 +673,30 @@ qat_sym_build_request(void *in_op, uint8_t *out_msg,
 			qat_req->comn_mid.dest_data_addr =
 					cookie->qat_sgl_dst_phys_addr;
 		}
+		qat_req->comn_mid.src_length = 0;
+		qat_req->comn_mid.dst_length = 0;
 	} else {
 		qat_req->comn_mid.src_data_addr = src_buf_start;
 		qat_req->comn_mid.dest_data_addr = dst_buf_start;
-		/* handle case of auth-gen-then-cipher with digest encrypted */
-		if (wireless_auth && in_place &&
-		    (op->sym->auth.digest.phys_addr ==
-				src_buf_start + auth_ofs + auth_len) &&
-		    (auth_ofs + auth_len + ctx->digest_length <=
-				cipher_ofs + cipher_len)) {
-			struct icp_qat_fw_comn_req_hdr *header =
-						&qat_req->comn_hdr;
-			ICP_QAT_FW_LA_DIGEST_IN_BUFFER_SET(
-				header->serv_specif_flags,
-				ICP_QAT_FW_LA_DIGEST_IN_BUFFER);
+	}
+
+	if (ctx->is_single_pass) {
+		if (ctx->is_ucs) {
+			/* GEN 4 */
+			cipher_param20->spc_aad_addr =
+				op->sym->aead.aad.phys_addr;
+			cipher_param20->spc_auth_res_addr =
+				op->sym->aead.digest.phys_addr;
+		} else {
+			cipher_param->spc_aad_addr =
+				op->sym->aead.aad.phys_addr;
+			cipher_param->spc_auth_res_addr =
+					op->sym->aead.digest.phys_addr;
 		}
+	} else if (ctx->is_single_pass_gmac &&
+		       op->sym->auth.data.length <= QAT_AES_GMAC_SPC_MAX_SIZE) {
+		/* Handle Single-Pass AES-GMAC */
+		handle_spc_gmac(ctx, op, cookie, qat_req);
 	}
 
 #if RTE_LOG_DP_LEVEL >= RTE_LOG_DEBUG

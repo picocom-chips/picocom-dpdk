@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2019 NXP
  */
 
 #ifndef _ENETC_H_
@@ -23,6 +23,15 @@
 #define MIN_BD_COUNT   32
 /* BD ALIGN */
 #define BD_ALIGN       8
+
+/* minimum frame size supported */
+#define ENETC_MAC_MINFRM_SIZE	68
+/* maximum frame size supported */
+#define ENETC_MAC_MAXFRM_SIZE	9600
+
+/* The max frame size with default MTU */
+#define ENETC_ETH_MAX_LEN (RTE_ETHER_MTU + \
+		RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN)
 
 /*
  * upper_32_bits - return bits 32-63 of a number
@@ -48,22 +57,23 @@ struct enetc_swbd {
 };
 
 struct enetc_bdr {
-	struct rte_eth_dev *ndev;
-	struct rte_mempool *mb_pool;   /* mbuf pool to populate RX ring. */
 	void *bd_base;			/* points to Rx or Tx BD ring */
+	struct enetc_swbd *q_swbd;
 	union {
 		void *tcir;
 		void *rcir;
 	};
-	uint16_t index;
 	int bd_count; /* # of BDs */
 	int next_to_use;
 	int next_to_clean;
-	struct enetc_swbd *q_swbd;
+	uint16_t index;
+	uint8_t	crc_len; /* 0 if CRC stripped, 4 otherwise */
 	union {
 		void *tcisr; /* Tx */
 		int next_to_alloc; /* Rx */
 	};
+	struct rte_mempool *mb_pool;   /* mbuf pool to populate RX ring. */
+	struct rte_eth_dev *ndev;
 };
 
 /*
@@ -85,11 +95,6 @@ struct enetc_eth_adapter {
 
 #define ENETC_DEV_PRIVATE_TO_INTR(adapter) \
 	(&((struct enetc_eth_adapter *)adapter)->intr)
-
-#define ENETC_GET_HW_ADDR(reg, addr) ((void *)(((size_t)reg) + (addr)))
-#define ENETC_REG_READ(addr) (*(uint32_t *)addr)
-#define ENETC_REG_WRITE(addr, val) (*(uint32_t *)addr = val)
-#define ENETC_REG_WRITE_RELAXED(addr, val) (*(uint32_t *)addr = val)
 
 /*
  * RX/TX ENETC function prototypes

@@ -16,9 +16,9 @@ struct cmd_help_result {
 	cmdline_fixed_string_t help;
 };
 
-static void cmd_help_parsed(__attribute__((unused)) void *parsed_result,
+static void cmd_help_parsed(__rte_unused void *parsed_result,
 			    struct cmdline *cl,
-			    __attribute__((unused)) void *data)
+			    __rte_unused void *data)
 {
 	cmdline_printf(cl,
 		       "commands:\n"
@@ -46,9 +46,9 @@ struct cmd_quit_result {
 	cmdline_fixed_string_t quit;
 };
 
-static void cmd_quit_parsed(__attribute__((unused)) void *parsed_result,
+static void cmd_quit_parsed(__rte_unused void *parsed_result,
 			    struct cmdline *cl,
-			    __attribute__((unused)) void *data)
+			    __rte_unused void *data)
 {
 	cmdline_quit(cl);
 }
@@ -72,9 +72,9 @@ struct cmd_list_result {
 	cmdline_fixed_string_t list;
 };
 
-static void cmd_list_parsed(__attribute__((unused)) void *parsed_result,
+static void cmd_list_parsed(__rte_unused void *parsed_result,
 			    struct cmdline *cl,
-			    __attribute__((unused)) void *data)
+			    __rte_unused void *data)
 {
 	uint16_t port_id;
 	char dev_name[RTE_DEV_NAME_MAX_LEN];
@@ -112,7 +112,7 @@ struct cmd_dev_attach_result {
 
 static void cmd_dev_attach_parsed(void *parsed_result,
 				  struct cmdline *cl,
-				  __attribute__((unused)) void *data)
+				  __rte_unused void *data)
 {
 	struct cmd_dev_attach_result *res = parsed_result;
 	struct rte_devargs da;
@@ -121,8 +121,6 @@ static void cmd_dev_attach_parsed(void *parsed_result,
 
 	if (rte_devargs_parsef(&da, "%s", res->devargs)) {
 		cmdline_printf(cl, "cannot parse devargs\n");
-		if (da.args)
-			free(da.args);
 		return;
 	}
 
@@ -131,6 +129,7 @@ static void cmd_dev_attach_parsed(void *parsed_result,
 	else
 		cmdline_printf(cl, "failed to attached device %s\n",
 				da.name);
+	rte_devargs_reset(&da);
 }
 
 cmdline_parse_token_string_t cmd_dev_attach_attach =
@@ -159,7 +158,7 @@ struct cmd_dev_detach_result {
 
 static void cmd_dev_detach_parsed(void *parsed_result,
 				   struct cmdline *cl,
-				   __attribute__((unused)) void *data)
+				   __rte_unused void *data)
 {
 	struct cmd_dev_detach_result *res = parsed_result;
 	struct rte_devargs da;
@@ -168,8 +167,6 @@ static void cmd_dev_detach_parsed(void *parsed_result,
 
 	if (rte_devargs_parsef(&da, "%s", res->devargs)) {
 		cmdline_printf(cl, "cannot parse devargs\n");
-		if (da.args)
-			free(da.args);
 		return;
 	}
 
@@ -180,6 +177,7 @@ static void cmd_dev_detach_parsed(void *parsed_result,
 	else
 		cmdline_printf(cl, "failed to dettach device %s\n",
 			da.name);
+	rte_devargs_reset(&da);
 }
 
 cmdline_parse_token_string_t cmd_dev_detach_detach =

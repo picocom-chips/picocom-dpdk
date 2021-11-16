@@ -15,8 +15,8 @@
 #include <libsze2.h>
 
 #include <rte_mbuf.h>
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_pci.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_malloc.h>
 #include <rte_memcpy.h>
 #include <rte_kvargs.h>
@@ -102,10 +102,7 @@ struct szedata2_tx_queue {
 	volatile uint64_t err_pkts;
 };
 
-int szedata2_logtype_init;
-int szedata2_logtype_driver;
-
-static struct ether_addr eth_addr = {
+static struct rte_ether_addr eth_addr = {
 	.addr_bytes = { 0x00, 0x11, 0x17, 0x00, 0x00, 0x00 }
 };
 
@@ -1016,18 +1013,29 @@ err_rx:
 	return ret;
 }
 
-static void
+static int
 eth_dev_stop(struct rte_eth_dev *dev)
 {
 	uint16_t i;
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 	uint16_t nb_tx = dev->data->nb_tx_queues;
+	int ret;
 
-	for (i = 0; i < nb_tx; i++)
-		eth_tx_queue_stop(dev, i);
+	dev->data->dev_started = 0;
 
-	for (i = 0; i < nb_rx; i++)
-		eth_rx_queue_stop(dev, i);
+	for (i = 0; i < nb_tx; i++) {
+		ret = eth_tx_queue_stop(dev, i);
+		if (ret != 0)
+			return ret;
+	}
+
+	for (i = 0; i < nb_rx; i++) {
+		ret = eth_rx_queue_stop(dev, i);
+		if (ret != 0)
+			return ret;
+	}
+
+	return 0;
 }
 
 static int
@@ -1044,7 +1052,7 @@ eth_dev_configure(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static void
+static int
 eth_dev_info(struct rte_eth_dev *dev,
 		struct rte_eth_dev_info *dev_info)
 {
@@ -1061,6 +1069,8 @@ eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->rx_queue_offload_capa = 0;
 	dev_info->tx_queue_offload_capa = 0;
 	dev_info->speed_capa = ETH_LINK_SPEED_100G;
+
+	return 0;
 }
 
 static int
@@ -1093,7 +1103,6 @@ eth_stats_get(struct rte_eth_dev *dev,
 		if (i < RTE_ETHDEV_QUEUE_STAT_CNTRS) {
 			stats->q_opackets[i] = txq->tx_pkts;
 			stats->q_obytes[i] = txq->tx_bytes;
-			stats->q_errors[i] = txq->err_pkts;
 		}
 		tx_total += txq->tx_pkts;
 		tx_total_bytes += txq->tx_bytes;
@@ -1110,7 +1119,7 @@ eth_stats_get(struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void
+static int
 eth_stats_reset(struct rte_eth_dev *dev)
 {
 	uint16_t i;
@@ -1129,6 +1138,8 @@ eth_stats_reset(struct rte_eth_dev *dev)
 		txq->tx_bytes = 0;
 		txq->err_pkts = 0;
 	}
+
+	return 0;
 }
 
 static void
@@ -1155,14 +1166,21 @@ eth_tx_queue_release(void *q)
 	}
 }
 
-static void
+static int
 eth_dev_close(struct rte_eth_dev *dev)
 {
+	struct pmd_internals *internals = dev->data->dev_private;
 	uint16_t i;
 	uint16_t nb_rx = dev->data->nb_rx_queues;
 	uint16_t nb_tx = dev->data->nb_tx_queues;
+	int ret;
 
-	eth_dev_stop(dev);
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
+	ret = eth_dev_stop(dev);
+
+	free(internals->sze_dev_path);
 
 	for (i = 0; i < nb_rx; i++) {
 		eth_rx_queue_release(dev->data->rx_queues[i]);
@@ -1174,6 +1192,8 @@ eth_dev_close(struct rte_eth_dev *dev)
 		dev->data->tx_queues[i] = NULL;
 	}
 	dev->data->nb_tx_queues = 0;
+
+	return ret;
 }
 
 static int
@@ -1332,35 +1352,39 @@ eth_tx_queue_setup(struct rte_eth_dev *dev,
 
 static int
 eth_mac_addr_set(struct rte_eth_dev *dev __rte_unused,
-		struct ether_addr *mac_addr __rte_unused)
+		struct rte_ether_addr *mac_addr __rte_unused)
 {
 	return 0;
 }
 
-static void
+static int
 eth_promiscuous_enable(struct rte_eth_dev *dev __rte_unused)
 {
 	PMD_DRV_LOG(WARNING, "Enabling promiscuous mode is not supported. "
 			"The card is always in promiscuous mode.");
+	return 0;
 }
 
-static void
+static int
 eth_promiscuous_disable(struct rte_eth_dev *dev __rte_unused)
 {
 	PMD_DRV_LOG(WARNING, "Disabling promiscuous mode is not supported. "
 			"The card is always in promiscuous mode.");
+	return -ENOTSUP;
 }
 
-static void
+static int
 eth_allmulticast_enable(struct rte_eth_dev *dev __rte_unused)
 {
 	PMD_DRV_LOG(WARNING, "Enabling allmulticast mode is not supported.");
+	return -ENOTSUP;
 }
 
-static void
+static int
 eth_allmulticast_disable(struct rte_eth_dev *dev __rte_unused)
 {
 	PMD_DRV_LOG(WARNING, "Disabling allmulticast mode is not supported.");
+	return -ENOTSUP;
 }
 
 static const struct eth_dev_ops ops = {
@@ -1514,7 +1538,7 @@ rte_szedata2_eth_dev_init(struct rte_eth_dev *dev, struct port_info *pi)
 	eth_link_update(dev, 0);
 
 	/* Allocate space for one mac address */
-	data->mac_addrs = rte_zmalloc(data->name, sizeof(struct ether_addr),
+	data->mac_addrs = rte_zmalloc(data->name, sizeof(struct rte_ether_addr),
 			RTE_CACHE_LINE_SIZE);
 	if (data->mac_addrs == NULL) {
 		PMD_INIT_LOG(ERR, "Could not alloc space for MAC address!");
@@ -1522,7 +1546,9 @@ rte_szedata2_eth_dev_init(struct rte_eth_dev *dev, struct port_info *pi)
 		return -ENOMEM;
 	}
 
-	ether_addr_copy(&eth_addr, data->mac_addrs);
+	rte_ether_addr_copy(&eth_addr, data->mac_addrs);
+
+	dev->data->dev_flags |= RTE_ETH_DEV_AUTOFILL_QUEUE_XSTATS;
 
 	PMD_INIT_LOG(INFO, "%s device %s successfully initialized",
 			RTE_STR(RTE_SZEDATA2_DRIVER_NAME), data->name);
@@ -1538,12 +1564,9 @@ rte_szedata2_eth_dev_init(struct rte_eth_dev *dev, struct port_info *pi)
 static int
 rte_szedata2_eth_dev_uninit(struct rte_eth_dev *dev)
 {
-	struct pmd_internals *internals = (struct pmd_internals *)
-		dev->data->dev_private;
-
 	PMD_INIT_FUNC_TRACE();
 
-	free(internals->sze_dev_path);
+	eth_dev_close(dev);
 
 	PMD_DRV_LOG(INFO, "%s device %s successfully uninitialized",
 			RTE_STR(RTE_SZEDATA2_DRIVER_NAME), dev->data->name);
@@ -1567,6 +1590,14 @@ static const struct rte_pci_id rte_szedata2_pci_id_table[] = {
 	{
 		RTE_PCI_DEVICE(PCI_VENDOR_ID_NETCOPE,
 				PCI_DEVICE_ID_NETCOPE_NFB200G2QL)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_SILICOM,
+				PCI_DEVICE_ID_FB2CGG3)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_SILICOM,
+				PCI_DEVICE_ID_FB2CGG3D)
 	},
 	{
 		.vendor_id = 0,
@@ -1784,7 +1815,7 @@ szedata2_eth_dev_release_interval(struct rte_eth_dev **eth_devs,
 
 	for (i = from; i < to; i++) {
 		rte_szedata2_eth_dev_uninit(eth_devs[i]);
-		rte_eth_dev_pci_release(eth_devs[i]);
+		rte_eth_dev_release_port(eth_devs[i]);
 	}
 }
 
@@ -1835,7 +1866,7 @@ static int szedata2_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 		if (ret != 0) {
 			PMD_INIT_LOG(ERR, "Failed to init eth_dev for port %u",
 					i);
-			rte_eth_dev_pci_release(eth_devs[i]);
+			rte_eth_dev_release_port(eth_devs[i]);
 			szedata2_eth_dev_release_interval(eth_devs, 0, i);
 			rte_free(list_entry);
 			return ret;
@@ -1893,10 +1924,8 @@ static int szedata2_eth_pci_remove(struct rte_pci_device *pci_dev)
 				pci_dev->device.name, i);
 		PMD_DRV_LOG(DEBUG, "Removing eth_dev %s", name);
 		eth_dev = rte_eth_dev_allocated(name);
-		if (!eth_dev) {
-			PMD_DRV_LOG(ERR, "eth_dev %s not found", name);
-			retval = retval ? retval : -ENODEV;
-		}
+		if (eth_dev == NULL)
+			continue; /* port already released */
 
 		ret = rte_szedata2_eth_dev_uninit(eth_dev);
 		if (ret != 0) {
@@ -1904,7 +1933,7 @@ static int szedata2_eth_pci_remove(struct rte_pci_device *pci_dev)
 			retval = retval ? retval : ret;
 		}
 
-		rte_eth_dev_pci_release(eth_dev);
+		rte_eth_dev_release_port(eth_dev);
 	}
 
 	return retval;
@@ -1920,13 +1949,5 @@ RTE_PMD_REGISTER_PCI(RTE_SZEDATA2_DRIVER_NAME, szedata2_eth_driver);
 RTE_PMD_REGISTER_PCI_TABLE(RTE_SZEDATA2_DRIVER_NAME, rte_szedata2_pci_id_table);
 RTE_PMD_REGISTER_KMOD_DEP(RTE_SZEDATA2_DRIVER_NAME,
 	"* combo6core & combov3 & szedata2 & ( szedata2_cv3 | szedata2_cv3_fdt )");
-
-RTE_INIT(szedata2_init_log)
-{
-	szedata2_logtype_init = rte_log_register("pmd.net.szedata2.init");
-	if (szedata2_logtype_init >= 0)
-		rte_log_set_level(szedata2_logtype_init, RTE_LOG_NOTICE);
-	szedata2_logtype_driver = rte_log_register("pmd.net.szedata2.driver");
-	if (szedata2_logtype_driver >= 0)
-		rte_log_set_level(szedata2_logtype_driver, RTE_LOG_NOTICE);
-}
+RTE_LOG_REGISTER_SUFFIX(szedata2_logtype_init, init, NOTICE);
+RTE_LOG_REGISTER_SUFFIX(szedata2_logtype_driver, driver, NOTICE);

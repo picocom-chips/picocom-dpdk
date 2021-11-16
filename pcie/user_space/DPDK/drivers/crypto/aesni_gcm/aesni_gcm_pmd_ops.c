@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2016 Intel Corporation
+ * Copyright(c) 2016-2020 Intel Corporation
  */
 
 #include <string.h>
@@ -227,7 +227,7 @@ aesni_gcm_pmd_qp_setup(struct rte_cryptodev *dev, uint16_t qp_id,
 	if (aesni_gcm_pmd_qp_set_unique_name(dev, qp))
 		goto qp_setup_cleanup;
 
-	qp->ops = (const struct aesni_gcm_ops *)gcm_ops[internals->vector_mode];
+	qp->ops = (const struct aesni_gcm_ops *)internals->ops;
 
 	qp->processed_pkts = aesni_gcm_pmd_qp_create_processed_pkts_ring(qp,
 			qp_conf->nb_descriptors, socket_id);
@@ -246,13 +246,6 @@ qp_setup_cleanup:
 		rte_free(qp);
 
 	return -1;
-}
-
-/** Return the number of allocated queue pairs */
-static uint32_t
-aesni_gcm_pmd_qp_count(struct rte_cryptodev *dev)
-{
-	return dev->data->nb_queue_pairs;
 }
 
 /** Returns the size of the aesni gcm session structure */
@@ -283,7 +276,7 @@ aesni_gcm_pmd_sym_session_configure(struct rte_cryptodev *dev __rte_unused,
 				"Couldn't get object from session mempool");
 		return -ENOMEM;
 	}
-	ret = aesni_gcm_set_session_parameters(gcm_ops[internals->vector_mode],
+	ret = aesni_gcm_set_session_parameters(internals->ops,
 				sess_private_data, xform);
 	if (ret != 0) {
 		AESNI_GCM_LOG(ERR, "failed configure session parameters");
@@ -329,7 +322,8 @@ struct rte_cryptodev_ops aesni_gcm_pmd_ops = {
 
 		.queue_pair_setup	= aesni_gcm_pmd_qp_setup,
 		.queue_pair_release	= aesni_gcm_pmd_qp_release,
-		.queue_pair_count	= aesni_gcm_pmd_qp_count,
+
+		.sym_cpu_process        = aesni_gcm_pmd_cpu_crypto_process,
 
 		.sym_session_get_size	= aesni_gcm_pmd_sym_session_get_size,
 		.sym_session_configure	= aesni_gcm_pmd_sym_session_configure,

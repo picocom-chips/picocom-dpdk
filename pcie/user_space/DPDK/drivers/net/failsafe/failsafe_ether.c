@@ -126,9 +126,13 @@ fs_eth_dev_conf_apply(struct rte_eth_dev *dev,
 	if (dev->data->promiscuous != edev->data->promiscuous) {
 		DEBUG("Configuring promiscuous");
 		if (dev->data->promiscuous)
-			rte_eth_promiscuous_enable(PORT_ID(sdev));
+			ret = rte_eth_promiscuous_enable(PORT_ID(sdev));
 		else
-			rte_eth_promiscuous_disable(PORT_ID(sdev));
+			ret = rte_eth_promiscuous_disable(PORT_ID(sdev));
+		if (ret != 0) {
+			ERROR("Failed to apply promiscuous mode");
+			return ret;
+		}
 	} else {
 		DEBUG("promiscuous already set");
 	}
@@ -136,9 +140,13 @@ fs_eth_dev_conf_apply(struct rte_eth_dev *dev,
 	if (dev->data->all_multicast != edev->data->all_multicast) {
 		DEBUG("Configuring all_multicast");
 		if (dev->data->all_multicast)
-			rte_eth_allmulticast_enable(PORT_ID(sdev));
+			ret = rte_eth_allmulticast_enable(PORT_ID(sdev));
 		else
-			rte_eth_allmulticast_disable(PORT_ID(sdev));
+			ret = rte_eth_allmulticast_disable(PORT_ID(sdev));
+		if (ret != 0) {
+			ERROR("Failed to apply allmulticast mode");
+			return ret;
+		}
 	} else {
 		DEBUG("all_multicast already set");
 	}
@@ -166,15 +174,16 @@ fs_eth_dev_conf_apply(struct rte_eth_dev *dev,
 		DEBUG("Configure additional MAC address%s",
 			(PRIV(dev)->nb_mac_addr > 2 ? "es" : ""));
 	for (i = 1; i < PRIV(dev)->nb_mac_addr; i++) {
-		struct ether_addr *ea;
+		struct rte_ether_addr *ea;
 
 		ea = &dev->data->mac_addrs[i];
 		ret = rte_eth_dev_mac_addr_add(PORT_ID(sdev), ea,
 				PRIV(dev)->mac_addr_pool[i]);
 		if (ret) {
-			char ea_fmt[ETHER_ADDR_FMT_SIZE];
+			char ea_fmt[RTE_ETHER_ADDR_FMT_SIZE];
 
-			ether_format_addr(ea_fmt, ETHER_ADDR_FMT_SIZE, ea);
+			rte_ether_format_addr(ea_fmt,
+					RTE_ETHER_ADDR_FMT_SIZE, ea);
 			ERROR("Adding MAC address %s failed", ea_fmt);
 			return ret;
 		}
@@ -273,17 +282,23 @@ fs_dev_remove(struct sub_device *sdev)
 	switch (sdev->state) {
 	case DEV_STARTED:
 		failsafe_rx_intr_uninstall_subdevice(sdev);
-		rte_eth_dev_stop(PORT_ID(sdev));
+		ret = rte_eth_dev_stop(PORT_ID(sdev));
+		if (ret < 0)
+			ERROR("Failed to stop sub-device %u", SUB_ID(sdev));
 		sdev->state = DEV_ACTIVE;
 		/* fallthrough */
 	case DEV_ACTIVE:
 		failsafe_eth_dev_unregister_callbacks(sdev);
-		rte_eth_dev_close(PORT_ID(sdev));
+		ret = rte_eth_dev_close(PORT_ID(sdev));
+		if (ret < 0) {
+			ERROR("Port close failed for sub-device %u",
+			      PORT_ID(sdev));
+		}
 		sdev->state = DEV_PROBED;
 		/* fallthrough */
 	case DEV_PROBED:
 		ret = rte_dev_remove(sdev->dev);
-		if (ret) {
+		if (ret < 0) {
 			ERROR("Bus detach failed for sub_device %u",
 			      SUB_ID(sdev));
 		} else {
@@ -294,11 +309,12 @@ fs_dev_remove(struct sub_device *sdev)
 	case DEV_PARSED:
 	case DEV_UNDEFINED:
 		sdev->state = DEV_UNDEFINED;
+		sdev->sdev_port_id = RTE_MAX_ETHPORTS;
 		/* the end */
 		break;
 	}
 	sdev->remove = 0;
-	failsafe_hotplug_alarm_install(sdev->fs_dev);
+	failsafe_hotplug_alarm_install(fs_dev(sdev));
 }
 
 static void
@@ -312,14 +328,15 @@ fs_dev_stats_save(struct sub_device *sdev)
 	if (err) {
 		uint64_t timestamp = sdev->stats_snapshot.timestamp;
 
-		WARN("Could not access latest statistics from sub-device %d.\n",
+		WARN("Could not access latest statistics from sub-device %d.",
 			 SUB_ID(sdev));
 		if (timestamp != 0)
-			WARN("Using latest snapshot taken before %"PRIu64" seconds.\n",
+			WARN("Using latest snapshot taken before %"PRIu64" seconds.",
 				 (rte_rdtsc() - timestamp) / rte_get_tsc_hz());
 	}
-	failsafe_stats_increment(&PRIV(sdev->fs_dev)->stats_accumulator,
-			err ? &sdev->stats_snapshot.stats : &stats);
+	failsafe_stats_increment
+		(&PRIV(fs_dev(sdev))->stats_accumulator,
+		err ? &sdev->stats_snapshot.stats : &stats);
 	memset(&sdev->stats_snapshot, 0, sizeof(sdev->stats_snapshot));
 }
 
@@ -372,14 +389,23 @@ failsafe_dev_remove(struct rte_eth_dev *dev)
 	struct sub_device *sdev;
 	uint8_t i;
 
-	FOREACH_SUBDEV_STATE(sdev, i, dev, DEV_ACTIVE)
-		if (sdev->remove && fs_rxtx_clean(sdev)) {
-			if (fs_lock(dev, 1) != 0)
-				return;
+	FOREACH_SUBDEV(sdev, i, dev) {
+		if (!sdev->remove)
+			continue;
+
+		/* Active devices must have finished their burst and
+		 * their stats must be saved.
+		 */
+		if (sdev->state >= DEV_ACTIVE &&
+		    fs_rxtx_clean(sdev) == 0)
+			continue;
+		if (fs_lock(dev, 1) != 0)
+			return;
+		if (sdev->state >= DEV_ACTIVE)
 			fs_dev_stats_save(sdev);
-			fs_dev_remove(sdev);
-			fs_unlock(dev, 1);
-		}
+		fs_dev_remove(sdev);
+		fs_unlock(dev, 1);
+	}
 }
 
 static int
@@ -566,17 +592,17 @@ failsafe_eth_rmv_event_callback(uint16_t port_id __rte_unused,
 {
 	struct sub_device *sdev = cb_arg;
 
-	fs_lock(sdev->fs_dev, 0);
+	fs_lock(fs_dev(sdev), 0);
 	/* Switch as soon as possible tx_dev. */
-	fs_switch_dev(sdev->fs_dev, sdev);
+	fs_switch_dev(fs_dev(sdev), sdev);
 	/* Use safe bursts in any case. */
-	failsafe_set_burst_fn(sdev->fs_dev, 1);
+	failsafe_set_burst_fn(fs_dev(sdev), 1);
 	/*
 	 * Async removal, the sub-PMD will try to unregister
 	 * the callback at the source of the current thread context.
 	 */
 	sdev->remove = 1;
-	fs_unlock(sdev->fs_dev, 0);
+	fs_unlock(fs_dev(sdev), 0);
 	return 0;
 }
 
@@ -591,9 +617,9 @@ failsafe_eth_lsc_event_callback(uint16_t port_id __rte_unused,
 	ret = dev->dev_ops->link_update(dev, 0);
 	/* We must pass on the LSC event */
 	if (ret)
-		return _rte_eth_dev_callback_process(dev,
-						     RTE_ETH_EVENT_INTR_LSC,
-						     NULL);
+		return rte_eth_dev_callback_process(dev,
+						    RTE_ETH_EVENT_INTR_LSC,
+						    NULL);
 	else
 		return 0;
 }
@@ -612,6 +638,11 @@ failsafe_eth_new_event_callback(uint16_t port_id,
 	FOREACH_SUBDEV_STATE(sdev, i, fs_dev, DEV_PARSED) {
 		if (sdev->state >= DEV_PROBED)
 			continue;
+		if (dev->device == NULL) {
+			WARN("Trying to probe malformed device %s.\n",
+			     sdev->devargs.name);
+			continue;
+		}
 		if (strcmp(sdev->devargs.name, dev->device->name) != 0)
 			continue;
 		rte_eth_dev_owner_set(port_id, &PRIV(fs_dev)->my_owner);

@@ -24,16 +24,16 @@ If you type a partial command and hit ``<TAB>`` you get a list of the available 
 
    testpmd> show port <TAB>
 
-       info [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|stat_qmap|dcb_tc|cap X
-       info [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|stat_qmap|dcb_tc|cap all
-       stats [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|stat_qmap|dcb_tc|cap X
-       stats [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|stat_qmap|dcb_tc|cap all
+       info [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|dcb_tc|cap X
+       info [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|dcb_tc|cap all
+       stats [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|dcb_tc|cap X
+       stats [Mul-choice STRING]: show|clear port info|stats|xstats|fdir|dcb_tc|cap all
        ...
 
 
 .. note::
 
-   Some examples in this document are too long to fit on one line are are shown wrapped at `"\\"` for display purposes::
+   Some examples in this document are too long to fit on one line are shown wrapped at `"\\"` for display purposes::
 
       testpmd> set flow_ctrl rx (on|off) tx (on|off) (high_water) (low_water) \
                (pause_time) (send_xon) (port_id)
@@ -71,7 +71,7 @@ practical or possible testpmd supports alternative methods for executing command
 
 .. code-block:: console
 
-   ./testpmd -n4 -r2 ... -- -i --cmdline-file=/home/ubuntu/flow-create-commands.txt
+   ./dpdk-testpmd -n4 -r2 ... -- -i --cmdline-file=/home/ubuntu/flow-create-commands.txt
    Interactive-mode selected
    CLI commands to be read from /home/ubuntu/flow-create-commands.txt
    Configuring Port 0 (socket 0)
@@ -159,7 +159,7 @@ show port
 
 Display information for a given port or all ports::
 
-   testpmd> show port (info|summary|stats|xstats|fdir|stat_qmap|dcb_tc|cap) (port_id|all)
+   testpmd> show port (info|summary|stats|xstats|fdir|dcb_tc|cap) (port_id|all)
 
 The available information categories are:
 
@@ -173,11 +173,7 @@ The available information categories are:
 
 * ``fdir``: Flow Director information and statistics.
 
-* ``stat_qmap``: Queue statistics mapping.
-
 * ``dcb_tc``: DCB information such as TC mapping.
-
-* ``cap``: Supported offload capabilities.
 
 For example:
 
@@ -198,9 +194,7 @@ For example:
    Maximum number of MAC addresses: 64
    Maximum number of MAC addresses of hash filtering: 0
    VLAN offload:
-       strip on
-       filter on
-       qinq(extend) off
+       strip on, filter on, extend off, qinq strip off
    Redirection table size: 512
    Supported flow types:
      ipv4-frag
@@ -218,6 +212,14 @@ For example:
      vxlan
      geneve
      nvgre
+     vxlan-gpe
+
+show port (module_eeprom|eeprom)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display the EEPROM information of a port::
+
+   testpmd> show port (port_id) (module_eeprom|eeprom)
 
 show port rss reta
 ~~~~~~~~~~~~~~~~~~
@@ -238,9 +240,9 @@ Display the RSS hash functions and RSS hash key of a port::
 clear port
 ~~~~~~~~~~
 
-Clear the port statistics for a given port or for all ports::
+Clear the port statistics and forward engine statistics for a given port or for all ports::
 
-   testpmd> clear port (info|stats|xstats|fdir|stat_qmap) (port_id|all)
+   testpmd> clear port (info|stats|xstats|fdir) (port_id|all)
 
 For example::
 
@@ -253,13 +255,28 @@ Display information for a given port's RX/TX queue::
 
    testpmd> show (rxq|txq) info (port_id) (queue_id)
 
+show desc status(rxq|txq)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display information for a given port's RX/TX descriptor status::
+
+   testpmd> show port (port_id) (rxq|txq) (queue_id) desc (desc_id) status
+
+show rxq desc used count
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display the number of receive packet descriptors currently filled by hardware
+and ready to be processed by the driver on a given RX queue::
+
+   testpmd> show port (port_id) rxq (queue_id) desc used count
+
 show config
 ~~~~~~~~~~~
 
 Displays the configuration of the application.
 The configuration comes from the command-line, the runtime or the application defaults::
 
-   testpmd> show config (rxtx|cores|fwd|txpkts)
+   testpmd> show config (rxtx|cores|fwd|rxoffs|rxpkts|txpkts|txtimes)
 
 The available information categories are:
 
@@ -269,7 +286,13 @@ The available information categories are:
 
 * ``fwd``: Packet forwarding configuration.
 
+* ``rxoffs``: Packet offsets for RX split.
+
+* ``rxpkts``: Packets to RX split configuration.
+
 * ``txpkts``: Packets to TX configuration.
+
+* ``txtimes``: Burst time pattern for Tx only mode.
 
 For example:
 
@@ -291,7 +314,7 @@ set fwd
 Set the packet forwarding mode::
 
    testpmd> set fwd (io|mac|macswap|flowgen| \
-                     rxonly|txonly|csum|icmpecho|noisy) (""|retry)
+                     rxonly|txonly|csum|icmpecho|noisy|5tswap) (""|retry)
 
 ``retry`` can be specified for forwarding engines except ``rx_only``.
 
@@ -302,7 +325,7 @@ The available information categories are:
   This is the default mode.
 
 * ``mac``: Changes the source and the destination Ethernet addresses of packets before forwarding them.
-  Default application behaviour is to set source Ethernet address to that of the transmitting interface, and destination
+  Default application behavior is to set source Ethernet address to that of the transmitting interface, and destination
   address to a dummy value (set during init). The user may specify a target destination Ethernet address via the 'eth-peer' or
   'eth-peers-configfile' command-line options. It is not currently possible to specify a specific source Ethernet address.
 
@@ -320,14 +343,19 @@ The available information categories are:
 
 * ``icmpecho``: Receives a burst of packets, lookup for ICMP echo requests and, if any, send back ICMP echo replies.
 
-* ``ieee1588``: Demonstrate L2 IEEE1588 V2 PTP timestamping for RX and TX. Requires ``CONFIG_RTE_LIBRTE_IEEE1588=y``.
+* ``ieee1588``: Demonstrate L2 IEEE1588 V2 PTP timestamping for RX and TX.
 
-* ``softnic``: Demonstrates the softnic forwarding operation. In this mode, packet forwarding is
-  similar to I/O mode except for the fact that packets are loopback to the softnic ports only. Therefore, portmask parameter should be set to softnic port only. The various software based custom NIC pipelines specified through the softnic firmware (DPDK packet framework script) can be tested in this mode. Furthermore, it allows to build 5-level hierarchical QoS scheduler as a default option that can be enabled through CLI once testpmd application is initialised. The user can modify the default scheduler hierarchy or can specify the new QoS Scheduler hierarchy through CLI. Requires ``CONFIG_RTE_LIBRTE_PMD_SOFTNIC=y``.
-
-* ``noisy``: Noisy neighbour simulation.
+* ``noisy``: Noisy neighbor simulation.
   Simulate more realistic behavior of a guest machine engaged in receiving
   and sending packets performing Virtual Network Function (VNF).
+
+* ``5tswap``: Swap the source and destination of L2,L3,L4 if they exist.
+
+  L2 swaps the source address and destination address of Ethernet, as same as ``macswap``.
+
+  L3 swaps the source address and destination address of IP (v4 and v6).
+
+  L4 swaps the source port and destination port of transport layer (TCP and UDP).
 
 Example::
 
@@ -335,6 +363,43 @@ Example::
 
    Set rxonly packet forwarding mode
 
+
+show fwd
+~~~~~~~~
+
+When running, forwarding engines maintain statistics from the time they have been started.
+Example for the io forwarding engine, with some packet drops on the tx side::
+
+   testpmd> show fwd stats all
+
+     ------- Forward Stats for RX Port= 0/Queue= 0 -> TX Port= 1/Queue= 0 -------
+     RX-packets: 274293770      TX-packets: 274293642      TX-dropped: 128
+
+     ------- Forward Stats for RX Port= 1/Queue= 0 -> TX Port= 0/Queue= 0 -------
+     RX-packets: 274301850      TX-packets: 274301850      TX-dropped: 0
+
+     ---------------------- Forward statistics for port 0  ----------------------
+     RX-packets: 274293802      RX-dropped: 0             RX-total: 274293802
+     TX-packets: 274301862      TX-dropped: 0             TX-total: 274301862
+     ----------------------------------------------------------------------------
+
+     ---------------------- Forward statistics for port 1  ----------------------
+     RX-packets: 274301894      RX-dropped: 0             RX-total: 274301894
+     TX-packets: 274293706      TX-dropped: 128           TX-total: 274293834
+     ----------------------------------------------------------------------------
+
+     +++++++++++++++ Accumulated forward statistics for all ports+++++++++++++++
+     RX-packets: 548595696      RX-dropped: 0             RX-total: 548595696
+     TX-packets: 548595568      TX-dropped: 128           TX-total: 548595696
+     ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+clear fwd
+~~~~~~~~~
+
+Clear the forwarding engines statistics::
+
+   testpmd> clear fwd stats all
 
 read rxd
 ~~~~~~~~
@@ -430,6 +495,147 @@ Show Tx metadata value set for a specific port::
 
    testpmd> show port (port_id) tx_metadata
 
+show port supported ptypes
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show ptypes supported for a specific port::
+
+   testpmd> show port (port_id) ptypes
+
+set port supported ptypes
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set packet types classification for a specific port::
+
+   testpmd> set port (port_id) ptypes_mask (mask)
+
+show port mac addresses info
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show mac addresses added for a specific port::
+
+   testpmd> show port (port_id) macs
+
+
+show port multicast mac addresses info
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show multicast mac addresses added for a specific port::
+
+   testpmd> show port (port_id) mcast_macs
+
+show device info
+~~~~~~~~~~~~~~~~
+
+Show general information about devices probed::
+
+   testpmd> show device info (<identifier>|all)
+
+For example:
+
+.. code-block:: console
+
+    testpmd> show device info net_pcap0
+
+    ********************* Infos for device net_pcap0 *********************
+    Bus name: vdev
+    Driver name: net_pcap
+    Devargs: iface=enP2p6s0,phy_mac=1
+    Connect to socket: -1
+
+            Port id: 2
+            MAC address: 1E:37:93:28:04:B8
+            Device name: net_pcap0
+
+dump physmem
+~~~~~~~~~~~~
+
+Dumps all physical memory segment layouts::
+
+   testpmd> dump_physmem
+
+dump memzone
+~~~~~~~~~~~~
+
+Dumps the layout of all memory zones::
+
+   testpmd> dump_memzone
+
+dump socket memory
+~~~~~~~~~~~~~~~~~~
+
+Dumps the memory usage of all sockets::
+
+   testpmd> dump_socket_mem
+
+dump struct size
+~~~~~~~~~~~~~~~~
+
+Dumps the size of all memory structures::
+
+   testpmd> dump_struct_sizes
+
+dump ring
+~~~~~~~~~
+
+Dumps the status of all or specific element in DPDK rings::
+
+   testpmd> dump_ring [ring_name]
+
+dump mempool
+~~~~~~~~~~~~
+
+Dumps the statistics of all or specific memory pool::
+
+   testpmd> dump_mempool [mempool_name]
+
+dump devargs
+~~~~~~~~~~~~
+
+Dumps the user device list::
+
+   testpmd> dump_devargs
+
+dump log types
+~~~~~~~~~~~~~~
+
+Dumps the log level for all the dpdk modules::
+
+   testpmd> dump_log_types
+
+show (raw_encap|raw_decap)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display content of raw_encap/raw_decap buffers in hex::
+
+  testpmd> show <raw_encap|raw_decap> <index>
+  testpmd> show <raw_encap|raw_decap> all
+
+For example::
+
+  testpmd> show raw_encap 6
+
+  index: 6 at [0x1c565b0], len=50
+  00000000: 00 00 00 00 00 00 16 26 36 46 56 66 08 00 45 00 | .......&6FVf..E.
+  00000010: 00 00 00 00 00 00 00 11 00 00 C0 A8 01 06 C0 A8 | ................
+  00000020: 03 06 00 00 00 FA 00 00 00 00 08 00 00 00 00 00 | ................
+  00000030: 06 00                                           | ..
+
+show fec capabilities
+~~~~~~~~~~~~~~~~~~~~~
+
+Show fec capabilities of a port::
+
+  testpmd> show port (port_id) fec capabilities
+
+show fec mode
+~~~~~~~~~~~~~
+
+Show fec mode of a port::
+
+  testpmd> show port (port_id) fec_mode
+
+
 Configuration Functions
 -----------------------
 
@@ -476,9 +682,11 @@ Where:
 * ``level`` is the log level.
 
 For example, to change the global log level::
+
 	testpmd> set log global (level)
 
 Regexes can also be used for type. To change log level of user1, user2 and user3::
+
 	testpmd> set log user[1-3] (level)
 
 set nbport
@@ -514,7 +722,7 @@ This is equivalent to the ``--coremask`` command-line option.
 
 .. note::
 
-   The master lcore is reserved for command line parsing only and cannot be masked on for packet forwarding.
+   The main lcore is reserved for command line parsing only and cannot be masked on for packet forwarding.
 
 set portmask
 ~~~~~~~~~~~~
@@ -524,6 +732,36 @@ Set the forwarding ports hexadecimal mask::
    testpmd> set portmask (mask)
 
 This is equivalent to the ``--portmask`` command-line option.
+
+set record-core-cycles
+~~~~~~~~~~~~~~~~~~~~~~
+
+Set the recording of CPU cycles::
+
+   testpmd> set record-core-cycles (on|off)
+
+Where:
+
+* ``on`` enables measurement of CPU cycles per packet.
+
+* ``off`` disables measurement of CPU cycles per packet.
+
+This is equivalent to the ``--record-core-cycles command-line`` option.
+
+set record-burst-stats
+~~~~~~~~~~~~~~~~~~~~~~
+
+Set the displaying of RX and TX bursts::
+
+   testpmd> set record-burst-stats (on|off)
+
+Where:
+
+* ``on`` enables display of RX and TX bursts.
+
+* ``off`` disables display of RX and TX bursts.
+
+This is equivalent to the ``--record-burst-stats command-line`` option.
 
 set burst
 ~~~~~~~~~
@@ -538,6 +776,36 @@ When retry is enabled, the transmit delay time and number of retries can also be
 
    testpmd> set burst tx delay (microseconds) retry (num)
 
+set rxoffs
+~~~~~~~~~~
+
+Set the offsets of segments relating to the data buffer beginning on receiving
+if split feature is engaged. Affects only the queues configured with split
+offloads (currently BUFFER_SPLIT is supported only).
+
+   testpmd> set rxoffs (x[,y]*)
+
+Where x[,y]* represents a CSV list of values, without white space. If the list
+of offsets is shorter than the list of segments the zero offsets will be used
+for the remaining segments.
+
+set rxpkts
+~~~~~~~~~~
+
+Set the length of segments to scatter packets on receiving if split
+feature is engaged. Affects only the queues configured with split offloads
+(currently BUFFER_SPLIT is supported only). Optionally the multiple memory
+pools can be specified with --mbuf-size command line parameter and the mbufs
+to receive will be allocated sequentially from these extra memory pools (the
+mbuf for the first segment is allocated from the first pool, the second one
+from the second pool, and so on, if segment number is greater then pool's the
+mbuf for remaining segments will be allocated from the last valid pool).
+
+   testpmd> set rxpkts (x[,y]*)
+
+Where x[,y]* represents a CSV list of values, without white space. Zero value
+means to use the corresponding memory pool data buffer size.
+
 set txpkts
 ~~~~~~~~~~
 
@@ -546,6 +814,40 @@ Set the length of each segment of the TX-ONLY packets or length of packet for FL
    testpmd> set txpkts (x[,y]*)
 
 Where x[,y]* represents a CSV list of values, without white space.
+
+set txtimes
+~~~~~~~~~~~
+
+Configure the timing burst pattern for Tx only mode. This command enables
+the packet send scheduling on dynamic timestamp mbuf field and configures
+timing pattern in Tx only mode. In this mode, if scheduling is enabled
+application provides timestamps in the packets being sent. It is possible
+to configure delay (in unspecified device clock units) between bursts
+and between the packets within the burst::
+
+   testpmd> set txtimes (inter),(intra)
+
+where:
+
+* ``inter``  is the delay between the bursts in the device clock units.
+  If ``intra`` is zero, this is the time between the beginnings of the
+  first packets in the neighbour bursts, if ``intra`` is not zero,
+  ``inter`` specifies the time between the beginning of the first packet
+  of the current burst and the beginning of the last packet of the
+  previous burst. If ``inter`` parameter is zero the send scheduling
+  on timestamps is disabled (default).
+
+* ``intra`` is the delay between the packets within the burst specified
+  in the device clock units. The number of packets in the burst is defined
+  by regular burst setting. If ``intra`` parameter is zero no timestamps
+  provided in the packets excepting the first one in the burst.
+
+As the result the bursts of packet will be transmitted with specific
+delays between the packets within the burst and specific delay between
+the bursts. The rte_eth_read_clock() must be supported by the device(s)
+and is supposed to be engaged to get the current device clock value
+and provide the reference for the timestamps. If there is no supported
+rte_eth_read_clock() there will be no send scheduling provided on the port.
 
 set txsplit
 ~~~~~~~~~~~
@@ -687,13 +989,6 @@ Set broadcast mode for a VF from the PF::
 
    testpmd> set vf broadcast (port_id) (vf_id) (on|off)
 
-vlan set strip
-~~~~~~~~~~~~~~
-
-Set the VLAN strip on a port::
-
-   testpmd> vlan set strip (on|off) (port_id)
-
 vlan set stripq
 ~~~~~~~~~~~~~~~
 
@@ -729,19 +1024,11 @@ Set VLAN antispoof for a VF from the PF::
 
    testpmd> set vf vlan antispoof (port_id) (vf_id) (on|off)
 
-vlan set filter
-~~~~~~~~~~~~~~~
+vlan set (strip|filter|qinq_strip|extend)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Set the VLAN strip/filter/QinQ strip/extend on for a port::
 
-Set the VLAN filter on a port::
-
-   testpmd> vlan set filter (on|off) (port_id)
-
-vlan set qinq
-~~~~~~~~~~~~~
-
-Set the VLAN QinQ (extended queue in queue) on for a port::
-
-   testpmd> vlan set qinq (on|off) (port_id)
+   testpmd> vlan set (strip|filter|qinq_strip|extend) (on|off) (port_id)
 
 vlan set tpid
 ~~~~~~~~~~~~~
@@ -787,53 +1074,6 @@ rx_vlan rm (for VF)
 Remove a VLAN ID, from the set of VLAN identifiers filtered for VF(s) for port ID::
 
    testpmd> rx_vlan rm (vlan_id) port (port_id) vf (vf_mask)
-
-tunnel_filter add
-~~~~~~~~~~~~~~~~~
-
-Add a tunnel filter on a port::
-
-   testpmd> tunnel_filter add (port_id) (outer_mac) (inner_mac) (ip_addr) \
-            (inner_vlan) (vxlan|nvgre|ipingre) (imac-ivlan|imac-ivlan-tenid|\
-            imac-tenid|imac|omac-imac-tenid|oip|iip) (tenant_id) (queue_id)
-
-The available information categories are:
-
-* ``vxlan``: Set tunnel type as VXLAN.
-
-* ``nvgre``: Set tunnel type as NVGRE.
-
-* ``ipingre``: Set tunnel type as IP-in-GRE.
-
-* ``imac-ivlan``: Set filter type as Inner MAC and VLAN.
-
-* ``imac-ivlan-tenid``: Set filter type as Inner MAC, VLAN and tenant ID.
-
-* ``imac-tenid``: Set filter type as Inner MAC and tenant ID.
-
-* ``imac``: Set filter type as Inner MAC.
-
-* ``omac-imac-tenid``: Set filter type as Outer MAC, Inner MAC and tenant ID.
-
-* ``oip``: Set filter type as Outer IP.
-
-* ``iip``: Set filter type as Inner IP.
-
-Example::
-
-   testpmd> tunnel_filter add 0 68:05:CA:28:09:82 00:00:00:00:00:00 \
-            192.168.2.2 0 ipingre oip 1 1
-
-   Set an IP-in-GRE tunnel on port 0, and the filter type is Outer IP.
-
-tunnel_filter remove
-~~~~~~~~~~~~~~~~~~~~
-
-Remove a tunnel filter on a port::
-
-   testpmd> tunnel_filter rm (port_id) (outer_mac) (inner_mac) (ip_addr) \
-            (inner_vlan) (vxlan|nvgre|ipingre) (imac-ivlan|imac-ivlan-tenid|\
-            imac-tenid|imac|omac-imac-tenid|oip|iip) (tenant_id) (queue_id)
 
 rx_vxlan_port add
 ~~~~~~~~~~~~~~~~~
@@ -892,11 +1132,11 @@ Where:
 * ``ip|udp|tcp|sctp`` always relate to  the inner layer.
 
 * ``outer-ip`` relates to the outer IP layer (only for IPv4) in the case where the packet is recognized
-  as a tunnel packet by the forwarding engine (vxlan, gre and ipip are
+  as a tunnel packet by the forwarding engine (geneve, gre, gtp, ipip, vxlan and vxlan-gpe are
   supported). See also the ``csum parse-tunnel`` command.
 
 * ``outer-udp`` relates to the outer UDP layer in the case where the packet is recognized
-  as a tunnel packet by the forwarding engine (vxlan, vxlan-gpe are
+  as a tunnel packet by the forwarding engine (geneve, gtp, vxlan and vxlan-gpe are
   supported). See also the ``csum parse-tunnel`` command.
 
 .. note::
@@ -930,11 +1170,12 @@ Flush all queue region related configuration on a port::
 
 where:
 
-* "on"is just an enable function which server for other configuration,
+* ``on``: is just an enable function which server for other configuration,
   it is for all configuration about queue region from up layer,
-  at first will only keep in DPDK softwarestored in driver,
+  at first will only keep in DPDK software stored in driver,
   only after "flush on", it commit all configuration to HW.
-  "off" is just clean all configuration about queue region just now,
+
+* ``"off``: is just clean all configuration about queue region just now,
   and restore all to DPDK i40e driver default config when start up.
 
 Show all queue region related configuration info on a port::
@@ -955,7 +1196,7 @@ engine::
    testpmd> csum parse-tunnel (on|off) (tx_port_id)
 
 If enabled, the csum forward engine will try to recognize supported
-tunnel headers (vxlan, gre, ipip).
+tunnel headers (geneve, gtp, gre, ipip, vxlan, vxlan-gpe).
 
 If disabled, treat tunnel packets as non-tunneled packets (a inner
 header is handled as a packet payload).
@@ -1001,6 +1242,20 @@ tso show
 Display the status of TCP Segmentation Offload::
 
    testpmd> tso show (port_id)
+
+tunnel tso set
+~~~~~~~~~~~~~~
+
+Set tso segment size of tunneled packets for a port in csum engine::
+
+   testpmd> tunnel_tso set (tso_segsz) (port_id)
+
+tunnel tso show
+~~~~~~~~~~~~~~~
+
+Display the status of tunneled TCP Segmentation Offload for a port::
+
+   testpmd> tunnel_tso show (port_id)
 
 set port - gro
 ~~~~~~~~~~~~~~
@@ -1122,6 +1377,22 @@ mac_addr remove
 Remove a MAC address from a port::
 
    testpmd> mac_addr remove (port_id) (XX:XX:XX:XX:XX:XX)
+
+mcast_addr add
+~~~~~~~~~~~~~~
+
+To add the multicast MAC address to/from the set of multicast addresses
+filtered by port::
+
+   testpmd> mcast_addr add (port_id) (mcast_addr)
+
+mcast_addr remove
+~~~~~~~~~~~~~~~~~
+
+To remove the multicast MAC address to/from the set of multicast addresses
+filtered by port::
+
+   testpmd> mcast_addr remove (port_id) (mcast_addr)
 
 mac_addr add (for VF)
 ~~~~~~~~~~~~~~~~~~~~~
@@ -1253,6 +1524,13 @@ Where:
 
 * ``autoneg``: Change the auto-negotiation parameter.
 
+show flow control
+~~~~~~~~~~~~~~~~~
+
+show the link flow control parameter on a port::
+
+   testpmd> show port <port_id> flow_ctrl
+
 set pfc_ctrl rx
 ~~~~~~~~~~~~~~~
 
@@ -1299,14 +1577,6 @@ set port - rx/tx (for VF)
 Set VF receive/transmit from a port::
 
    testpmd> set port (port_id) vf (vf_id) (rx|tx) (on|off)
-
-set port - mac address filter (for VF)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Add/Remove unicast or multicast MAC addr filter for a VF::
-
-   testpmd> set port (port_id) vf (vf_id) (mac_addr) \
-            (exact-mac|exact-mac-vlan|hashmac|hashmac-vlan) (on|off)
 
 set port - rx mode(for VF)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1449,13 +1719,6 @@ Enable/disable E-tag based forwarding on a port::
 
    testpmd> E-tag set forwarding (on|off) port (port_id)
 
-Add an E-tag forwarding filter on a port::
-
-   testpmd> E-tag set filter add e-tag-id (value) dst-pool (pool_id) port (port_id)
-
-Delete an E-tag forwarding filter on a port::
-   testpmd> E-tag set filter del e-tag-id (value) port (port_id)
-
 ddp add
 ~~~~~~~
 
@@ -1479,7 +1742,7 @@ List all items from the ptype mapping table::
 
 Where:
 
-* ``valid_only``: A flag indicates if only list valid items(=1) or all itemss(=0).
+* ``valid_only``: A flag indicates if only list valid items(=1) or all items(=0).
 
 Replace a specific or a group of software defined ptype with a new one::
 
@@ -1518,7 +1781,7 @@ Enable or disable a per port Rx offloading on all Rx queues of a port::
                   vlan_strip, ipv4_cksum, udp_cksum, tcp_cksum, tcp_lro,
                   qinq_strip, outer_ipv4_cksum, macsec_strip,
                   header_split, vlan_filter, vlan_extend, jumbo_frame,
-                  crc_strip, scatter, timestamp, security, keep_crc
+                  scatter, timestamp, security, keep_crc, rss_hash
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1533,7 +1796,7 @@ Enable or disable a per queue Rx offloading only on a specific Rx queue::
                   vlan_strip, ipv4_cksum, udp_cksum, tcp_cksum, tcp_lro,
                   qinq_strip, outer_ipv4_cksum, macsec_strip,
                   header_split, vlan_filter, vlan_extend, jumbo_frame,
-                  crc_strip, scatter, timestamp, security, keep_crc
+                  scatter, timestamp, security, keep_crc
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1549,8 +1812,7 @@ Enable or disable a per port Tx offloading on all Tx queues of a port::
                   sctp_cksum, tcp_tso, udp_tso, outer_ipv4_cksum,
                   qinq_insert, vxlan_tnl_tso, gre_tnl_tso,
                   ipip_tnl_tso, geneve_tnl_tso, macsec_insert,
-                  mt_lockfree, multi_segs, mbuf_fast_free, security,
-                  match_metadata
+                  mt_lockfree, multi_segs, mbuf_fast_free, security
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1583,7 +1845,11 @@ Configure the outer layer to encapsulate a packet inside a VXLAN tunnel::
  udp-dst (udp-dst) ip-src (ip-src) ip-dst (ip-dst) vlan-tci (vlan-tci) \
  eth-src (eth-src) eth-dst (eth-dst)
 
-Those command will set an internal configuration inside testpmd, any following
+ set vxlan-tos-ttl ip-version (ipv4|ipv6) vni (vni) udp-src (udp-src) \
+ udp-dst (udp-dst) ip-tos (ip-tos) ip-ttl (ip-ttl) ip-src (ip-src) \
+ ip-dst (ip-dst) eth-src (eth-src) eth-dst (eth-dst)
+
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action vxlan_encap will use the last configuration set.
 To have a different encapsulation header, one of those commands must be called
 before the flow rule creation.
@@ -1598,7 +1864,7 @@ Configure the outer layer to encapsulate a packet inside a NVGRE tunnel::
  set nvgre-with-vlan ip-version (ipv4|ipv6) tni (tni) ip-src (ip-src) \
         ip-dst (ip-dst) vlan-tci (vlan-tci) eth-src (eth-src) eth-dst (eth-dst)
 
-Those command will set an internal configuration inside testpmd, any following
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action nvgre_encap will use the last configuration set.
 To have a different encapsulation header, one of those commands must be called
 before the flow rule creation.
@@ -1641,7 +1907,7 @@ Configure the outer layer to encapsulate a packet inside a MPLSoGRE tunnel::
         ip-src (ip-src) ip-dst (ip-dst) vlan-tci (vlan-tci) \
         eth-src (eth-src) eth-dst (eth-dst)
 
-Those command will set an internal configuration inside testpmd, any following
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action mplsogre_encap will use the last configuration set.
 To have a different encapsulation header, one of those commands must be called
 before the flow rule creation.
@@ -1654,7 +1920,7 @@ Configure the outer layer to decapsulate MPLSoGRE packet::
  set mplsogre_decap ip-version (ipv4|ipv6)
  set mplsogre_decap-with-vlan ip-version (ipv4|ipv6)
 
-Those command will set an internal configuration inside testpmd, any following
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action mplsogre_decap will use the last configuration set.
 To have a different decapsulation header, one of those commands must be called
 before the flow rule creation.
@@ -1671,7 +1937,7 @@ Configure the outer layer to encapsulate a packet inside a MPLSoUDP tunnel::
         udp-src (udp-src) udp-dst (udp-dst) ip-src (ip-src) ip-dst (ip-dst) \
         vlan-tci (vlan-tci) eth-src (eth-src) eth-dst (eth-dst)
 
-Those command will set an internal configuration inside testpmd, any following
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action mplsoudp_encap will use the last configuration set.
 To have a different encapsulation header, one of those commands must be called
 before the flow rule creation.
@@ -1684,10 +1950,82 @@ Configure the outer layer to decapsulate MPLSoUDP packet::
  set mplsoudp_decap ip-version (ipv4|ipv6)
  set mplsoudp_decap-with-vlan ip-version (ipv4|ipv6)
 
-Those command will set an internal configuration inside testpmd, any following
+These commands will set an internal configuration inside testpmd, any following
 flow rule using the action mplsoudp_decap will use the last configuration set.
 To have a different decapsulation header, one of those commands must be called
 before the flow rule creation.
+
+Config Raw Encapsulation
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the raw data to be used when encapsulating a packet by
+rte_flow_action_raw_encap::
+
+ set raw_encap {index} {item} [/ {item} [...]] / end_set
+
+There are multiple global buffers for ``raw_encap``, this command will set one
+internal buffer index by ``{index}``.
+If there is no ``{index}`` specified::
+
+ set raw_encap {item} [/ {item} [...]] / end_set
+
+the default index ``0`` is used.
+In order to use different encapsulating header, ``index`` must be specified
+during the flow rule creation::
+
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+        raw_encap index 2 / end
+
+Otherwise the default index ``0`` is used.
+
+Config Raw Decapsulation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the raw data to be used when decapsulating a packet by
+rte_flow_action_raw_decap::
+
+ set raw_decap {index} {item} [/ {item} [...]] / end_set
+
+There are multiple global buffers for ``raw_decap``, this command will set
+one internal buffer index by ``{index}``.
+If there is no ``{index}`` specified::
+
+ set raw_decap {item} [/ {item} [...]] / end_set
+
+the default index ``0`` is used.
+In order to use different decapsulating header, ``index`` must be specified
+during the flow rule creation::
+
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+          raw_encap index 3 / end
+
+Otherwise the default index ``0`` is used.
+
+Set fec mode
+~~~~~~~~~~~~
+
+Set fec mode for a specific port::
+
+  testpmd> set port (port_id) fec_mode auto|off|rs|baser
+
+Config Sample actions list
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the sample actions list to be used when sampling a packet by
+rte_flow_action_sample::
+
+ set sample_actions {index} {action} [/ {action} [...]] / end
+
+There are multiple global buffers for ``sample_actions``, this command will set
+one internal buffer index by ``{index}``.
+
+In order to use different sample actions list, ``index`` must be specified
+during the flow rule creation::
+
+ testpmd> flow create 0 ingress pattern eth / ipv4 / end actions
+        sample ratio 2 index 2 / end
+
+Otherwise the default index ``0`` is used.
 
 Port Functions
 --------------
@@ -1868,6 +2206,15 @@ Close all ports or a specific port::
 
    testpmd> port close (port_id|all)
 
+port reset
+~~~~~~~~~~
+
+Reset all ports or a specific port::
+
+   testpmd> port reset (port_id|all)
+
+User should stop port(s) before resetting and (re-)start after reset.
+
 port config - queue ring size
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1905,7 +2252,7 @@ port config - speed
 
 Set the speed and duplex mode for all ports or a specific port::
 
-   testpmd> port config (port_id|all) speed (10|100|1000|10000|25000|40000|50000|100000|auto) \
+   testpmd> port config (port_id|all) speed (10|100|1000|10000|25000|40000|50000|100000|200000|auto) \
             duplex (half|full|auto)
 
 port config - queues/descriptors
@@ -1926,91 +2273,23 @@ Set the maximum packet length::
 
 This is equivalent to the ``--max-pkt-len`` command-line option.
 
-port config - CRC Strip
-~~~~~~~~~~~~~~~~~~~~~~~
+port config - max-lro-pkt-size
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Set hardware CRC stripping on or off for all ports::
+Set the maximum LRO aggregated packet size::
 
-   testpmd> port config all crc-strip (on|off)
+   testpmd> port config all max-lro-pkt-size (value)
 
-CRC stripping is on by default.
-
-The ``off`` option is equivalent to the ``--disable-crc-strip`` command-line option.
-
-port config - scatter
-~~~~~~~~~~~~~~~~~~~~~~~
-
-Set RX scatter mode on or off for all ports::
-
-   testpmd> port config all scatter (on|off)
-
-RX scatter mode is off by default.
-
-The ``on`` option is equivalent to the ``--enable-scatter`` command-line option.
-
-port config - RX Checksum
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware RX checksum offload to on or off for all ports::
-
-   testpmd> port config all rx-cksum (on|off)
-
-Checksum offload is off by default.
-
-The ``on`` option is equivalent to the ``--enable-rx-cksum`` command-line option.
-
-port config - VLAN
-~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN on or off for all ports::
-
-   testpmd> port config all hw-vlan (on|off)
-
-Hardware VLAN is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan`` command-line option.
-
-port config - VLAN filter
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN filter on or off for all ports::
-
-   testpmd> port config all hw-vlan-filter (on|off)
-
-Hardware VLAN filter is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-filter`` command-line option.
-
-port config - VLAN strip
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN strip on or off for all ports::
-
-   testpmd> port config all hw-vlan-strip (on|off)
-
-Hardware VLAN strip is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-strip`` command-line option.
-
-port config - VLAN extend
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN extend on or off for all ports::
-
-   testpmd> port config all hw-vlan-extend (on|off)
-
-Hardware VLAN extend is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-extend`` command-line option.
+This is equivalent to the ``--max-lro-pkt-size`` command-line option.
 
 port config - Drop Packets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Set packet drop for packets with no descriptors on or off for all ports::
+Enable or disable packet drop on all RX queues of all ports when no receive buffers available::
 
    testpmd> port config all drop-en (on|off)
 
-Packet dropping for packets with no descriptors is off by default.
+Packet dropping when no receive buffers available is off by default.
 
 The ``on`` option is equivalent to the ``--enable-drop-en`` command-line option.
 
@@ -2019,12 +2298,14 @@ port config - RSS
 
 Set the RSS (Receive Side Scaling) mode on or off::
 
-   testpmd> port config all rss (all|default|ip|tcp|udp|sctp|ether|port|vxlan|geneve|nvgre|none)
+   testpmd> port config all rss (all|default|eth|vlan|ip|tcp|udp|sctp|ether|port|vxlan|geneve|nvgre|vxlan-gpe|l2tpv3|esp|ah|pfcp|ecpri|mpls|none)
 
 RSS is on by default.
 
-The ``all`` option is equivalent to ip|tcp|udp|sctp|ether.
+The ``all`` option is equivalent to eth|vlan|ip|tcp|udp|sctp|ether|l2tpv3|esp|ah|pfcp.
+
 The ``default`` option enables all supported RSS types reported by device info.
+
 The ``none`` option is equivalent to the ``--disable-rss`` command-line option.
 
 port config - RSS Reta
@@ -2081,17 +2362,6 @@ Where the threshold type can be:
 
 These threshold options are also available from the command-line.
 
-port config - E-tag
-~~~~~~~~~~~~~~~~~~~
-
-Set the value of ether-type for E-tag::
-
-   testpmd> port config (port_id|all) l2-tunnel E-tag ether-type (value)
-
-Enable/disable the E-tag support::
-
-   testpmd> port config (port_id|all) l2-tunnel E-tag (enable|disable)
-
 port config pctype mapping
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2113,11 +2383,13 @@ port config input set
 ~~~~~~~~~~~~~~~~~~~~~
 
 Config RSS/FDIR/FDIR flexible payload input set for some pctype::
+
    testpmd> port config (port_id) pctype (pctype_id) \
             (hash_inset|fdir_inset|fdir_flx_inset) \
 	    (get|set|clear) field (field_idx)
 
 Clear RSS/FDIR/FDIR flexible payload input set for some pctype::
+
    testpmd> port config (port_id) pctype (pctype_id) \
             (hash_inset|fdir_inset|fdir_flx_inset) clear all
 
@@ -2130,7 +2402,8 @@ port config udp_tunnel_port
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Add/remove UDP tunnel port for VXLAN/GENEVE tunneling protocols::
-    testpmd> port config (port_id) udp_tunnel_port add|rm vxlan|geneve (udp_port)
+
+    testpmd> port config (port_id) udp_tunnel_port add|rm vxlan|geneve|vxlan-gpe|ecpri (udp_port)
 
 port config tx_metadata
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -2139,6 +2412,86 @@ Set Tx metadata value per port.
 testpmd will add this value to any Tx packet sent from this port::
 
    testpmd> port config (port_id) tx_metadata (value)
+
+port config dynf
+~~~~~~~~~~~~~~~~
+
+Set/clear dynamic flag per port.
+testpmd will register this flag in the mbuf (same registration
+for both Tx and Rx). Then set/clear this flag for each Tx
+packet sent from this port. The set bit only works for Tx packet::
+
+   testpmd> port config (port_id) dynf (name) (set|clear)
+
+port config mtu
+~~~~~~~~~~~~~~~
+
+To configure MTU(Maximum Transmission Unit) on devices using testpmd::
+
+   testpmd> port config mtu (port_id) (value)
+
+port config rss hash key
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+To configure the RSS hash key used to compute the RSS
+hash of input [IP] packets received on port::
+
+   testpmd> port config <port_id> rss-hash-key (ipv4|ipv4-frag|\
+                     ipv4-tcp|ipv4-udp|ipv4-sctp|ipv4-other|\
+                     ipv6|ipv6-frag|ipv6-tcp|ipv6-udp|ipv6-sctp|\
+                     ipv6-other|l2-payload|ipv6-ex|ipv6-tcp-ex|\
+                     ipv6-udp-ex <string of hex digits \
+                     (variable length, NIC dependent)>)
+
+port cleanup txq mbufs
+~~~~~~~~~~~~~~~~~~~~~~
+
+To cleanup txq mbufs currently cached by driver::
+
+   testpmd> port cleanup (port_id) txq (queue_id) (free_cnt)
+
+If the value of ``free_cnt`` is 0, driver should free all cached mbufs.
+
+Device Functions
+----------------
+
+The following sections show functions for device operations.
+
+device detach
+~~~~~~~~~~~~~
+
+Detach a device specified by pci address or virtual device args::
+
+   testpmd> device detach (identifier)
+
+Before detaching a device associated with ports, the ports should be stopped and closed.
+
+For example, to detach a pci device whose address is 0002:03:00.0.
+
+.. code-block:: console
+
+    testpmd> device detach 0002:03:00.0
+    Removing a device...
+    Port 1 is now closed
+    EAL: Releasing pci mapped resource for 0002:03:00.0
+    EAL: Calling pci_unmap_resource for 0002:03:00.0 at 0x218a050000
+    EAL: Calling pci_unmap_resource for 0002:03:00.0 at 0x218c050000
+    Device 0002:03:00.0 is detached
+    Now total ports is 1
+
+For example, to detach a port created by pcap PMD.
+
+.. code-block:: console
+
+    testpmd> device detach net_pcap0
+    Removing a device...
+    Port 0 is now closed
+    Device net_pcap0 is detached
+    Now total ports is 0
+    Done
+
+In this case, identifier is ``net_pcap0``.
+This identifier format is the same as ``--vdev`` format of DPDK applications.
 
 Link Bonding Functions
 ----------------------
@@ -2214,16 +2567,16 @@ For example, to set the MAC address of a Link Bonding device (port 10) to 00:00:
 
    testpmd> set bonding mac 10 00:00:00:00:00:01
 
-set bonding xmit_balance_policy
+set bonding balance_xmit_policy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Set the transmission policy for a Link Bonding device when it is in Balance XOR mode::
 
-   testpmd> set bonding xmit_balance_policy (port_id) (l2|l23|l34)
+   testpmd> set bonding balance_xmit_policy (port_id) (l2|l23|l34)
 
 For example, set a Link Bonding device (port 10) to use a balance policy of layer 3+4 (IP addresses & UDP ports)::
 
-   testpmd> set bonding xmit_balance_policy 10 l34
+   testpmd> set bonding balance_xmit_policy 10 l34
 
 
 set bonding mon_period
@@ -2246,7 +2599,7 @@ set bonding lacp dedicated_queue
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Enable dedicated tx/rx queues on bonding devices slaves to handle LACP control plane traffic
-when in mode 4 (link-aggregration-802.3ad)::
+when in mode 4 (link-aggregation-802.3ad)::
 
    testpmd> set bonding lacp dedicated_queues (port_id) (enable|disable)
 
@@ -2254,7 +2607,7 @@ when in mode 4 (link-aggregration-802.3ad)::
 set bonding agg_mode
 ~~~~~~~~~~~~~~~~~~~~
 
-Enable one of the specific aggregators mode when in mode 4 (link-aggregration-802.3ad)::
+Enable one of the specific aggregators mode when in mode 4 (link-aggregation-802.3ad)::
 
    testpmd> set bonding agg_mode (port_id) (bandwidth|count|stable)
 
@@ -2377,14 +2730,15 @@ add port meter profile (srTCM rfc2967)
 Add meter profile (srTCM rfc2697) to the ethernet device::
 
    testpmd> add port meter profile srtcm_rfc2697 (port_id) (profile_id) \
-   (cir) (cbs) (ebs)
+   (cir) (cbs) (ebs) (packet_mode)
 
 where:
 
 * ``profile_id``: ID for the meter profile.
-* ``cir``: Committed Information Rate (CIR) (bytes/second).
-* ``cbs``: Committed Burst Size (CBS) (bytes).
-* ``ebs``: Excess Burst Size (EBS) (bytes).
+* ``cir``: Committed Information Rate (CIR) (bytes per second or packets per second).
+* ``cbs``: Committed Burst Size (CBS) (bytes or packets).
+* ``ebs``: Excess Burst Size (EBS) (bytes or packets).
+* ``packet_mode``: Packets mode for meter profile.
 
 add port meter profile (trTCM rfc2968)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2392,15 +2746,16 @@ add port meter profile (trTCM rfc2968)
 Add meter profile (srTCM rfc2698) to the ethernet device::
 
    testpmd> add port meter profile trtcm_rfc2698 (port_id) (profile_id) \
-   (cir) (pir) (cbs) (pbs)
+   (cir) (pir) (cbs) (pbs) (packet_mode)
 
 where:
 
 * ``profile_id``: ID for the meter profile.
-* ``cir``: Committed information rate (bytes/second).
-* ``pir``: Peak information rate (bytes/second).
-* ``cbs``: Committed burst size (bytes).
-* ``pbs``: Peak burst size (bytes).
+* ``cir``: Committed information rate (bytes per second or packets per second).
+* ``pir``: Peak information rate (bytes per second or packets per second).
+* ``cbs``: Committed burst size (bytes or packets).
+* ``pbs``: Peak burst size (bytes or packets).
+* ``packet_mode``: Packets mode for meter profile.
 
 add port meter profile (trTCM rfc4115)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2408,15 +2763,16 @@ add port meter profile (trTCM rfc4115)
 Add meter profile (trTCM rfc4115) to the ethernet device::
 
    testpmd> add port meter profile trtcm_rfc4115 (port_id) (profile_id) \
-   (cir) (eir) (cbs) (ebs)
+   (cir) (eir) (cbs) (ebs) (packet_mode)
 
 where:
 
 * ``profile_id``: ID for the meter profile.
-* ``cir``: Committed information rate (bytes/second).
-* ``eir``: Excess information rate (bytes/second).
-* ``cbs``: Committed burst size (bytes).
-* ``ebs``: Excess burst size (bytes).
+* ``cir``: Committed information rate (bytes per second or packets per second).
+* ``eir``: Excess information rate (bytes per second or packets per second).
+* ``cbs``: Committed burst size (bytes or packets).
+* ``ebs``: Excess burst size (bytes or packets).
+* ``packet_mode``: Packets mode for meter profile.
 
 delete port meter profile
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2425,13 +2781,37 @@ Delete meter profile from the ethernet device::
 
    testpmd> del port meter profile (port_id) (profile_id)
 
+create port policy
+~~~~~~~~~~~~~~~~~~
+
+Create new policy object for the ethernet device::
+
+   testpmd> add port meter policy (port_id) (policy_id) g_actions \
+   {action} y_actions {action} r_actions {action}
+
+where:
+
+* ``policy_id``: policy ID.
+* ``action``: action lists for green/yellow/red colors.
+
+delete port policy
+~~~~~~~~~~~~~~~~~~
+
+Delete policy object for the ethernet device::
+
+   testpmd> del port meter policy (port_id) (policy_id)
+
+where:
+
+* ``policy_id``: policy ID.
+
 create port meter
 ~~~~~~~~~~~~~~~~~
 
 Create new meter object for the ethernet device::
 
    testpmd> create port meter (port_id) (mtr_id) (profile_id) \
-   (meter_enable) (g_action) (y_action) (r_action) (stats_mask) (shared) \
+   (policy_id) (meter_enable) (stats_mask) (shared) \
    (use_pre_meter_color) [(dscp_tbl_entry0) (dscp_tbl_entry1)...\
    (dscp_tbl_entry63)]
 
@@ -2439,11 +2819,9 @@ where:
 
 * ``mtr_id``: meter object ID.
 * ``profile_id``: ID for the meter profile.
+* ``policy_id``: ID for the policy.
 * ``meter_enable``: When this parameter has a non-zero value, the meter object
   gets enabled at the time of creation, otherwise remains disabled.
-* ``g_action``: Policer action for the packet with green color.
-* ``y_action``: Policer action for the packet with yellow color.
-* ``r_action``: Policer action for the packet with red color.
 * ``stats_mask``: Mask of statistics counter types to be enabled for the
   meter object.
 * ``shared``:  When this parameter has a non-zero value, the meter object is
@@ -2491,24 +2869,6 @@ Set meter dscp table for the ethernet device::
    testpmd> set port meter dscp table (port_id) (mtr_id) [(dscp_tbl_entry0) \
    (dscp_tbl_entry1)...(dscp_tbl_entry63)]
 
-set port meter policer action
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set meter policer action for the ethernet device::
-
-   testpmd> set port meter policer action (port_id) (mtr_id) (action_mask) \
-   (action0) [(action1) (action1)]
-
-where:
-
-* ``action_mask``: Bit mask indicating which policer actions need to be
-  updated. One or more policer actions can be updated in a single function
-  invocation. To update the policer action associated with color C, bit
-  (1 << C) needs to be set in *action_mask* and element at position C
-  in the *actions* array needs to be valid.
-* ``actionx``: Policer action for the color x,
-  RTE_MTR_GREEN <= x < RTE_MTR_COLORS
-
 set port meter stats mask
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2536,7 +2896,7 @@ Traffic Management
 ------------------
 
 The following section shows functions for configuring traffic management on
-on the ethernet device through the use of generic TM API.
+the ethernet device through the use of generic TM API.
 
 show port traffic management capability
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2586,19 +2946,22 @@ Add the port traffic management private shaper profile::
 
    testpmd> add port tm node shaper profile (port_id) (shaper_profile_id) \
    (cmit_tb_rate) (cmit_tb_size) (peak_tb_rate) (peak_tb_size) \
-   (packet_length_adjust)
+   (packet_length_adjust) (packet_mode)
 
 where:
 
 * ``shaper_profile id``: Shaper profile ID for the new profile.
-* ``cmit_tb_rate``: Committed token bucket rate (bytes per second).
-* ``cmit_tb_size``: Committed token bucket size (bytes).
-* ``peak_tb_rate``: Peak token bucket rate (bytes per second).
-* ``peak_tb_size``: Peak token bucket size (bytes).
+* ``cmit_tb_rate``: Committed token bucket rate (bytes per second or packets per second).
+* ``cmit_tb_size``: Committed token bucket size (bytes or packets).
+* ``peak_tb_rate``: Peak token bucket rate (bytes per second or packets per second).
+* ``peak_tb_size``: Peak token bucket size (bytes or packets).
 * ``packet_length_adjust``: The value (bytes) to be added to the length of
   each packet for the purpose of shaping. This parameter value can be used to
   correct the packet length with the framing overhead bytes that are consumed
   on the wire.
+* ``packet_mode``: Shaper configured in packet mode. This parameter value if
+  zero, configures shaper in byte mode and if non-zero configures it in packet
+  mode.
 
 Delete port traffic management private shaper profile
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -2648,8 +3011,8 @@ where:
 
 * ``shared_shaper_id``: Shared shaper ID to be deleted.
 
-Set port traffic management hiearchy node private shaper
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Set port traffic management hierarchy node private shaper
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 set the port traffic management hierarchy node private shaper::
 
@@ -2700,7 +3063,7 @@ Delete the WRED profile::
 Add port traffic management hierarchy nonleaf node
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Add nonleaf node to port traffic management hiearchy::
+Add nonleaf node to port traffic management hierarchy::
 
    testpmd> add port tm nonleaf node (port_id) (node_id) (parent_node_id) \
    (priority) (weight) (level_id) (shaper_profile_id) \
@@ -2715,7 +3078,7 @@ where:
 * ``weight``: Node weight (lowest weight is one). The node weight is relative
   to the weight sum of all siblings that have the same priority. It is used by
   the WFQ algorithm running on the parent node for scheduling this node.
-* ``level_id``: Hiearchy level of the node.
+* ``level_id``: Hierarchy level of the node.
 * ``shaper_profile_id``: Shaper profile ID of the private shaper to be used by
   the node.
 * ``n_sp_priorities``: Number of strict priorities.
@@ -2723,10 +3086,37 @@ where:
 * ``n_shared_shapers``: Number of shared shapers.
 * ``shared_shaper_id``: Shared shaper id.
 
+Add port traffic management hierarchy nonleaf node with packet mode
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Add nonleaf node with packet mode to port traffic management hierarchy::
+
+   testpmd> add port tm nonleaf node pktmode (port_id) (node_id) (parent_node_id) \
+   (priority) (weight) (level_id) (shaper_profile_id) \
+   (n_sp_priorities) (stats_mask) (n_shared_shapers) \
+   [(shared_shaper_0) (shared_shaper_1) ...] \
+
+where:
+
+* ``parent_node_id``: Node ID of the parent.
+* ``priority``: Node priority (highest node priority is zero). This is used by
+  the SP algorithm running on the parent node for scheduling this node.
+* ``weight``: Node weight (lowest weight is one). The node weight is relative
+  to the weight sum of all siblings that have the same priority. It is used by
+  the WFQ algorithm running on the parent node for scheduling this node.
+* ``level_id``: Hierarchy level of the node.
+* ``shaper_profile_id``: Shaper profile ID of the private shaper to be used by
+  the node.
+* ``n_sp_priorities``: Number of strict priorities. Packet mode is enabled on
+  all of them.
+* ``stats_mask``: Mask of statistics counter types to be enabled for this node.
+* ``n_shared_shapers``: Number of shared shapers.
+* ``shared_shaper_id``: Shared shaper id.
+
 Add port traffic management hierarchy leaf node
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Add leaf node to port traffic management hiearchy::
+Add leaf node to port traffic management hierarchy::
 
    testpmd> add port tm leaf node (port_id) (node_id) (parent_node_id) \
    (priority) (weight) (level_id) (shaper_profile_id) \
@@ -2741,7 +3131,7 @@ where:
 * ``weight``: Node weight (lowest weight is one). The node weight is relative
   to the weight sum of all siblings that have the same priority. It is used by
   the WFQ algorithm running on the parent node for scheduling this node.
-* ``level_id``: Hiearchy level of the node.
+* ``level_id``: Hierarchy level of the node.
 * ``shaper_profile_id``: Shaper profile ID of the private shaper to be used by
   the node.
 * ``cman_mode``: Congestion management mode to be enabled for this node.
@@ -2753,7 +3143,7 @@ where:
 Delete port traffic management hierarchy node
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Delete node from port traffic management hiearchy::
+Delete node from port traffic management hierarchy::
 
    testpmd> del port tm node (port_id) (node_id)
 
@@ -2850,13 +3240,6 @@ where:
 * ``red`` enable 1, disable 0 marking IP ecn for yellow marked packets with ecn of 2'b01  or 2'b10
   to ecn of 2'b11 when IP is caring TCP or SCTP
 
-Set port traffic management default hierarchy (softnic forwarding mode)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-set the traffic management default hierarchy on the port::
-
-   testpmd> set port tm hierarchy default (port_id)
-
 Filter Functions
 ----------------
 
@@ -2865,285 +3248,7 @@ This section details the available filter functions that are available.
 Note these functions interface the deprecated legacy filtering framework,
 superseded by *rte_flow*. See `Flow rules management`_.
 
-ethertype_filter
-~~~~~~~~~~~~~~~~~~~~
-
-Add or delete a L2 Ethertype filter, which identify packets by their L2 Ethertype mainly assign them to a receive queue::
-
-   ethertype_filter (port_id) (add|del) (mac_addr|mac_ignr) (mac_address) \
-                    ethertype (ether_type) (drop|fwd) queue (queue_id)
-
-The available information parameters are:
-
-* ``port_id``: The port which the Ethertype filter assigned on.
-
-* ``mac_addr``: Compare destination mac address.
-
-* ``mac_ignr``: Ignore destination mac address match.
-
-* ``mac_address``: Destination mac address to match.
-
-* ``ether_type``: The EtherType value want to match,
-  for example 0x0806 for ARP packet. 0x0800 (IPv4) and 0x86DD (IPv6) are invalid.
-
-* ``queue_id``: The receive queue associated with this EtherType filter.
-  It is meaningless when deleting or dropping.
-
-Example, to add/remove an ethertype filter rule::
-
-   testpmd> ethertype_filter 0 add mac_ignr 00:11:22:33:44:55 \
-                             ethertype 0x0806 fwd queue 3
-
-   testpmd> ethertype_filter 0 del mac_ignr 00:11:22:33:44:55 \
-                             ethertype 0x0806 fwd queue 3
-
-2tuple_filter
-~~~~~~~~~~~~~~~~~
-
-Add or delete a 2-tuple filter,
-which identifies packets by specific protocol and destination TCP/UDP port
-and forwards packets into one of the receive queues::
-
-   2tuple_filter (port_id) (add|del) dst_port (dst_port_value) \
-                 protocol (protocol_value) mask (mask_value) \
-                 tcp_flags (tcp_flags_value) priority (prio_value) \
-                 queue (queue_id)
-
-The available information parameters are:
-
-* ``port_id``: The port which the 2-tuple filter assigned on.
-
-* ``dst_port_value``: Destination port in L4.
-
-* ``protocol_value``: IP L4 protocol.
-
-* ``mask_value``: Participates in the match or not by bit for field above, 1b means participate.
-
-* ``tcp_flags_value``: TCP control bits. The non-zero value is invalid, when the pro_value is not set to 0x06 (TCP).
-
-* ``prio_value``: Priority of this filter.
-
-* ``queue_id``: The receive queue associated with this 2-tuple filter.
-
-Example, to add/remove an 2tuple filter rule::
-
-   testpmd> 2tuple_filter 0 add dst_port 32 protocol 0x06 mask 0x03 \
-                          tcp_flags 0x02 priority 3 queue 3
-
-   testpmd> 2tuple_filter 0 del dst_port 32 protocol 0x06 mask 0x03 \
-                          tcp_flags 0x02 priority 3 queue 3
-
-5tuple_filter
-~~~~~~~~~~~~~~~~~
-
-Add or delete a 5-tuple filter,
-which consists of a 5-tuple (protocol, source and destination IP addresses, source and destination TCP/UDP/SCTP port)
-and routes packets into one of the receive queues::
-
-   5tuple_filter (port_id) (add|del) dst_ip (dst_address) src_ip \
-                 (src_address) dst_port (dst_port_value) \
-                 src_port (src_port_value) protocol (protocol_value) \
-                 mask (mask_value) tcp_flags (tcp_flags_value) \
-                 priority (prio_value) queue (queue_id)
-
-The available information parameters are:
-
-* ``port_id``: The port which the 5-tuple filter assigned on.
-
-* ``dst_address``: Destination IP address.
-
-* ``src_address``: Source IP address.
-
-* ``dst_port_value``: TCP/UDP destination port.
-
-* ``src_port_value``: TCP/UDP source port.
-
-* ``protocol_value``: L4 protocol.
-
-* ``mask_value``: Participates in the match or not by bit for field above, 1b means participate
-
-* ``tcp_flags_value``: TCP control bits. The non-zero value is invalid, when the protocol_value is not set to 0x06 (TCP).
-
-* ``prio_value``: The priority of this filter.
-
-* ``queue_id``: The receive queue associated with this 5-tuple filter.
-
-Example, to add/remove an 5tuple filter rule::
-
-   testpmd> 5tuple_filter 0 add dst_ip 2.2.2.5 src_ip 2.2.2.4 \
-            dst_port 64 src_port 32 protocol 0x06 mask 0x1F \
-            flags 0x0 priority 3 queue 3
-
-   testpmd> 5tuple_filter 0 del dst_ip 2.2.2.5 src_ip 2.2.2.4 \
-            dst_port 64 src_port 32 protocol 0x06 mask 0x1F \
-            flags 0x0 priority 3 queue 3
-
-syn_filter
-~~~~~~~~~~
-
-Using the  SYN filter, TCP packets whose *SYN* flag is set can be forwarded to a separate queue::
-
-   syn_filter (port_id) (add|del) priority (high|low) queue (queue_id)
-
-The available information parameters are:
-
-* ``port_id``: The port which the SYN filter assigned on.
-
-* ``high``: This SYN filter has higher priority than other filters.
-
-* ``low``: This SYN filter has lower priority than other filters.
-
-* ``queue_id``: The receive queue associated with this SYN filter
-
-Example::
-
-   testpmd> syn_filter 0 add priority high queue 3
-
-flex_filter
-~~~~~~~~~~~
-
-With flex filter, packets can be recognized by any arbitrary pattern within the first 128 bytes of the packet
-and routed into one of the receive queues::
-
-   flex_filter (port_id) (add|del) len (len_value) bytes (bytes_value) \
-               mask (mask_value) priority (prio_value) queue (queue_id)
-
-The available information parameters are:
-
-* ``port_id``: The port which the Flex filter is assigned on.
-
-* ``len_value``: Filter length in bytes, no greater than 128.
-
-* ``bytes_value``: A string in hexadecimal, means the value the flex filter needs to match.
-
-* ``mask_value``: A string in hexadecimal, bit 1 means corresponding byte participates in the match.
-
-* ``prio_value``: The priority of this filter.
-
-* ``queue_id``: The receive queue associated with this Flex filter.
-
-Example::
-
-   testpmd> flex_filter 0 add len 16 bytes 0x00000000000000000000000008060000 \
-                          mask 000C priority 3 queue 3
-
-   testpmd> flex_filter 0 del len 16 bytes 0x00000000000000000000000008060000 \
-                          mask 000C priority 3 queue 3
-
-
 .. _testpmd_flow_director:
-
-flow_director_filter
-~~~~~~~~~~~~~~~~~~~~
-
-The Flow Director works in receive mode to identify specific flows or sets of flows and route them to specific queues.
-
-Four types of filtering are supported which are referred to as Perfect Match, Signature, Perfect-mac-vlan and
-Perfect-tunnel filters, the match mode is set by the ``--pkt-filter-mode`` command-line parameter:
-
-* Perfect match filters.
-  The hardware checks a match between the masked fields of the received packets and the programmed filters.
-  The masked fields are for IP flow.
-
-* Signature filters.
-  The hardware checks a match between a hash-based signature of the masked fields of the received packet.
-
-* Perfect-mac-vlan match filters.
-  The hardware checks a match between the masked fields of the received packets and the programmed filters.
-  The masked fields are for MAC VLAN flow.
-
-* Perfect-tunnel match filters.
-  The hardware checks a match between the masked fields of the received packets and the programmed filters.
-  The masked fields are for tunnel flow.
-
-* Perfect-raw-flow-type match filters.
-  The hardware checks a match between the masked fields of the received packets and pre-loaded raw (template) packet.
-  The masked fields are specified by input sets.
-
-The Flow Director filters can match the different fields for different type of packet: flow type, specific input set
-per flow type and the flexible payload.
-
-The Flow Director can also mask out parts of all of these fields so that filters
-are only applied to certain fields or parts of the fields.
-
-Note that for raw flow type mode the source and destination fields in the
-raw packet buffer need to be presented in a reversed order with respect
-to the expected received packets.
-For example: IP source and destination addresses or TCP/UDP/SCTP
-source and destination ports
-
-Different NICs may have different capabilities, command show port fdir (port_id) can be used to acquire the information.
-
-# Commands to add flow director filters of different flow types::
-
-   flow_director_filter (port_id) mode IP (add|del|update) \
-                        flow (ipv4-other|ipv4-frag|ipv6-other|ipv6-frag) \
-                        src (src_ip_address) dst (dst_ip_address) \
-                        tos (tos_value) proto (proto_value) ttl (ttl_value) \
-                        vlan (vlan_value) flexbytes (flexbytes_value) \
-                        (drop|fwd) pf|vf(vf_id) queue (queue_id) \
-                        fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode IP (add|del|update) \
-                        flow (ipv4-tcp|ipv4-udp|ipv6-tcp|ipv6-udp) \
-                        src (src_ip_address) (src_port) \
-                        dst (dst_ip_address) (dst_port) \
-                        tos (tos_value) ttl (ttl_value) \
-                        vlan (vlan_value) flexbytes (flexbytes_value) \
-                        (drop|fwd) queue pf|vf(vf_id) (queue_id) \
-                        fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode IP (add|del|update) \
-                        flow (ipv4-sctp|ipv6-sctp) \
-                        src (src_ip_address) (src_port) \
-                        dst (dst_ip_address) (dst_port) \
-                        tos (tos_value) ttl (ttl_value) \
-                        tag (verification_tag) vlan (vlan_value) \
-                        flexbytes (flexbytes_value) (drop|fwd) \
-                        pf|vf(vf_id) queue (queue_id) fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode IP (add|del|update) flow l2_payload \
-                        ether (ethertype) flexbytes (flexbytes_value) \
-                        (drop|fwd) pf|vf(vf_id) queue (queue_id)
-                        fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode MAC-VLAN (add|del|update) \
-                        mac (mac_address) vlan (vlan_value) \
-                        flexbytes (flexbytes_value) (drop|fwd) \
-                        queue (queue_id) fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode Tunnel (add|del|update) \
-                        mac (mac_address) vlan (vlan_value) \
-                        tunnel (NVGRE|VxLAN) tunnel-id (tunnel_id_value) \
-                        flexbytes (flexbytes_value) (drop|fwd) \
-                        queue (queue_id) fd_id (fd_id_value)
-
-   flow_director_filter (port_id) mode raw (add|del|update) flow (flow_id) \
-                        (drop|fwd) queue (queue_id) fd_id (fd_id_value) \
-                        packet (packet file name)
-
-For example, to add an ipv4-udp flow type filter::
-
-   testpmd> flow_director_filter 0 mode IP add flow ipv4-udp src 2.2.2.3 32 \
-            dst 2.2.2.5 33 tos 2 ttl 40 vlan 0x1 flexbytes (0x88,0x48) \
-            fwd pf queue 1 fd_id 1
-
-For example, add an ipv4-other flow type filter::
-
-   testpmd> flow_director_filter 0 mode IP add flow ipv4-other src 2.2.2.3 \
-             dst 2.2.2.5 tos 2 proto 20 ttl 40 vlan 0x1 \
-             flexbytes (0x88,0x48) fwd pf queue 1 fd_id 1
-
-flush_flow_director
-~~~~~~~~~~~~~~~~~~~
-
-Flush all flow director filters on a device::
-
-   testpmd> flush_flow_director (port_id)
-
-Example, to flush all flow director filter on port 0::
-
-   testpmd> flush_flow_director 0
 
 flow_director_mask
 ~~~~~~~~~~~~~~~~~~
@@ -3168,22 +3273,6 @@ Example, to set flow director mask on port 0::
             dst_mask 255.255.255.255 \
                 FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF 0xFFFF
 
-flow_director_flex_mask
-~~~~~~~~~~~~~~~~~~~~~~~
-
-set masks of flow director's flexible payload based on certain flow type::
-
-   testpmd> flow_director_flex_mask (port_id) \
-            flow (none|ipv4-other|ipv4-frag|ipv4-tcp|ipv4-udp|ipv4-sctp| \
-                  ipv6-other|ipv6-frag|ipv6-tcp|ipv6-udp|ipv6-sctp| \
-                  l2_payload|all) (mask)
-
-Example, to set flow director's flex mask for all flow type on port 0::
-
-   testpmd> flow_director_flex_mask 0 flow all \
-            (0xff,0xff,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-
-
 flow_director_flex_payload
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -3195,100 +3284,6 @@ For example, to select the first 16 bytes from the offset 4 (bytes) of packet's 
 
    testpmd> flow_director_flex_payload 0 l4 \
             (4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19)
-
-get_sym_hash_ena_per_port
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Get symmetric hash enable configuration per port::
-
-   get_sym_hash_ena_per_port (port_id)
-
-For example, to get symmetric hash enable configuration of port 1::
-
-   testpmd> get_sym_hash_ena_per_port 1
-
-set_sym_hash_ena_per_port
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set symmetric hash enable configuration per port to enable or disable::
-
-   set_sym_hash_ena_per_port (port_id) (enable|disable)
-
-For example, to set symmetric hash enable configuration of port 1 to enable::
-
-   testpmd> set_sym_hash_ena_per_port 1 enable
-
-get_hash_global_config
-~~~~~~~~~~~~~~~~~~~~~~
-
-Get the global configurations of hash filters::
-
-   get_hash_global_config (port_id)
-
-For example, to get the global configurations of hash filters of port 1::
-
-   testpmd> get_hash_global_config 1
-
-set_hash_global_config
-~~~~~~~~~~~~~~~~~~~~~~
-
-Set the global configurations of hash filters::
-
-   set_hash_global_config (port_id) (toeplitz|simple_xor|default) \
-   (ipv4|ipv4-frag|ipv4-tcp|ipv4-udp|ipv4-sctp|ipv4-other|ipv6|ipv6-frag| \
-   ipv6-tcp|ipv6-udp|ipv6-sctp|ipv6-other|l2_payload|<flow_id>) \
-   (enable|disable)
-
-For example, to enable simple_xor for flow type of ipv6 on port 2::
-
-   testpmd> set_hash_global_config 2 simple_xor ipv6 enable
-
-set_hash_input_set
-~~~~~~~~~~~~~~~~~~
-
-Set the input set for hash::
-
-   set_hash_input_set (port_id) (ipv4-frag|ipv4-tcp|ipv4-udp|ipv4-sctp| \
-   ipv4-other|ipv6-frag|ipv6-tcp|ipv6-udp|ipv6-sctp|ipv6-other| \
-   l2_payload|<flow_id>) (ovlan|ivlan|src-ipv4|dst-ipv4|src-ipv6|dst-ipv6| \
-   ipv4-tos|ipv4-proto|ipv6-tc|ipv6-next-header|udp-src-port|udp-dst-port| \
-   tcp-src-port|tcp-dst-port|sctp-src-port|sctp-dst-port|sctp-veri-tag| \
-   udp-key|gre-key|fld-1st|fld-2nd|fld-3rd|fld-4th|fld-5th|fld-6th|fld-7th| \
-   fld-8th|none) (select|add)
-
-For example, to add source IP to hash input set for flow type of ipv4-udp on port 0::
-
-   testpmd> set_hash_input_set 0 ipv4-udp src-ipv4 add
-
-set_fdir_input_set
-~~~~~~~~~~~~~~~~~~
-
-The Flow Director filters can match the different fields for different type of packet, i.e. specific input set
-on per flow type and the flexible payload. This command can be used to change input set for each flow type.
-
-Set the input set for flow director::
-
-   set_fdir_input_set (port_id) (ipv4-frag|ipv4-tcp|ipv4-udp|ipv4-sctp| \
-   ipv4-other|ipv6|ipv6-frag|ipv6-tcp|ipv6-udp|ipv6-sctp|ipv6-other| \
-   l2_payload|<flow_id>) (ivlan|ethertype|src-ipv4|dst-ipv4|src-ipv6|dst-ipv6| \
-   ipv4-tos|ipv4-proto|ipv4-ttl|ipv6-tc|ipv6-next-header|ipv6-hop-limits| \
-   tudp-src-port|udp-dst-port|cp-src-port|tcp-dst-port|sctp-src-port| \
-   sctp-dst-port|sctp-veri-tag|none) (select|add)
-
-For example to add source IP to FD input set for flow type of ipv4-udp on port 0::
-
-   testpmd> set_fdir_input_set 0 ipv4-udp src-ipv4 add
-
-global_config
-~~~~~~~~~~~~~
-
-Set different GRE key length for input set::
-
-   global_config (port_id) gre-key-len (number in bytes)
-
-For example to set GRE key length for input set to 4 bytes on port 0::
-
-   testpmd> global_config 0 gre-key-len 4
 
 
 .. _testpmd_rte_flow:
@@ -3356,6 +3351,57 @@ following sections.
 
    flow isolate {port_id} {boolean}
 
+- Dump internal representation information of all flows in hardware::
+
+   flow dump {port_id} all {output_file}
+
+  for one flow::
+
+   flow dump {port_id} rule {rule_id} {output_file}
+
+- List and destroy aged flow rules::
+
+   flow aged {port_id} [destroy]
+
+- Tunnel offload - create a tunnel stub::
+
+   flow tunnel create {port_id} type {tunnel_type}
+
+- Tunnel offload - destroy a tunnel stub::
+
+   flow tunnel destroy {port_id} id {tunnel_id}
+
+- Tunnel offload - list port tunnel stubs::
+
+   flow tunnel list {port_id}
+
+Creating a tunnel stub for offload
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow tunnel create`` setup a tunnel stub for tunnel offload flow rules::
+
+   flow tunnel create {port_id} type {tunnel_type}
+
+If successful, it will return a tunnel stub ID usable with other commands::
+
+   port [...]: flow tunnel #[...] type [...]
+
+Tunnel stub ID is relative to a port.
+
+Destroying tunnel offload stub
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow tunnel destroy`` destroy port tunnel stub::
+
+   flow tunnel destroy {port_id} id {tunnel_id}
+
+Listing tunnel offload stubs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow tunnel list`` list port tunnel offload stubs::
+
+   flow tunnel list {port_id}
+
 Validating flow rules
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -3402,6 +3448,7 @@ to ``rte_flow_create()``::
 
    flow create {port_id}
       [group {group_id}] [priority {level}] [ingress] [egress] [transfer]
+      [tunnel_set {tunnel_id}] [tunnel_match {tunnel_id}]
       pattern {item} [/ {item} [...]] / end
       actions {action} [/ {action} [...]] / end
 
@@ -3416,6 +3463,7 @@ Otherwise it will show an error message of the form::
 Parameters describe in the following order:
 
 - Attributes (*group*, *priority*, *ingress*, *egress*, *transfer* tokens).
+- Tunnel offload specification (tunnel_set, tunnel_match)
 - A matching pattern, starting with the *pattern* token and terminated by an
   *end* pattern item.
 - Actions, starting with the *actions* token and terminated by an *end*
@@ -3458,6 +3506,14 @@ simultaneously.
 Most rules affect RX therefore contain the ``ingress`` token::
 
    testpmd> flow create 0 ingress pattern [...]
+
+Tunnel offload
+^^^^^^^^^^^^^^
+
+Indicate tunnel offload rule type
+
+- ``tunnel_set {tunnel_id}``: mark rule as tunnel offload decap_set type.
+- ``tunnel_match {tunnel_id}``:  mark rule as tunel offload match type.
 
 Matching pattern
 ^^^^^^^^^^^^^^^^
@@ -3598,6 +3654,7 @@ This section lists supported pattern items and their attributes, if any.
 
 - ``ipv4``: match IPv4 header.
 
+  - ``version_ihl {unsigned}``: IPv4 version and IP header length.
   - ``tos {unsigned}``: type of service.
   - ``ttl {unsigned}``: time to live.
   - ``proto {unsigned}``: next protocol ID.
@@ -3638,6 +3695,7 @@ This section lists supported pattern items and their attributes, if any.
 - ``vxlan``: match VXLAN header.
 
   - ``vni {unsigned}``: VXLAN identifier.
+  - ``last_rsvd {unsigned}``: VXLAN last reserved 8-bits.
 
 - ``e_tag``: match IEEE 802.1BR E-Tag header.
 
@@ -3655,6 +3713,10 @@ This section lists supported pattern items and their attributes, if any.
 
   - ``protocol {unsigned}``: protocol type.
 
+- ``gre_key``: match GRE optional key field.
+
+  - ``value {unsigned}``: key value.
+
 - ``fuzzy``: fuzzy pattern match, expect faster than default.
 
   - ``thresh {unsigned}``: accuracy threshold.
@@ -3667,6 +3729,14 @@ This section lists supported pattern items and their attributes, if any.
 
   - ``vni {unsigned}``: virtual network identifier.
   - ``protocol {unsigned}``: protocol type.
+
+- ``geneve-opt``: match GENEVE header option.
+
+  - ``class {unsigned}``: GENEVE option class.
+  - ``type {unsigned}``: GENEVE option type.
+  - ``length {unsigned}``: GENEVE option length in 32-bit words.
+  - ``data {hex string}``: GENEVE option data, the length is defined by
+    ``length`` field.
 
 - ``vxlan-gpe``: match VXLAN-GPE header.
 
@@ -3705,7 +3775,7 @@ This section lists supported pattern items and their attributes, if any.
 
   - ``sla {MAC-48}``: source Ethernet LLA.
 
-- ``icmp6_nd_opt_sla_eth``: match ICMPv6 neighbor discovery target Ethernet
+- ``icmp6_nd_opt_tla_eth``: match ICMPv6 neighbor discovery target Ethernet
   link-layer address option.
 
   - ``tla {MAC-48}``: target Ethernet LLA.
@@ -3713,6 +3783,42 @@ This section lists supported pattern items and their attributes, if any.
 - ``meta``: match application specific metadata.
 
   - ``data {unsigned}``: metadata value.
+
+- ``gtp_psc``: match GTP PDU extension header with type 0x85.
+
+  - ``pdu_type {unsigned}``: PDU type.
+
+  - ``qfi {unsigned}``: PPP, RQI and QoS flow identifier.
+
+- ``pppoes``, ``pppoed``: match PPPoE header.
+
+  - ``session_id {unsigned}``: session identifier.
+
+- ``pppoe_proto_id``: match PPPoE session protocol identifier.
+
+  - ``proto_id {unsigned}``: PPP protocol identifier.
+
+- ``l2tpv3oip``: match L2TPv3 over IP header.
+
+  - ``session_id {unsigned}``: L2TPv3 over IP session identifier.
+
+- ``ah``: match AH header.
+
+  - ``spi {unsigned}``: security parameters index.
+
+- ``pfcp``: match PFCP header.
+
+  - ``s_field {unsigned}``: S field.
+  - ``seid {unsigned}``: session endpoint identifier.
+
+- ``integrity``: match packet integrity.
+
+   - ``level {unsigned}``: Packet encapsulation level the item should
+     apply to. See rte_flow_action_rss for details.
+   - ``value {unsigned}``: A bitmask that specify what packet elements
+     must be matched for integrity.
+
+- ``conntrack``: match conntrack state.
 
 Actions list
 ^^^^^^^^^^^^
@@ -3812,14 +3918,13 @@ This section lists supported actions and their attributes, if any.
 - ``rss``: spread packets among several queues.
 
   - ``func {hash function}``: RSS hash function to apply, allowed tokens are
-    the same as `set_hash_global_config`_.
+    ``toeplitz``, ``simple_xor``, ``symmetric_toeplitz`` and ``default``.
 
   - ``level {unsigned}``: encapsulation level for ``types``.
 
-  - ``types [{RSS hash type} [...]] end``: specific RSS hash types, allowed
-    tokens are the same as `set_hash_input_set`_, except that an empty list
-    does not disable RSS but instead requests unspecified "best-effort"
-    settings.
+  - ``types [{RSS hash type} [...]] end``: specific RSS hash types.
+    Note that an empty list does not disable RSS but instead requests
+    unspecified "best-effort" settings.
 
   - ``key {string}``: RSS hash key, overrides ``key_len``.
 
@@ -3946,7 +4051,7 @@ This section lists supported actions and their attributes, if any.
 
 - ``dec_ttl``: Performs a decrease TTL value action
 
-- ``set_ttl``: Set TTL value with specificed value
+- ``set_ttl``: Set TTL value with specified value
   - ``ttl_value {unsigned}``: The new TTL value to be set
 
 - ``set_mac_src``: set source MAC address
@@ -3956,6 +4061,39 @@ This section lists supported actions and their attributes, if any.
 - ``set_mac_dst``: set destination MAC address
 
   - ``mac_addr {MAC-48}``: new destination MAC address
+
+- ``inc_tcp_seq``: Increase sequence number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to increase TCP sequence number by.
+
+- ``dec_tcp_seq``: Decrease sequence number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to decrease TCP sequence number by.
+
+- ``inc_tcp_ack``: Increase acknowledgment number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to increase TCP acknowledgment number by.
+
+- ``dec_tcp_ack``: Decrease acknowledgment number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to decrease TCP acknowledgment number by.
+
+- ``set_ipv4_dscp``: Set IPv4 DSCP value with specified value
+
+  - ``dscp_value {unsigned}``: The new DSCP value to be set
+
+- ``set_ipv6_dscp``: Set IPv6 DSCP value with specified value
+
+  - ``dscp_value {unsigned}``: The new DSCP value to be set
+
+- ``indirect``: Use indirect action created via
+  ``flow indirect_action {port_id} create``
+
+  - ``indirect_action_id {unsigned}``: Indirect action ID to use
+
+- ``color``: Color the packet to reflect the meter color result
+
+  - ``type {value}``: Set color type with specified value(green/yellow/red)
 
 Destroying flow rules
 ~~~~~~~~~~~~~~~~~~~~~
@@ -4173,20 +4311,205 @@ Disabling isolated mode::
  Ingress traffic on port 0 is not restricted anymore to the defined flow rules
  testpmd>
 
+Dumping HW internal information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow dump`` dumps the hardware's internal representation information of
+all flows. It is bound to ``rte_flow_dev_dump()``::
+
+   flow dump {port_id} {output_file}
+
+If successful, it will show::
+
+   Flow dump finished
+
+Otherwise, it will complain error occurred::
+
+   Caught error type [...] ([...]): [...]
+
+Listing and destroying aged flow rules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow aged`` simply lists aged flow rules be get from api ``rte_flow_get_aged_flows``,
+and ``destroy`` parameter can be used to destroy those flow rules in PMD.
+
+   flow aged {port_id} [destroy]
+
+Listing current aged flow rules::
+
+   testpmd> flow aged 0
+   Port 0 total aged flows: 0
+   testpmd> flow create 0 ingress pattern eth / ipv4 src is 2.2.2.14 / end
+      actions age timeout 5 / queue index 0 /  end
+   Flow rule #0 created
+   testpmd> flow create 0 ingress pattern eth / ipv4 src is 2.2.2.15 / end
+      actions age timeout 4 / queue index 0 /  end
+   Flow rule #1 created
+   testpmd> flow create 0 ingress pattern eth / ipv4 src is 2.2.2.16 / end
+      actions age timeout 2 / queue index 0 /  end
+   Flow rule #2 created
+   testpmd> flow create 0 ingress pattern eth / ipv4 src is 2.2.2.17 / end
+      actions age timeout 3 / queue index 0 /  end
+   Flow rule #3 created
+
+
+Aged Rules are simply list as command ``flow list {port_id}``, but strip the detail rule
+information, all the aged flows are sorted by the longest timeout time. For example, if
+those rules be configured in the same time, ID 2 will be the first aged out rule, the next
+will be ID 3, ID 1, ID 0::
+
+   testpmd> flow aged 0
+   Port 0 total aged flows: 4
+   ID      Group   Prio    Attr
+   2       0       0       i--
+   3       0       0       i--
+   1       0       0       i--
+   0       0       0       i--
+
+If attach ``destroy`` parameter, the command will destroy all the list aged flow rules.
+
+   testpmd> flow aged 0 destroy
+   Port 0 total aged flows: 4
+   ID      Group   Prio    Attr
+   2       0       0       i--
+   3       0       0       i--
+   1       0       0       i--
+   0       0       0       i--
+
+   Flow rule #2 destroyed
+   Flow rule #3 destroyed
+   Flow rule #1 destroyed
+   Flow rule #0 destroyed
+   4 flows be destroyed
+   testpmd> flow aged 0
+   Port 0 total aged flows: 0
+
+Creating indirect actions
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow indirect_action {port_id} create`` creates indirect action with optional
+indirect action ID. It is bound to ``rte_flow_action_handle_create()``::
+
+   flow indirect_action {port_id} create [action_id {indirect_action_id}]
+      [ingress] [egress] [transfer] action {action} / end
+
+If successful, it will show::
+
+   Indirect action #[...] created
+
+Otherwise, it will complain either that indirect action already exists or that
+some error occurred::
+
+   Indirect action #[...] is already assigned, delete it first
+
+::
+
+   Caught error type [...] ([...]): [...]
+
+Create indirect rss action with id 100 to queues 1 and 2 on port 0::
+
+   testpmd> flow indirect_action 0 create action_id 100 \
+      ingress action rss queues 1 2 end / end
+
+Create indirect rss action with id assigned by testpmd to queues 1 and 2 on
+port 0::
+
+	testpmd> flow indirect_action 0 create action_id \
+		ingress action rss queues 0 1 end / end
+
+Updating indirect actions
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow indirect_action {port_id} update`` updates configuration of the indirect
+action from its indirect action ID (as returned by
+``flow indirect_action {port_id} create``). It is bound to
+``rte_flow_action_handle_update()``::
+
+   flow indirect_action {port_id} update {indirect_action_id}
+      action {action} / end
+
+If successful, it will show::
+
+   Indirect action #[...] updated
+
+Otherwise, it will complain either that indirect action not found or that some
+error occurred::
+
+   Failed to find indirect action #[...] on port [...]
+
+::
+
+   Caught error type [...] ([...]): [...]
+
+Update indirect rss action having id 100 on port 0 with rss to queues 0 and 3
+(in create example above rss queues were 1 and 2)::
+
+   testpmd> flow indirect_action 0 update 100 action rss queues 0 3 end / end
+
+Destroying indirect actions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow indirect_action {port_id} destroy`` destroys one or more indirect actions
+from their indirect action IDs (as returned by
+``flow indirect_action {port_id} create``). It is bound to
+``rte_flow_action_handle_destroy()``::
+
+   flow indirect_action {port_id} destroy action_id {indirect_action_id} [...]
+
+If successful, it will show::
+
+   Indirect action #[...] destroyed
+
+It does not report anything for indirect action IDs that do not exist.
+The usual error message is shown when a indirect action cannot be destroyed::
+
+   Caught error type [...] ([...]): [...]
+
+Destroy indirect actions having id 100 & 101::
+
+   testpmd> flow indirect_action 0 destroy action_id 100 action_id 101
+
+Query indirect actions
+~~~~~~~~~~~~~~~~~~~~~~
+
+``flow indirect_action {port_id} query`` queries the indirect action from its
+indirect action ID (as returned by ``flow indirect_action {port_id} create``).
+It is bound to ``rte_flow_action_handle_query()``::
+
+  flow indirect_action {port_id} query {indirect_action_id}
+
+Currently only rss indirect action supported. If successful, it will show::
+
+   Indirect RSS action:
+      refs:[...]
+
+Otherwise, it will complain either that indirect action not found or that some
+error occurred::
+
+   Failed to find indirect action #[...] on port [...]
+
+::
+
+   Caught error type [...] ([...]): [...]
+
+Query indirect action having id 100::
+
+   testpmd> flow indirect_action 0 query 100
+
 Sample QinQ flow rules
 ~~~~~~~~~~~~~~~~~~~~~~
 
 Before creating QinQ rule(s) the following commands should be issued to enable QinQ::
 
    testpmd> port stop 0
-   testpmd> vlan set qinq on 0
+   testpmd> vlan set extend on 0
 
 The above command sets the inner and outer TPID's to 0x8100.
 
 To change the TPID's the following commands should be used::
 
-   testpmd> vlan set outer tpid 0xa100 0
-   testpmd> vlan set inner tpid 0x9100 0
+   testpmd> vlan set outer tpid 0x88A8 0
+   testpmd> vlan set inner tpid 0x8100 0
    testpmd> port start 0
 
 Validate and create a QinQ rule on port 0 to steer traffic to a VF queue in a VM.
@@ -4222,6 +4545,49 @@ Validate and create a QinQ rule on port 0 to steer traffic to a queue on the hos
    0       0       0       i-      ETH VLAN VLAN=>VF QUEUE
    1       0       0       i-      ETH VLAN VLAN=>PF QUEUE
 
+Sample VXLAN flow rules
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Before creating VXLAN rule(s), the UDP port should be added for VXLAN packet
+filter on a port::
+
+  testpmd> rx_vxlan_port add 4789 0
+
+Create VXLAN rules on port 0 to steer traffic to PF queues.
+
+::
+
+  testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan /
+         eth dst is 00:11:22:33:44:55 / end actions pf / queue index 1 / end
+  Flow rule #0 created
+
+  testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan vni is 3 /
+         eth dst is 00:11:22:33:44:55 / end actions pf / queue index 2 / end
+  Flow rule #1 created
+
+  testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan /
+         eth dst is 00:11:22:33:44:55 / vlan tci is 10 / end actions pf /
+         queue index 3 / end
+  Flow rule #2 created
+
+  testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan vni is 5 /
+         eth dst is 00:11:22:33:44:55 / vlan tci is 20 / end actions pf /
+         queue index 4 / end
+  Flow rule #3 created
+
+  testpmd> flow create 0 ingress pattern eth dst is 00:00:00:00:01:00 / ipv4 /
+         udp / vxlan vni is 6 /  eth dst is 00:11:22:33:44:55 / end actions pf /
+         queue index 5 / end
+  Flow rule #4 created
+
+  testpmd> flow list 0
+  ID      Group   Prio    Attr    Rule
+  0       0       0       i-      ETH IPV4 UDP VXLAN ETH => QUEUE
+  1       0       0       i-      ETH IPV4 UDP VXLAN ETH => QUEUE
+  2       0       0       i-      ETH IPV4 UDP VXLAN ETH VLAN => QUEUE
+  3       0       0       i-      ETH IPV4 UDP VXLAN ETH VLAN => QUEUE
+  4       0       0       i-      ETH IPV4 UDP VXLAN ETH => QUEUE
+
 Sample VXLAN encapsulation rule
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -4241,6 +4607,12 @@ IPv4 VXLAN outer header::
  testpmd> flow create 0 ingress pattern end actions vxlan_encap /
          queue index 0 / end
 
+ testpmd> set vxlan-tos-ttl ip-version ipv4 vni 4 udp-src 4 udp-dst 4 ip-tos 0
+         ip-ttl 255 ip-src 127.0.0.1 ip-dst 128.0.0.1 eth-src 11:11:11:11:11:11
+         eth-dst 22:22:22:22:22:22
+ testpmd> flow create 0 ingress pattern end actions vxlan_encap /
+         queue index 0 / end
+
 IPv6 VXLAN outer header::
 
  testpmd> set vxlan ip-version ipv6 vni 4 udp-src 4 udp-dst 4 ip-src ::1
@@ -4250,6 +4622,12 @@ IPv6 VXLAN outer header::
 
  testpmd> set vxlan-with-vlan ip-version ipv6 vni 4 udp-src 4 udp-dst 4
          ip-src ::1 ip-dst ::2222 vlan-tci 34 eth-src 11:11:11:11:11:11
+         eth-dst 22:22:22:22:22:22
+ testpmd> flow create 0 ingress pattern end actions vxlan_encap /
+         queue index 0 / end
+
+ testpmd> set vxlan-tos-ttl ip-version ipv6 vni 4 udp-src 4 udp-dst 4
+         ip-tos 0 ip-ttl 255 ::1 ip-dst ::2222 eth-src 11:11:11:11:11:11
          eth-dst 22:22:22:22:22:22
  testpmd> flow create 0 ingress pattern end actions vxlan_encap /
          queue index 0 / end
@@ -4459,6 +4837,205 @@ IPv6 MPLSoUDP with VLAN outer header::
  testpmd> flow create 0 ingress pattern eth / vlan / ipv6 / udp / mpls / end
         actions mplsoudp_decap / l2_encap / end
 
+Sample Raw encapsulation rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raw encapsulation configuration can be set by the following commands
+
+Encapsulating VxLAN::
+
+ testpmd> set raw_encap 4 eth src is 10:11:22:33:44:55 / vlan tci is 1
+        inner_type is 0x0800 / ipv4 / udp dst is 4789 / vxlan vni
+        is 2 / end_set
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+        raw_encap index 4 / end
+
+Sample Raw decapsulation rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raw decapsulation configuration can be set by the following commands
+
+Decapsulating VxLAN::
+
+ testpmd> set raw_decap eth / ipv4 / udp / vxlan / end_set
+ testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan / eth / ipv4 /
+        end actions raw_decap / queue index 0 / end
+
+Sample ESP rules
+~~~~~~~~~~~~~~~~
+
+ESP rules can be created by the following commands::
+
+ testpmd> flow create 0 ingress pattern eth / ipv4 / esp spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv4 / udp / esp spi is 1 / end
+        actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / esp spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / udp / esp spi is 1 / end
+        actions queue index 3 / end
+
+Sample AH rules
+~~~~~~~~~~~~~~~~
+
+AH rules can be created by the following commands::
+
+ testpmd> flow create 0 ingress pattern eth / ipv4 / ah spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv4 / udp / ah spi is 1 / end
+        actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / ah spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / udp / ah spi is 1 / end
+        actions queue index 3 / end
+
+Sample PFCP rules
+~~~~~~~~~~~~~~~~~
+
+PFCP rules can be created by the following commands(s_field need to be 1
+if seid is set)::
+
+ testpmd> flow create 0 ingress pattern eth / ipv4 / pfcp s_field is 0 / end
+        actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv4 / pfcp s_field is 1
+        seid is 1 / end actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / pfcp s_field is 0 / end
+        actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / pfcp s_field is 1
+        seid is 1 / end actions queue index 3 / end
+
+Sample Sampling/Mirroring rules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sample/Mirroring rules can be set by the following commands
+
+NIC-RX Sampling rule, the matched ingress packets and sent to the queue 1,
+and 50% packets are duplicated and marked with 0x1234 and sent to queue 0.
+
+::
+
+ testpmd> set sample_actions 0 mark id  0x1234 / queue index 0 / end
+ testpmd> flow create 0 ingress group 1 pattern eth / end actions
+        sample ratio 2 index 0 / queue index 1 / end
+
+Mirroring rule with port representors (with "transfer" attribute), the matched
+ingress packets with encapsulation header are sent to port id 0, and also
+mirrored the packets and sent to port id 2.
+
+::
+
+ testpmd> set sample_actions 0 port_id id 2 / end
+ testpmd> flow create 1 ingress transfer pattern eth / end actions
+        sample ratio 1 index 0  / raw_encap / port_id id 0 / end
+
+Mirroring rule with port representors (with "transfer" attribute), the matched
+ingress packets are sent to port id 2, and also mirrored the packets with
+encapsulation header and sent to port id 0.
+
+::
+
+ testpmd> set sample_actions 0 raw_encap / port_id id 0 / end
+ testpmd> flow create 0 ingress transfer pattern eth / end actions
+        sample ratio 1 index 0  / port_id id 2 / end
+
+Mirroring rule with port representors (with "transfer" attribute), the matched
+ingress packets are sent to port id 2, and also mirrored the packets with
+VXLAN encapsulation header and sent to port id 0.
+
+::
+
+ testpmd> set vxlan ip-version ipv4 vni 4 udp-src 4 udp-dst 4 ip-src 127.0.0.1
+        ip-dst 128.0.0.1 eth-src 11:11:11:11:11:11 eth-dst 22:22:22:22:22:22
+ testpmd> set sample_actions 0 vxlan_encap / port_id id 0 / end
+ testpmd> flow create 0 ingress transfer pattern eth / end actions
+        sample ratio 1 index 0  / port_id id 2 / end
+
+Mirroring rule with port representors (with "transfer" attribute), the matched
+ingress packets are sent to port id 2, and also mirrored the packets with
+NVGRE encapsulation header and sent to port id 0.
+
+::
+
+ testpmd> set nvgre ip-version ipv4 tni 4 ip-src 127.0.0.1 ip-dst 128.0.0.1
+        eth-src 11:11:11:11:11:11 eth-dst 22:22:22:22:22:22
+ testpmd> set sample_actions 0 nvgre_encap / port_id id 0 / end
+ testpmd> flow create 0 ingress transfer pattern eth / end actions
+        sample ratio 1 index 0  / port_id id 2 / end
+
+Sample integrity rules
+~~~~~~~~~~~~~~~~~~~~~~
+
+Integrity rules can be created by the following commands:
+
+Integrity rule that forwards valid TCP packets to group 1.
+TCP packet integrity is matched with the ``l4_ok`` bit 3.
+
+::
+
+ testpmd> flow create 0 ingress
+            pattern eth / ipv4 / tcp / integrity value mask 8 value spec 8 / end
+            actions jump group 1 / end
+
+Integrity rule that forwards invalid packets to application.
+General packet integrity is matched with the ``packet_ok`` bit 0.
+
+::
+
+ testpmd> flow create 0 ingress pattern integrity value mask 1 value spec 0 / end actions queue index 0 / end
+
+Sample conntrack rules
+~~~~~~~~~~~~~~~~~~~~~~
+
+Conntrack rules can be set by the following commands
+
+Need to construct the connection context with provided information.
+In the first table, create a flow rule by using conntrack action and jump to
+the next table. In the next table, create a rule to check the state.
+
+::
+
+ testpmd> set conntrack com peer 1 is_orig 1 enable 1 live 1 sack 1 cack 0
+        last_dir 0 liberal 0 state 1 max_ack_win 7 r_lim 5 last_win 510
+        last_seq 2632987379 last_ack 2532480967 last_end 2632987379
+        last_index 0x8
+ testpmd> set conntrack orig scale 7 fin 0 acked 1 unack_data 0
+        sent_end 2632987379 reply_end 2633016339 max_win 28960
+        max_ack 2632987379
+ testpmd> set conntrack rply scale 7 fin 0 acked 1 unack_data 0
+        sent_end 2532480967 reply_end 2532546247 max_win 65280
+        max_ack 2532480967
+ testpmd> flow indirect_action 0 create ingress action conntrack / end
+ testpmd> flow create 0 group 3 ingress pattern eth / ipv4 / tcp / end actions indirect 0 / jump group 5 / end
+ testpmd> flow create 0 group 5 ingress pattern eth / ipv4 / tcp / conntrack is 1 / end actions queue index 5 / end
+
+Construct the conntrack again with only "is_orig" set to 0 (other fields are
+ignored), then use "update" interface to update the direction. Create flow
+rules like above for the peer port.
+
+::
+
+ testpmd> flow indirect_action 0 update 0 action conntrack_update dir / end
+
+Sample meter with policy rules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Meter with policy rules can be created by the following commands:
+
+Need to create policy first and actions are set for green/yellow/red colors.
+Create meter with policy id. Create flow with meter id.
+
+Example for policy with meter color action. The purpose is to color the packet
+to reflect the meter color result.
+The meter policy action list: ``green -> green, yellow -> yellow, red -> red``.
+
+::
+
+   testpmd> add port meter profile srtcm_rfc2697 0 13 21504 2688 0 0
+   testpmd> add port meter policy 0 1 g_actions color type green / end y_actions color type yellow / end
+            r_actions color type red / end
+   testpmd> create port meter 0 1 13 1 yes 0xffff 0 0
+   testpmd> flow create 0 priority 0 ingress group 1 pattern eth / end actions meter mtr_id 1 / end
+
 BPF Functions
 --------------
 
@@ -4467,7 +5044,7 @@ The following sections show functions to load/unload eBPF based filters.
 bpf-load
 ~~~~~~~~
 
-Load an eBPF program as a callback for partciular RX/TX queue::
+Load an eBPF program as a callback for particular RX/TX queue::
 
    testpmd> bpf-load rx|tx (portid) (queueid) (load-flags) (bpf-prog-filename)
 
@@ -4487,25 +5064,25 @@ For example:
 
 .. code-block:: console
 
-   cd test/bpf
+   cd examples/bpf
    clang -O2 -target bpf -c t1.c
 
-Then to load (and JIT compile) t1.o at RX queue 0, port 1::
+Then to load (and JIT compile) t1.o at RX queue 0, port 1:
 
 .. code-block:: console
 
-   testpmd> bpf-load rx 1 0 J ./dpdk.org/test/bpf/t1.o
+   testpmd> bpf-load rx 1 0 J ./dpdk.org/examples/bpf/t1.o
 
-To load (not JITed) t1.o at TX queue 0, port 0::
+To load (not JITed) t1.o at TX queue 0, port 0:
 
 .. code-block:: console
 
-   testpmd> bpf-load tx 0 0 - ./dpdk.org/test/bpf/t1.o
+   testpmd> bpf-load tx 0 0 - ./dpdk.org/examples/bpf/t1.o
 
 bpf-unload
 ~~~~~~~~~~
 
-Unload previously loaded eBPF program for partciular RX/TX queue::
+Unload previously loaded eBPF program for particular RX/TX queue::
 
    testpmd> bpf-unload rx|tx (portid) (queueid)
 
@@ -4513,4 +5090,4 @@ For example to unload BPF filter from TX queue 0, port 0:
 
 .. code-block:: console
 
-   testpmd> bpf-load tx 0 0 - ./dpdk.org/test/bpf/t1.o
+   testpmd> bpf-unload tx 0 0

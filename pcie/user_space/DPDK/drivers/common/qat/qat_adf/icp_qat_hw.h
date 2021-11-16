@@ -204,7 +204,9 @@ enum icp_qat_hw_cipher_algo {
 	ICP_QAT_HW_CIPHER_ALGO_KASUMI = 7,
 	ICP_QAT_HW_CIPHER_ALGO_SNOW_3G_UEA2 = 8,
 	ICP_QAT_HW_CIPHER_ALGO_ZUC_3G_128_EEA3 = 9,
-	ICP_QAT_HW_CIPHER_DELIMITER = 10
+	ICP_QAT_HW_CIPHER_ALGO_SM4 = 10,
+	ICP_QAT_HW_CIPHER_ALGO_CHACHA20_POLY1305 = 11,
+	ICP_QAT_HW_CIPHER_DELIMITER = 12
 };
 
 enum icp_qat_hw_cipher_mode {
@@ -212,6 +214,7 @@ enum icp_qat_hw_cipher_mode {
 	ICP_QAT_HW_CIPHER_CBC_MODE = 1,
 	ICP_QAT_HW_CIPHER_CTR_MODE = 2,
 	ICP_QAT_HW_CIPHER_F8_MODE = 3,
+	ICP_QAT_HW_CIPHER_AEAD_MODE = 4,
 	ICP_QAT_HW_CIPHER_XTS_MODE = 6,
 	ICP_QAT_HW_CIPHER_MODE_DELIMITER = 7
 };
@@ -244,6 +247,8 @@ enum icp_qat_hw_cipher_convert {
 #define QAT_CIPHER_CONVERT_MASK 0x1
 #define QAT_CIPHER_DIR_BITPOS 8
 #define QAT_CIPHER_DIR_MASK 0x1
+#define QAT_CIPHER_AEAD_HASH_CMP_LEN_BITPOS 10
+#define QAT_CIPHER_AEAD_HASH_CMP_LEN_MASK 0x1F
 #define QAT_CIPHER_MODE_F8_KEY_SZ_MULT 2
 #define QAT_CIPHER_MODE_XTS_KEY_SZ_MULT 2
 #define ICP_QAT_HW_CIPHER_CONFIG_BUILD(mode, algo, convert, dir) \
@@ -251,6 +256,22 @@ enum icp_qat_hw_cipher_convert {
 	((algo & QAT_CIPHER_ALGO_MASK) << QAT_CIPHER_ALGO_BITPOS) | \
 	((convert & QAT_CIPHER_CONVERT_MASK) << QAT_CIPHER_CONVERT_BITPOS) | \
 	((dir & QAT_CIPHER_DIR_MASK) << QAT_CIPHER_DIR_BITPOS))
+
+#define QAT_CIPHER_AEAD_AAD_LOWER_SHIFT 24
+#define QAT_CIPHER_AEAD_AAD_UPPER_SHIFT 8
+#define QAT_CIPHER_AEAD_AAD_SIZE_LOWER_MASK 0xFF
+#define QAT_CIPHER_AEAD_AAD_SIZE_UPPER_MASK 0x3F
+#define QAT_CIPHER_AEAD_AAD_SIZE_BITPOS 16
+#define ICP_QAT_HW_CIPHER_CONFIG_BUILD_UPPER(aad_size) \
+	({ \
+	typeof(aad_size) aad_size1 = aad_size; \
+	(((((aad_size1) >> QAT_CIPHER_AEAD_AAD_UPPER_SHIFT) & \
+	QAT_CIPHER_AEAD_AAD_SIZE_UPPER_MASK) << \
+	QAT_CIPHER_AEAD_AAD_SIZE_BITPOS) | \
+	(((aad_size1) & QAT_CIPHER_AEAD_AAD_SIZE_LOWER_MASK) << \
+	QAT_CIPHER_AEAD_AAD_LOWER_SHIFT)); \
+	})
+
 #define ICP_QAT_HW_DES_BLK_SZ 8
 #define ICP_QAT_HW_3DES_BLK_SZ 8
 #define ICP_QAT_HW_NULL_BLK_SZ 8
@@ -287,6 +308,12 @@ enum icp_qat_hw_cipher_convert {
 #define ICP_QAT_HW_ZUC_3G_EEA3_KEY_SZ 16
 #define ICP_QAT_HW_ZUC_3G_EEA3_IV_SZ 16
 #define ICP_QAT_HW_MODE_F8_NUM_REG_TO_CLEAR 2
+#define ICP_QAT_HW_CHACHAPOLY_KEY_SZ 32
+#define ICP_QAT_HW_CHACHAPOLY_IV_SZ 12
+#define ICP_QAT_HW_CHACHAPOLY_BLK_SZ 64
+#define ICP_QAT_HW_SPC_CTR_SZ 16
+#define ICP_QAT_HW_CHACHAPOLY_ICV_SZ 16
+#define ICP_QAT_HW_CHACHAPOLY_AAD_MAX_LOG 14
 
 #define ICP_QAT_HW_CIPHER_MAX_KEY_SZ ICP_QAT_HW_AES_256_F8_KEY_SZ
 
@@ -312,6 +339,16 @@ enum icp_qat_hw_cipher_convert {
 
 struct icp_qat_hw_cipher_algo_blk {
 	struct icp_qat_hw_cipher_config cipher_config;
+	uint8_t key[ICP_QAT_HW_CIPHER_MAX_KEY_SZ];
+} __rte_cache_aligned;
+
+struct icp_qat_hw_ucs_cipher_config {
+	uint32_t val;
+	uint32_t reserved[3];
+};
+
+struct icp_qat_hw_cipher_algo_blk20 {
+	struct icp_qat_hw_ucs_cipher_config cipher_config;
 	uint8_t key[ICP_QAT_HW_CIPHER_MAX_KEY_SZ];
 } __rte_cache_aligned;
 

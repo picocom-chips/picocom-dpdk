@@ -32,7 +32,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_prefetch.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
@@ -361,7 +361,7 @@ vmxnet3_prep_pkts(__rte_unused void *tx_queue, struct rte_mbuf **tx_pkts,
 		 */
 		if ((ol_flags & PKT_TX_TCP_SEG) == 0 &&
 				m->nb_segs > VMXNET3_MAX_TXD_PER_PKT) {
-			rte_errno = -EINVAL;
+			rte_errno = EINVAL;
 			return i;
 		}
 
@@ -369,20 +369,20 @@ vmxnet3_prep_pkts(__rte_unused void *tx_queue, struct rte_mbuf **tx_pkts,
 		if ((ol_flags & VMXNET3_TX_OFFLOAD_NOTSUP_MASK) != 0 ||
 				(ol_flags & PKT_TX_L4_MASK) ==
 				PKT_TX_SCTP_CKSUM) {
-			rte_errno = -ENOTSUP;
+			rte_errno = ENOTSUP;
 			return i;
 		}
 
 #ifdef RTE_LIBRTE_ETHDEV_DEBUG
 		ret = rte_validate_tx_offload(m);
 		if (ret != 0) {
-			rte_errno = ret;
+			rte_errno = -ret;
 			return i;
 		}
 #endif
 		ret = rte_net_intel_cksum_prepare(m);
 		if (ret != 0) {
-			rte_errno = ret;
+			rte_errno = -ret;
 			return i;
 		}
 	}
@@ -541,10 +541,13 @@ vmxnet3_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 
 			switch (txm->ol_flags & PKT_TX_L4_MASK) {
 			case PKT_TX_TCP_CKSUM:
-				gdesc->txd.msscof = gdesc->txd.hlen + offsetof(struct tcp_hdr, cksum);
+				gdesc->txd.msscof = gdesc->txd.hlen +
+					offsetof(struct rte_tcp_hdr, cksum);
 				break;
 			case PKT_TX_UDP_CKSUM:
-				gdesc->txd.msscof = gdesc->txd.hlen + offsetof(struct udp_hdr, dgram_cksum);
+				gdesc->txd.msscof = gdesc->txd.hlen +
+					offsetof(struct rte_udp_hdr,
+						dgram_cksum);
 				break;
 			default:
 				PMD_TX_LOG(WARNING, "requested cksum offload not supported %#llx",
@@ -667,32 +670,32 @@ vmxnet3_guess_mss(struct vmxnet3_hw *hw, const Vmxnet3_RxCompDesc *rcd,
 		struct rte_mbuf *rxm)
 {
 	uint32_t hlen, slen;
-	struct ipv4_hdr *ipv4_hdr;
-	struct ipv6_hdr *ipv6_hdr;
-	struct tcp_hdr *tcp_hdr;
+	struct rte_ipv4_hdr *ipv4_hdr;
+	struct rte_ipv6_hdr *ipv6_hdr;
+	struct rte_tcp_hdr *tcp_hdr;
 	char *ptr;
+	uint8_t segs;
 
 	RTE_ASSERT(rcd->tcp);
 
 	ptr = rte_pktmbuf_mtod(rxm, char *);
 	slen = rte_pktmbuf_data_len(rxm);
-	hlen = sizeof(struct ether_hdr);
+	hlen = sizeof(struct rte_ether_hdr);
 
 	if (rcd->v4) {
-		if (unlikely(slen < hlen + sizeof(struct ipv4_hdr)))
-			return hw->mtu - sizeof(struct ipv4_hdr)
-					- sizeof(struct tcp_hdr);
+		if (unlikely(slen < hlen + sizeof(struct rte_ipv4_hdr)))
+			return hw->mtu - sizeof(struct rte_ipv4_hdr)
+					- sizeof(struct rte_tcp_hdr);
 
-		ipv4_hdr = (struct ipv4_hdr *)(ptr + hlen);
-		hlen += (ipv4_hdr->version_ihl & IPV4_HDR_IHL_MASK) *
-				IPV4_IHL_MULTIPLIER;
+		ipv4_hdr = (struct rte_ipv4_hdr *)(ptr + hlen);
+		hlen += rte_ipv4_hdr_len(ipv4_hdr);
 	} else if (rcd->v6) {
-		if (unlikely(slen < hlen + sizeof(struct ipv6_hdr)))
-			return hw->mtu - sizeof(struct ipv6_hdr) -
-					sizeof(struct tcp_hdr);
+		if (unlikely(slen < hlen + sizeof(struct rte_ipv6_hdr)))
+			return hw->mtu - sizeof(struct rte_ipv6_hdr) -
+					sizeof(struct rte_tcp_hdr);
 
-		ipv6_hdr = (struct ipv6_hdr *)(ptr + hlen);
-		hlen += sizeof(struct ipv6_hdr);
+		ipv6_hdr = (struct rte_ipv6_hdr *)(ptr + hlen);
+		hlen += sizeof(struct rte_ipv6_hdr);
 		if (unlikely(ipv6_hdr->proto != IPPROTO_TCP)) {
 			int frag;
 
@@ -701,18 +704,18 @@ vmxnet3_guess_mss(struct vmxnet3_hw *hw, const Vmxnet3_RxCompDesc *rcd,
 		}
 	}
 
-	if (unlikely(slen < hlen + sizeof(struct tcp_hdr)))
-		return hw->mtu - hlen - sizeof(struct tcp_hdr) +
-				sizeof(struct ether_hdr);
+	if (unlikely(slen < hlen + sizeof(struct rte_tcp_hdr)))
+		return hw->mtu - hlen - sizeof(struct rte_tcp_hdr) +
+				sizeof(struct rte_ether_hdr);
 
-	tcp_hdr = (struct tcp_hdr *)(ptr + hlen);
+	tcp_hdr = (struct rte_tcp_hdr *)(ptr + hlen);
 	hlen += (tcp_hdr->data_off & 0xf0) >> 2;
 
-	if (rxm->udata64 > 1)
-		return (rte_pktmbuf_pkt_len(rxm) - hlen +
-				rxm->udata64 - 1) / rxm->udata64;
+	segs = *vmxnet3_segs_dynfield(rxm);
+	if (segs > 1)
+		return (rte_pktmbuf_pkt_len(rxm) - hlen + segs - 1) / segs;
 	else
-		return hw->mtu - hlen + sizeof(struct ether_hdr);
+		return hw->mtu - hlen + sizeof(struct rte_ether_hdr);
 }
 
 /* Receive side checksum and other offloads */
@@ -735,7 +738,7 @@ vmxnet3_rx_offload(struct vmxnet3_hw *hw, const Vmxnet3_RxCompDesc *rcd,
 					(const Vmxnet3_RxCompDescExt *)rcd;
 
 			rxm->tso_segsz = rcde->mss;
-			rxm->udata64 = rcde->segCnt;
+			*vmxnet3_segs_dynfield(rxm) = rcde->segCnt;
 			ol_flags |= PKT_RX_LRO;
 		}
 	} else { /* Offloads set in eop */
@@ -947,13 +950,17 @@ vmxnet3_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 
 			RTE_ASSERT(rxd->btype == VMXNET3_RXD_BTYPE_BODY);
 
-			if (rxm->data_len) {
+			if (likely(start && rxm->data_len > 0)) {
 				start->pkt_len += rxm->data_len;
 				start->nb_segs++;
 
 				rxq->last_seg->next = rxm;
 				rxq->last_seg = rxm;
 			} else {
+				PMD_RX_LOG(ERR, "Error received empty or out of order frame.");
+				rxq->stats.drop_total++;
+				rxq->stats.drop_err++;
+
 				rte_pktmbuf_free_seg(rxm);
 			}
 		}
@@ -1290,6 +1297,54 @@ static uint8_t rss_intel_key[40] = {
 	0x77, 0xCB, 0x2D, 0xA3, 0x80, 0x30, 0xF2, 0x0C,
 	0x6A, 0x42, 0xB7, 0x3B, 0xBE, 0xAC, 0x01, 0xFA,
 };
+
+/*
+ * Additional RSS configurations based on vmxnet v4+ APIs
+ */
+int
+vmxnet3_v4_rss_configure(struct rte_eth_dev *dev)
+{
+	struct vmxnet3_hw *hw = dev->data->dev_private;
+	Vmxnet3_DriverShared *shared = hw->shared;
+	Vmxnet3_CmdInfo *cmdInfo = &shared->cu.cmdInfo;
+	struct rte_eth_rss_conf *port_rss_conf;
+	uint64_t rss_hf;
+	uint32_t ret;
+
+	PMD_INIT_FUNC_TRACE();
+
+	cmdInfo->setRSSFields = 0;
+	port_rss_conf = &dev->data->dev_conf.rx_adv_conf.rss_conf;
+
+	if ((port_rss_conf->rss_hf & VMXNET3_MANDATORY_V4_RSS) !=
+	    VMXNET3_MANDATORY_V4_RSS) {
+		PMD_INIT_LOG(WARNING, "RSS: IPv4/6 TCP is required for vmxnet3 v4 RSS,"
+			     "automatically setting it");
+		port_rss_conf->rss_hf |= VMXNET3_MANDATORY_V4_RSS;
+	}
+
+	rss_hf = port_rss_conf->rss_hf &
+		(VMXNET3_V4_RSS_MASK | VMXNET3_RSS_OFFLOAD_ALL);
+
+	if (rss_hf & ETH_RSS_NONFRAG_IPV4_TCP)
+		cmdInfo->setRSSFields |= VMXNET3_RSS_FIELDS_TCPIP4;
+	if (rss_hf & ETH_RSS_NONFRAG_IPV6_TCP)
+		cmdInfo->setRSSFields |= VMXNET3_RSS_FIELDS_TCPIP6;
+	if (rss_hf & ETH_RSS_NONFRAG_IPV4_UDP)
+		cmdInfo->setRSSFields |= VMXNET3_RSS_FIELDS_UDPIP4;
+	if (rss_hf & ETH_RSS_NONFRAG_IPV6_UDP)
+		cmdInfo->setRSSFields |= VMXNET3_RSS_FIELDS_UDPIP6;
+
+	VMXNET3_WRITE_BAR1_REG(hw, VMXNET3_REG_CMD,
+			       VMXNET3_CMD_SET_RSS_FIELDS);
+	ret = VMXNET3_READ_BAR1_REG(hw, VMXNET3_REG_CMD);
+
+	if (ret != VMXNET3_SUCCESS) {
+		PMD_DRV_LOG(ERR, "Set RSS fields (v4) failed: %d", ret);
+	}
+
+	return ret;
+}
 
 /*
  * Configure RSS feature

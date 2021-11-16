@@ -5,6 +5,12 @@
 #ifndef RTE_VDEV_H
 #define RTE_VDEV_H
 
+/**
+ * @file
+ * RTE virtual bus API
+ *
+ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,6 +33,8 @@ struct rte_vdev_device {
 
 #define RTE_DEV_TO_VDEV_CONST(ptr) \
 	container_of(ptr, const struct rte_vdev_device, device)
+
+#define RTE_ETH_DEV_TO_VDEV(eth_dev)	RTE_DEV_TO_VDEV((eth_dev)->device)
 
 static inline const char *
 rte_vdev_device_name(const struct rte_vdev_device *dev)
@@ -58,14 +66,58 @@ typedef int (rte_vdev_probe_t)(struct rte_vdev_device *dev);
 typedef int (rte_vdev_remove_t)(struct rte_vdev_device *dev);
 
 /**
+ * Driver-specific DMA mapping. After a successful call the device
+ * will be able to read/write from/to this segment.
+ *
+ * @param dev
+ *   Pointer to the Virtual device.
+ * @param addr
+ *   Starting virtual address of memory to be mapped.
+ * @param iova
+ *   Starting IOVA address of memory to be mapped.
+ * @param len
+ *   Length of memory segment being mapped.
+ * @return
+ *   - 0 On success.
+ *   - Negative value and rte_errno is set otherwise.
+ */
+typedef int (rte_vdev_dma_map_t)(struct rte_vdev_device *dev, void *addr,
+			    uint64_t iova, size_t len);
+
+/**
+ * Driver-specific DMA un-mapping. After a successful call the device
+ * will not be able to read/write from/to this segment.
+ *
+ * @param dev
+ *   Pointer to the Virtual device.
+ * @param addr
+ *   Starting virtual address of memory to be unmapped.
+ * @param iova
+ *   Starting IOVA address of memory to be unmapped.
+ * @param len
+ *   Length of memory segment being unmapped.
+ * @return
+ *   - 0 On success.
+ *   - Negative value and rte_errno is set otherwise.
+ */
+typedef int (rte_vdev_dma_unmap_t)(struct rte_vdev_device *dev, void *addr,
+			      uint64_t iova, size_t len);
+
+/**
  * A virtual device driver abstraction.
  */
 struct rte_vdev_driver {
 	TAILQ_ENTRY(rte_vdev_driver) next; /**< Next in list. */
-	struct rte_driver driver;      /**< Inherited general driver. */
-	rte_vdev_probe_t *probe;       /**< Virtual device probe function. */
-	rte_vdev_remove_t *remove;     /**< Virtual device remove function. */
+	struct rte_driver driver;        /**< Inherited general driver. */
+	rte_vdev_probe_t *probe;         /**< Virtual device probe function. */
+	rte_vdev_remove_t *remove;       /**< Virtual device remove function. */
+	rte_vdev_dma_map_t *dma_map;     /**< Virtual device DMA map function. */
+	rte_vdev_dma_unmap_t *dma_unmap; /**< Virtual device DMA unmap function. */
+	uint32_t drv_flags;              /**< Flags RTE_VDEV_DRV_*. */
 };
+
+/** Device driver needs IOVA as VA and cannot work with IOVA as PA */
+#define RTE_VDEV_DRV_NEED_IOVA_AS_VA 0x0001
 
 /**
  * Register a virtual device driver.
@@ -149,7 +201,7 @@ int rte_vdev_init(const char *name, const char *args);
  * Uninitalize a driver specified by name.
  *
  * @param name
- *   The pointer to a driver name to be initialized.
+ *   The pointer to a driver name to be uninitialized.
  * @return
  *  0 on success, negative on error
  */

@@ -3,9 +3,80 @@
  */
 
 #include <rte_cryptodev.h>
+#include <rte_ether.h>
 
 #include "cperf_ops.h"
 #include "cperf_test_vectors.h"
+
+#ifdef RTE_LIB_SECURITY
+static int
+cperf_set_ops_security(struct rte_crypto_op **ops,
+		uint32_t src_buf_offset __rte_unused,
+		uint32_t dst_buf_offset __rte_unused,
+		uint16_t nb_ops, struct rte_cryptodev_sym_session *sess,
+		const struct cperf_options *options __rte_unused,
+		const struct cperf_test_vector *test_vector __rte_unused,
+		uint16_t iv_offset __rte_unused, uint32_t *imix_idx)
+{
+	uint16_t i;
+
+	for (i = 0; i < nb_ops; i++) {
+		struct rte_crypto_sym_op *sym_op = ops[i]->sym;
+		struct rte_security_session *sec_sess =
+			(struct rte_security_session *)sess;
+		uint32_t buf_sz;
+
+		uint32_t *per_pkt_hfn = rte_crypto_op_ctod_offset(ops[i],
+					uint32_t *, iv_offset);
+		*per_pkt_hfn = options->pdcp_ses_hfn_en ? 0 : PDCP_DEFAULT_HFN;
+
+		ops[i]->status = RTE_CRYPTO_OP_STATUS_NOT_PROCESSED;
+		rte_security_attach_session(ops[i], sec_sess);
+		sym_op->m_src = (struct rte_mbuf *)((uint8_t *)ops[i] +
+							src_buf_offset);
+
+		if (options->op_type == CPERF_PDCP) {
+			sym_op->m_src->buf_len = options->segment_sz;
+			sym_op->m_src->data_len = options->test_buffer_size;
+			sym_op->m_src->pkt_len = sym_op->m_src->data_len;
+		}
+
+		if (options->op_type == CPERF_DOCSIS) {
+			if (options->imix_distribution_count) {
+				buf_sz = options->imix_buffer_sizes[*imix_idx];
+				*imix_idx = (*imix_idx + 1) % options->pool_sz;
+			} else
+				buf_sz = options->test_buffer_size;
+
+			sym_op->m_src->buf_len = options->segment_sz;
+			sym_op->m_src->data_len = buf_sz;
+			sym_op->m_src->pkt_len = buf_sz;
+
+			/* DOCSIS header is not CRC'ed */
+			sym_op->auth.data.offset = options->docsis_hdr_sz;
+			sym_op->auth.data.length = buf_sz -
+				sym_op->auth.data.offset - RTE_ETHER_CRC_LEN;
+			/*
+			 * DOCSIS header and SRC and DST MAC addresses are not
+			 * ciphered
+			 */
+			sym_op->cipher.data.offset = sym_op->auth.data.offset +
+				RTE_ETHER_HDR_LEN - RTE_ETHER_TYPE_LEN;
+			sym_op->cipher.data.length = buf_sz -
+				sym_op->cipher.data.offset;
+		}
+
+		/* Set dest mbuf to NULL if out-of-place (dst_buf_offset = 0) */
+		if (dst_buf_offset == 0)
+			sym_op->m_dst = NULL;
+		else
+			sym_op->m_dst = (struct rte_mbuf *)((uint8_t *)ops[i] +
+							dst_buf_offset);
+	}
+
+	return 0;
+}
+#endif
 
 static int
 cperf_set_ops_null_cipher(struct rte_crypto_op **ops,
@@ -480,6 +551,122 @@ cperf_create_session(struct rte_mempool *sess_mp,
 	struct rte_crypto_sym_xform aead_xform;
 	struct rte_cryptodev_sym_session *sess = NULL;
 
+#ifdef RTE_LIB_SECURITY
+	/*
+	 * security only
+	 */
+	if (options->op_type == CPERF_PDCP) {
+		/* Setup Cipher Parameters */
+		cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+		cipher_xform.next = NULL;
+		cipher_xform.cipher.algo = options->cipher_algo;
+		cipher_xform.cipher.op = options->cipher_op;
+		cipher_xform.cipher.iv.offset = iv_offset;
+		cipher_xform.cipher.iv.length = 4;
+
+		/* cipher different than null */
+		if (options->cipher_algo != RTE_CRYPTO_CIPHER_NULL) {
+			cipher_xform.cipher.key.data = test_vector->cipher_key.data;
+			cipher_xform.cipher.key.length = test_vector->cipher_key.length;
+		} else {
+			cipher_xform.cipher.key.data = NULL;
+			cipher_xform.cipher.key.length = 0;
+		}
+
+		/* Setup Auth Parameters */
+		if (options->auth_algo != 0) {
+			auth_xform.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+			auth_xform.next = NULL;
+			auth_xform.auth.algo = options->auth_algo;
+			auth_xform.auth.op = options->auth_op;
+			auth_xform.auth.iv.offset = iv_offset +
+				cipher_xform.cipher.iv.length;
+
+			/* auth different than null */
+			if (options->auth_algo != RTE_CRYPTO_AUTH_NULL) {
+				auth_xform.auth.digest_length = options->digest_sz;
+				auth_xform.auth.key.length = test_vector->auth_key.length;
+				auth_xform.auth.key.data = test_vector->auth_key.data;
+				auth_xform.auth.iv.length = test_vector->auth_iv.length;
+			} else {
+				auth_xform.auth.digest_length = 0;
+				auth_xform.auth.key.length = 0;
+				auth_xform.auth.key.data = NULL;
+				auth_xform.auth.iv.length = 0;
+			}
+
+			cipher_xform.next = &auth_xform;
+		} else {
+			cipher_xform.next = NULL;
+		}
+
+		struct rte_security_session_conf sess_conf = {
+			.action_type = RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+			.protocol = RTE_SECURITY_PROTOCOL_PDCP,
+			{.pdcp = {
+				.bearer = 0x16,
+				.domain = options->pdcp_domain,
+				.pkt_dir = 0,
+				.sn_size = options->pdcp_sn_sz,
+				.hfn = options->pdcp_ses_hfn_en ?
+					PDCP_DEFAULT_HFN : 0,
+				.hfn_threshold = 0x70C0A,
+				.hfn_ovrd = !(options->pdcp_ses_hfn_en),
+			} },
+			.crypto_xform = &cipher_xform
+		};
+
+		struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+					rte_cryptodev_get_sec_ctx(dev_id);
+
+		/* Create security session */
+		return (void *)rte_security_session_create(ctx,
+					&sess_conf, sess_mp, priv_mp);
+	}
+	if (options->op_type == CPERF_DOCSIS) {
+		enum rte_security_docsis_direction direction;
+
+		cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+		cipher_xform.next = NULL;
+		cipher_xform.cipher.algo = options->cipher_algo;
+		cipher_xform.cipher.op = options->cipher_op;
+		cipher_xform.cipher.iv.offset = iv_offset;
+		if (options->cipher_algo != RTE_CRYPTO_CIPHER_NULL) {
+			cipher_xform.cipher.key.data =
+				test_vector->cipher_key.data;
+			cipher_xform.cipher.key.length =
+				test_vector->cipher_key.length;
+			cipher_xform.cipher.iv.length =
+				test_vector->cipher_iv.length;
+		} else {
+			cipher_xform.cipher.key.data = NULL;
+			cipher_xform.cipher.key.length = 0;
+			cipher_xform.cipher.iv.length = 0;
+		}
+		cipher_xform.next = NULL;
+
+		if (options->cipher_op == RTE_CRYPTO_CIPHER_OP_ENCRYPT)
+			direction = RTE_SECURITY_DOCSIS_DOWNLINK;
+		else
+			direction = RTE_SECURITY_DOCSIS_UPLINK;
+
+		struct rte_security_session_conf sess_conf = {
+			.action_type =
+				RTE_SECURITY_ACTION_TYPE_LOOKASIDE_PROTOCOL,
+			.protocol = RTE_SECURITY_PROTOCOL_DOCSIS,
+			{.docsis = {
+				.direction = direction,
+			} },
+			.crypto_xform = &cipher_xform
+		};
+		struct rte_security_ctx *ctx = (struct rte_security_ctx *)
+					rte_cryptodev_get_sec_ctx(dev_id);
+
+		/* Create security session */
+		return (void *)rte_security_session_create(ctx,
+					&sess_conf, sess_mp, priv_mp);
+	}
+#endif
 	sess = rte_cryptodev_sym_session_create(sess_mp);
 	/*
 	 * cipher only
@@ -657,6 +844,15 @@ cperf_get_op_functions(const struct cperf_options *options,
 			op_fns->populate_ops = cperf_set_ops_cipher;
 		return 0;
 	}
-
+#ifdef RTE_LIB_SECURITY
+	if (options->op_type == CPERF_PDCP) {
+		op_fns->populate_ops = cperf_set_ops_security;
+		return 0;
+	}
+	if (options->op_type == CPERF_DOCSIS) {
+		op_fns->populate_ops = cperf_set_ops_security;
+		return 0;
+	}
+#endif
 	return -1;
 }

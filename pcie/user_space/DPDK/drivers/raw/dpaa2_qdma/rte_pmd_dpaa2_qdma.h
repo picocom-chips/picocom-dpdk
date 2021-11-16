@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2018 NXP
+ * Copyright 2018-2020 NXP
  */
 
 #ifndef __RTE_PMD_DPAA2_QDMA_H__
 #define __RTE_PMD_DPAA2_QDMA_H__
+
+#include <rte_rawdev.h>
 
 /**
  * @file
@@ -11,6 +13,9 @@
  * NXP dpaa2 QDMA specific structures.
  *
  */
+
+/** Maximum qdma burst size */
+#define RTE_QDMA_BURST_NB_MAX 256
 
 /** Determines the mode of operation */
 enum {
@@ -30,14 +35,26 @@ enum {
 	RTE_QDMA_MODE_VIRTUAL
 };
 
+/** Determines the format of FD */
+enum {
+	RTE_QDMA_LONG_FORMAT,
+	RTE_QDMA_ULTRASHORT_FORMAT,
+};
+
 /**
- * If user has configued a Virtual Queue mode, but for some particular VQ
+ * If user has configured a Virtual Queue mode, but for some particular VQ
  * user needs an exclusive H/W queue associated (for better performance
  * on that particular VQ), then user can pass this flag while creating the
  * Virtual Queue. A H/W queue will be allocated corresponding to
  * VQ which uses this flag.
  */
 #define RTE_QDMA_VQ_EXCLUSIVE_PQ	(1ULL)
+
+#define RTE_QDMA_VQ_FD_LONG_FORMAT		(1ULL << 1)
+
+#define RTE_QDMA_VQ_FD_SG_FORMAT		(1ULL << 2)
+
+#define RTE_QDMA_VQ_NO_RESPONSE			(1ULL << 3)
 
 /** States if the source addresses is physical. */
 #define RTE_QDMA_JOB_SRC_PHY		(1ULL)
@@ -57,8 +74,6 @@ struct rte_qdma_config {
 	uint16_t max_hw_queues_per_core;
 	/** Maximum number of VQ's to be used. */
 	uint16_t max_vqs;
-	/** mode of operation - physical(h/w) or virtual */
-	uint8_t mode;
 	/**
 	 * User provides this as input to the driver as a size of the FLE pool.
 	 * FLE's (and corresponding source/destination descriptors) are
@@ -67,7 +82,41 @@ struct rte_qdma_config {
 	 * maximum number of inflight jobs on the QDMA device. This should
 	 * be power of 2.
 	 */
-	int fle_pool_count;
+	int fle_queue_pool_cnt;
+};
+
+struct rte_qdma_rbp {
+	uint32_t use_ultrashort:1;
+	uint32_t enable:1;
+	/**
+	 * dportid:
+	 * 0000 PCI-Express 1
+	 * 0001 PCI-Express 2
+	 * 0010 PCI-Express 3
+	 * 0011 PCI-Express 4
+	 * 0100 PCI-Express 5
+	 * 0101 PCI-Express 6
+	 */
+	uint32_t dportid:4;
+	uint32_t dpfid:2;
+	uint32_t dvfid:6;
+	/*using route by port for destination */
+	uint32_t drbp:1;
+	/**
+	 * sportid:
+	 * 0000 PCI-Express 1
+	 * 0001 PCI-Express 2
+	 * 0010 PCI-Express 3
+	 * 0011 PCI-Express 4
+	 * 0100 PCI-Express 5
+	 * 0101 PCI-Express 6
+	 */
+	uint32_t sportid:4;
+	uint32_t spfid:2;
+	uint32_t svfid:6;
+	/* using route by port for source */
+	uint32_t srbp:1;
+	uint32_t rsv:4;
 };
 
 /** Provides QDMA device statistics */
@@ -102,185 +151,54 @@ struct rte_qdma_job {
 	/**
 	 * Status of the transaction.
 	 * This is filled in the dequeue operation by the driver.
+	 * upper 8bits acc_err for route by port.
+	 * lower 8bits fd error
 	 */
-	uint8_t status;
+	uint16_t status;
+	uint16_t vq_id;
+	/**
+	 * FLE pool element maintained by user, in case no qDMA response.
+	 * Note: the address must be allocated from DPDK memory pool.
+	 */
+	void *usr_elem;
 };
 
-/**
- * Initialize the QDMA device.
- *
- * @returns
- *   - 0: Success.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_init(void);
+struct rte_qdma_enqdeq {
+	uint16_t vq_id;
+	struct rte_qdma_job **job;
+};
 
-/**
- * Get the QDMA attributes.
- *
- * @param qdma_attr
- *   QDMA attributes providing total number of hw queues etc.
- */
-void __rte_experimental
-rte_qdma_attr_get(struct rte_qdma_attr *qdma_attr);
+struct rte_qdma_queue_config {
+	uint32_t lcore_id;
+	uint32_t flags;
+	struct rte_qdma_rbp *rbp;
+};
 
-/**
- * Reset the QDMA device. This API will completely reset the QDMA
- * device, bringing it to original state as if only rte_qdma_init() API
- * has been called.
- *
- * @returns
- *   - 0: Success.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_reset(void);
+#define rte_qdma_info rte_rawdev_info
+#define rte_qdma_start(id) rte_rawdev_start(id)
+#define rte_qdma_reset(id) rte_rawdev_reset(id)
+#define rte_qdma_configure(id, cf) rte_rawdev_configure(id, cf)
+#define rte_qdma_dequeue_buffers(id, buf, num, ctxt) \
+	rte_rawdev_dequeue_buffers(id, buf, num, ctxt)
+#define rte_qdma_enqueue_buffers(id, buf, num, ctxt) \
+	rte_rawdev_enqueue_buffers(id, buf, num, ctxt)
+#define rte_qdma_queue_setup(id, qid, cfg) \
+	rte_rawdev_queue_setup(id, qid, cfg)
 
-/**
- * Configure the QDMA device.
- *
- * @returns
- *   - 0: Success.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_configure(struct rte_qdma_config *qdma_config);
-
-/**
- * Start the QDMA device.
- *
- * @returns
- *   - 0: Success.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_start(void);
-
-/**
- * Create a Virtual Queue on a particular lcore id.
- * This API can be called from any thread/core. User can create/destroy
- * VQ's at runtime.
- *
- * @param lcore_id
- *   LCORE ID on which this particular queue would be associated with.
- * @param flags
- *  RTE_QDMA_VQ_ flags. See macro definitions.
- *
- * @returns
- *   - >= 0: Virtual queue ID.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_vq_create(uint32_t lcore_id, uint32_t flags);
-
-/**
- * Enqueue multiple jobs to a Virtual Queue.
- * If the enqueue is successful, the H/W will perform DMA operations
- * on the basis of the QDMA jobs provided.
- *
- * @param vq_id
- *   Virtual Queue ID.
- * @param job
- *   List of QDMA Jobs containing relevant information related to DMA.
- * @param nb_jobs
- *   Number of QDMA jobs provided by the user.
- *
- * @returns
- *   - >=0: Number of jobs successfully submitted
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_vq_enqueue_multi(uint16_t vq_id,
-			  struct rte_qdma_job **job,
-			  uint16_t nb_jobs);
-
-/**
- * Enqueue a single job to a Virtual Queue.
- * If the enqueue is successful, the H/W will perform DMA operations
- * on the basis of the QDMA job provided.
- *
- * @param vq_id
- *   Virtual Queue ID.
- * @param job
- *   A QDMA Job containing relevant information related to DMA.
- *
- * @returns
- *   - >=0: Number of jobs successfully submitted
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_vq_enqueue(uint16_t vq_id,
-		    struct rte_qdma_job *job);
-
-/**
- * Dequeue multiple completed jobs from a Virtual Queue.
- * Provides the list of completed jobs capped by nb_jobs.
- *
- * @param vq_id
- *   Virtual Queue ID.
- * @param job
- *   List of QDMA Jobs returned from the API.
- * @param nb_jobs
- *   Number of QDMA jobs requested for dequeue by the user.
- *
- * @returns
- *   Number of jobs actually dequeued.
- */
-int __rte_experimental
-rte_qdma_vq_dequeue_multi(uint16_t vq_id,
-			  struct rte_qdma_job **job,
-			  uint16_t nb_jobs);
-
-/**
- * Dequeue a single completed jobs from a Virtual Queue.
- *
- * @param vq_id
- *   Virtual Queue ID.
- *
- * @returns
- *   - A completed job or NULL if no job is there.
- */
-struct rte_qdma_job * __rte_experimental
-rte_qdma_vq_dequeue(uint16_t vq_id);
-
+/*TODO introduce per queue stats API in rawdew */
 /**
  * Get a Virtual Queue statistics.
  *
+ * @param rawdev
+ *   Raw Device.
  * @param vq_id
  *   Virtual Queue ID.
  * @param vq_stats
  *   VQ statistics structure which will be filled in by the driver.
  */
-void __rte_experimental
-rte_qdma_vq_stats(uint16_t vq_id,
-		  struct rte_qdma_vq_stats *vq_stats);
-
-/**
- * Destroy the Virtual Queue specified by vq_id.
- * This API can be called from any thread/core. User can create/destroy
- * VQ's at runtime.
- *
- * @param vq_id
- *   Virtual Queue ID which needs to be deinialized.
- *
- * @returns
- *   - 0: Success.
- *   - <0: Error code.
- */
-int __rte_experimental
-rte_qdma_vq_destroy(uint16_t vq_id);
-
-/**
- * Stop QDMA device.
- */
-void __rte_experimental
-rte_qdma_stop(void);
-
-/**
- * Destroy the QDMA device.
- */
-void __rte_experimental
-rte_qdma_destroy(void);
+void
+rte_qdma_vq_stats(struct rte_rawdev *rawdev,
+		uint16_t vq_id,
+		struct rte_qdma_vq_stats *vq_stats);
 
 #endif /* __RTE_PMD_DPAA2_QDMA_H__*/

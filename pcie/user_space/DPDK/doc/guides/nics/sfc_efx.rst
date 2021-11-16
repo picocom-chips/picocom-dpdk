@@ -1,37 +1,17 @@
-..  BSD LICENSE
-    Copyright (c) 2016 Solarflare Communications Inc.
-    All rights reserved.
+..  SPDX-License-Identifier: BSD-3-Clause
+    Copyright(c) 2019-2021 Xilinx, Inc.
+    Copyright(c) 2016-2019 Solarflare Communications Inc.
 
     This software was jointly developed between OKTET Labs (under contract
     for Solarflare) and Solarflare Communications, Inc.
 
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
-
-    1. Redistributions of source code must retain the above copyright notice,
-       this list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice,
-       this list of conditions and the following disclaimer in the documentation
-       and/or other materials provided with the distribution.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-    THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-    PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-    OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-    WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
-    OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-    EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 Solarflare libefx-based Poll Mode Driver
 ========================================
 
-The SFC EFX PMD (**librte_pmd_sfc_efx**) provides poll mode driver support
-for **Solarflare SFN7xxx and SFN8xxx** family of 10/40 Gbps adapters and
-**Solarflare XtremeScale X2xxx** family of 10/25/40/50/100 Gbps adapters.
+The SFC EFX PMD (**librte_net_sfc_efx**) provides poll mode driver support
+for **Solarflare SFN7xxx and SFN8xxx** family of 10/40 Gbps adapters,
+**Solarflare XtremeScale X2xxx** family of 10/25/40/50/100 Gbps adapters and
+**Alveo SN1000 SmartNICs** family of 10/25/40/50/100 Gbps adapters.
 SFC EFX PMD has support for the latest Linux and FreeBSD operating systems.
 
 More information can be found at `Solarflare Communications website
@@ -66,7 +46,7 @@ SFC EFX PMD has support for:
 
 - Allmulticast mode
 
-- TCP segmentation offload (TSO)
+- TCP segmentation offload (TSO) including VXLAN and GENEVE encapsulated
 
 - Multicast MAC filter
 
@@ -82,6 +62,8 @@ SFC EFX PMD has support for:
 
 - Scattered Rx DMA for packet that are larger that a single Rx descriptor
 
+- Receive queue interrupts
+
 - Deferred receive and transmit queue start
 
 - Transmit VLAN insertion (if running firmware variant supports it)
@@ -90,13 +72,13 @@ SFC EFX PMD has support for:
 
 - Loopback
 
+- SR-IOV PF
+
 
 Non-supported Features
 ----------------------
 
 The features not yet supported include:
-
-- Receive queue interupts
 
 - Priority-based flow control
 
@@ -162,8 +144,9 @@ Flow API support
 Supported attributes:
 
 - Ingress
+- Transfer
 
-Supported pattern items:
+Supported pattern items (***non-transfer*** rules):
 
 - VOID
 
@@ -191,7 +174,7 @@ Supported pattern items:
 
 - NVGRE (exact match of virtual subnet ID)
 
-Supported actions:
+Supported actions (***non-transfer*** rules):
 
 - VOID
 
@@ -205,16 +188,78 @@ Supported actions:
 
 - MARK (supported only with ef10_essb Rx datapath)
 
+Supported pattern items (***transfer*** rules):
+
+- PORT_ID (cannot repeat; conflicts with other traffic source items)
+
+- PHY_PORT (cannot repeat; conflicts with other traffic source items)
+
+- PF (cannot repeat; conflicts with other traffic source items)
+
+- VF (cannot repeat; conflicts with other traffic source items)
+
+- ETH
+
+- VLAN (double-tagging is supported)
+
+- IPV4 (source/destination addresses, IP transport protocol,
+  type of service, time to live)
+
+- IPV6 (source/destination addresses, IP transport protocol,
+  traffic class, hop limit)
+
+- TCP (source/destination ports, TCP header length + TCP flags)
+
+- UDP (source/destination ports)
+
+- VXLAN (exact match of VXLAN network identifier)
+
+- GENEVE (exact match of virtual network identifier)
+
+- NVGRE (exact match of virtual subnet ID)
+
+Supported actions (***transfer*** rules):
+
+- OF_POP_VLAN
+
+- OF_PUSH_VLAN
+
+- OF_VLAN_SET_VID
+
+- OF_VLAN_SET_PCP
+
+- VXLAN_DECAP
+
+- VXLAN_ENCAP
+
+- FLAG
+
+- MARK
+
+- PHY_PORT
+
+- PF
+
+- VF
+
+- PORT_ID
+
+- COUNT
+
+- DROP
+
 Validating flow rules depends on the firmware variant.
 
 The :ref:`flow_isolated_mode` is supported.
 
-Ethernet destinaton individual/group match
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The implementation is natively thread-safe.
+
+Ethernet destination individual/group match
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Ethernet item supports I/G matching, if only the corresponding bit is set
-in the mask of destination address. If destinaton address in the spec is
-multicast, it matches all multicast (and broadcast) packets, oherwise it
+in the mask of destination address. If destination address in the spec is
+multicast, it matches all multicast (and broadcast) packets, otherwise it
 matches unicast packets that are not filtered by other flow rules.
 
 Exceptions to flow rules
@@ -237,6 +282,10 @@ conditions is met:
 
 Supported NICs
 --------------
+
+- Xilinx Adapters:
+
+   - Alveo SN1022 SmartNIC
 
 - Solarflare XtremeScale Adapters:
 
@@ -292,17 +341,15 @@ Pre-Installation Configuration
 ------------------------------
 
 
-Config File Options
-~~~~~~~~~~~~~~~~~~~
+Build Options
+~~~~~~~~~~~~~
 
-The following options can be modified in the ``.config`` file.
+The following build-time options may be enabled on build time using
+``-Dc_args=`` meson argument (e.g.  ``-Dc_args=-DRTE_LIBRTE_SFC_EFX_DEBUG``).
+
 Please note that enabling debugging options may affect system performance.
 
-- ``CONFIG_RTE_LIBRTE_SFC_EFX_PMD`` (default **y**)
-
-  Enable compilation of Solarflare libefx-based poll-mode driver.
-
-- ``CONFIG_RTE_LIBRTE_SFC_EFX_DEBUG`` (default **n**)
+- ``RTE_LIBRTE_SFC_EFX_DEBUG`` (undefined by default)
 
   Enable compilation of the extra run-time consistency checks.
 
@@ -311,25 +358,36 @@ Per-Device Parameters
 ~~~~~~~~~~~~~~~~~~~~~
 
 The following per-device parameters can be passed via EAL PCI device
-whitelist option like "-w 02:00.0,arg1=value1,...".
+allow option like "-a 02:00.0,arg1=value1,...".
 
 Case-insensitive 1/y/yes/on or 0/n/no/off may be used to specify
 boolean parameters value.
 
-- ``rx_datapath`` [auto|efx|ef10|ef10_esps] (default **auto**)
+- ``class`` [net|vdpa] (default **net**)
+
+  Choose the mode of operation of ef100 device.
+  **net** device will work as network device and will be probed by net/sfc driver.
+  **vdpa** device will work as vdpa device and will be probed by vdpa/sfc driver.
+  If this parameter is not specified then ef100 device will operate as
+  network device.
+
+- ``rx_datapath`` [auto|efx|ef10|ef10_essb] (default **auto**)
 
   Choose receive datapath implementation.
   **auto** allows the driver itself to make a choice based on firmware
   features available and required by the datapath implementation.
   **efx** chooses libefx-based datapath which supports Rx scatter.
+  Supported for SFN7xxx, SFN8xxx and X2xxx family adapters only.
   **ef10** chooses EF10 (SFN7xxx, SFN8xxx, X2xxx) native datapath which is
   more efficient than libefx-based and provides richer packet type
   classification.
-  **ef10_esps** chooses SFNX2xxx equal stride packed stream datapath
+  **ef10_essb** chooses SFNX2xxx equal stride super-buffer datapath
   which may be used on DPDK firmware variant only
   (see notes about its limitations above).
+  **ef100** chooses EF100 native datapath which is the only supported
+  Rx datapath for EF100 architecture based NICs.
 
-- ``tx_datapath`` [auto|efx|ef10|ef10_simple] (default **auto**)
+- ``tx_datapath`` [auto|efx|ef10|ef10_simple|ef100] (default **auto**)
 
   Choose transmit datapath implementation.
   **auto** allows the driver itself to make a choice based on firmware
@@ -338,6 +396,7 @@ boolean parameters value.
   (full-feature firmware variant only), TSO and multi-segment mbufs.
   Mbuf segments may come from different mempools, and mbuf reference
   counters are treated responsibly.
+  Supported for SFN7xxx, SFN8xxx and X2xxx family adapters only.
   **ef10** chooses EF10 (SFN7xxx, SFN8xxx, X2xxx) native datapath which is
   more efficient than libefx-based but has no VLAN insertion support yet.
   Mbuf segments may come from different mempools, and mbuf reference
@@ -345,13 +404,16 @@ boolean parameters value.
   **ef10_simple** chooses EF10 (SFN7xxx, SFN8xxx, X2xxx) native datapath which
   is even more faster then **ef10** but does not support multi-segment
   mbufs, disallows multiple mempools and neglects mbuf reference counters.
+  **ef100** chooses EF100 native datapath which supports multi-segment
+  mbufs, VLAN insertion, inner/outer IPv4 and TCP/UDP checksum and TCP
+  segmentation offloads including VXLAN and GENEVE IPv4/IPv6 tunnels.
 
 - ``perf_profile`` [auto|throughput|low-latency] (default **throughput**)
 
-  Choose hardware tunning to be optimized for either throughput or
+  Choose hardware tuning to be optimized for either throughput or
   low-latency.
   **auto** allows NIC firmware to make a choice based on
-  installed licences and firmware variant configured using **sfboot**.
+  installed licenses and firmware variant configured using **sfboot**.
 
 - ``stats_update_period_ms`` [long] (default **1000**)
 
@@ -365,10 +427,11 @@ boolean parameters value.
 - ``fw_variant`` [dont-care|full-feature|ultra-low-latency|
   capture-packed-stream|dpdk] (default **dont-care**)
 
-  Choose the preferred firmware variant to use. In order for the selected
-  option to have an effect, the **sfboot** utility must be configured with the
-  **auto** firmware-variant option. The preferred firmware variant applies to
-  all ports on the NIC.
+  Choose the preferred firmware variant to use.
+  The parameter is supported for SFN7xxX, SFN8xxx and X2xxx families only.
+  In order for the selected option to have an effect, the **sfboot** utility
+  must be configured with the **auto** firmware-variant option.
+  The preferred firmware variant applies to all ports on the NIC.
   **dont-care** ensures that the driver can attach to an unprivileged function.
   The datapath firmware type to use is controlled by the **sfboot**
   utility.

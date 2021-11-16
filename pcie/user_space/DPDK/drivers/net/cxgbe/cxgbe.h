@@ -15,8 +15,13 @@
 #define CXGBE_DEFAULT_TX_DESC_SIZE    1024 /* Default TX ring size */
 #define CXGBE_DEFAULT_RX_DESC_SIZE    1024 /* Default RX ring size */
 
-#define CXGBE_MIN_RX_BUFSIZE ETHER_MIN_MTU /* min buf size */
-#define CXGBE_MAX_RX_PKTLEN (9000 + ETHER_HDR_LEN + ETHER_CRC_LEN) /* max pkt */
+#define CXGBE_MIN_RX_BUFSIZE RTE_ETHER_MIN_MTU /* min buf size */
+#define CXGBE_MAX_RX_PKTLEN (9000 + RTE_ETHER_HDR_LEN + \
+				RTE_ETHER_CRC_LEN) /* max pkt */
+
+/* The max frame size with default MTU */
+#define CXGBE_ETH_MAX_LEN (RTE_ETHER_MTU + \
+		RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN)
 
 /* Max poll time is 100 * 100msec = 10 sec */
 #define CXGBE_LINK_STATUS_POLL_MS 100 /* 100ms */
@@ -39,20 +44,49 @@
 			   DEV_TX_OFFLOAD_IPV4_CKSUM | \
 			   DEV_TX_OFFLOAD_UDP_CKSUM | \
 			   DEV_TX_OFFLOAD_TCP_CKSUM | \
-			   DEV_TX_OFFLOAD_TCP_TSO)
+			   DEV_TX_OFFLOAD_TCP_TSO | \
+			   DEV_TX_OFFLOAD_MULTI_SEGS)
 
 #define CXGBE_RX_OFFLOADS (DEV_RX_OFFLOAD_VLAN_STRIP | \
 			   DEV_RX_OFFLOAD_IPV4_CKSUM | \
 			   DEV_RX_OFFLOAD_UDP_CKSUM | \
 			   DEV_RX_OFFLOAD_TCP_CKSUM | \
 			   DEV_RX_OFFLOAD_JUMBO_FRAME | \
-			   DEV_RX_OFFLOAD_SCATTER)
+			   DEV_RX_OFFLOAD_SCATTER | \
+			   DEV_RX_OFFLOAD_RSS_HASH)
 
+/* Devargs filtermode and filtermask representation */
+enum cxgbe_devargs_filter_mode_flags {
+	CXGBE_DEVARGS_FILTER_MODE_PHYSICAL_PORT = (1 << 0),
+	CXGBE_DEVARGS_FILTER_MODE_PF_VF = (1 << 1),
 
-#define CXGBE_DEVARG_KEEP_OVLAN "keep_ovlan"
-#define CXGBE_DEVARG_FORCE_LINK_UP "force_link_up"
+	CXGBE_DEVARGS_FILTER_MODE_ETHERNET_DSTMAC = (1 << 2),
+	CXGBE_DEVARGS_FILTER_MODE_ETHERNET_ETHTYPE = (1 << 3),
+	CXGBE_DEVARGS_FILTER_MODE_VLAN_INNER = (1 << 4),
+	CXGBE_DEVARGS_FILTER_MODE_VLAN_OUTER = (1 << 5),
+	CXGBE_DEVARGS_FILTER_MODE_IP_TOS = (1 << 6),
+	CXGBE_DEVARGS_FILTER_MODE_IP_PROTOCOL = (1 << 7),
+	CXGBE_DEVARGS_FILTER_MODE_MAX = (1 << 8),
+};
 
-bool force_linkup(struct adapter *adap);
+enum cxgbe_filter_vnic_mode {
+	CXGBE_FILTER_VNIC_MODE_NONE,
+	CXGBE_FILTER_VNIC_MODE_PFVF,
+	CXGBE_FILTER_VNIC_MODE_OVLAN,
+};
+
+/* Common PF and VF devargs */
+#define CXGBE_DEVARG_CMN_KEEP_OVLAN "keep_ovlan"
+#define CXGBE_DEVARG_CMN_TX_MODE_LATENCY "tx_mode_latency"
+
+/* VF only devargs */
+#define CXGBE_DEVARG_VF_FORCE_LINK_UP "force_link_up"
+
+/* Filter Mode/Mask devargs */
+#define CXGBE_DEVARG_PF_FILTER_MODE "filtermode"
+#define CXGBE_DEVARG_PF_FILTER_MASK "filtermask"
+
+bool cxgbe_force_linkup(struct adapter *adap);
 int cxgbe_probe(struct adapter *adapter);
 int cxgbevf_probe(struct adapter *adapter);
 void cxgbe_get_speed_caps(struct port_info *pi, u32 *speed_caps);
@@ -65,19 +99,18 @@ void cxgbevf_stats_get(struct port_info *pi, struct port_stats *stats);
 void cxgbe_stats_reset(struct port_info *pi);
 int cxgbe_poll_for_completion(struct sge_rspq *q, unsigned int us,
 			      unsigned int cnt, struct t4_completion *c);
-int link_start(struct port_info *pi);
-void init_rspq(struct adapter *adap, struct sge_rspq *q, unsigned int us,
-	       unsigned int cnt, unsigned int size, unsigned int iqe_size);
-int setup_sge_fwevtq(struct adapter *adapter);
-int setup_sge_ctrl_txq(struct adapter *adapter);
-void cfg_queues(struct rte_eth_dev *eth_dev);
-int cfg_queue_count(struct rte_eth_dev *eth_dev);
-int init_rss(struct adapter *adap);
-int setup_rss(struct port_info *pi);
+int cxgbe_link_start(struct port_info *pi);
+int cxgbe_setup_sge_fwevtq(struct adapter *adapter);
+int cxgbe_setup_sge_ctrl_txq(struct adapter *adapter);
+int cxgbe_cfg_queues(struct rte_eth_dev *eth_dev);
+void cxgbe_cfg_queues_free(struct adapter *adapter);
+int cxgbe_cfg_queue_count(struct rte_eth_dev *eth_dev);
+int cxgbe_init_rss(struct adapter *adap);
+int cxgbe_setup_rss(struct port_info *pi);
 void cxgbe_enable_rx_queues(struct port_info *pi);
-void print_port_info(struct adapter *adap);
-void print_adapter_info(struct adapter *adap);
-int cxgbe_get_devargs(struct rte_devargs *devargs, const char *key);
-void configure_max_ethqsets(struct adapter *adapter);
+void cxgbe_print_port_info(struct adapter *adap);
+void cxgbe_print_adapter_info(struct adapter *adap);
+void cxgbe_process_devargs(struct adapter *adap);
+void cxgbe_configure_max_ethqsets(struct adapter *adapter);
 
 #endif /* _CXGBE_H_ */

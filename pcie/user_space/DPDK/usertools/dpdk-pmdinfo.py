@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2016  Neil Horman <nhorman@tuxdriver.com>
 
@@ -7,16 +7,15 @@
 # Utility to dump PMD_INFO_STRING support from an object file
 #
 # -------------------------------------------------------------------------
-from __future__ import print_function
 import json
 import os
 import platform
-import string
 import sys
+import argparse
 from elftools.common.exceptions import ELFError
-from elftools.common.py3compat import (byte2int, bytes2str, str2bytes)
+from elftools.common.py3compat import byte2int
 from elftools.elf.elffile import ELFFile
-from optparse import OptionParser
+
 
 # For running from development directory. It should take precedence over the
 # installed pyelftools.
@@ -26,7 +25,6 @@ raw_output = False
 pcidb = None
 
 # ===========================================
-
 
 class Vendor:
     """
@@ -112,8 +110,7 @@ class Device:
         except:
             if (subven == "ffff" and subdev == "ffff"):
                 return SubDevice("ffff", "ffff", "(All Subdevices)")
-            else:
-                return SubDevice(subven, subdev, "(Unknown Subdevice)")
+            return SubDevice(subven, subdev, "(Unknown Subdevice)")
 
 
 class SubDevice:
@@ -188,7 +185,7 @@ class PCIIds:
         return None
 
     def parse(self):
-        if len(self.contents) < 1:
+        if not self.contents:
             print("data/%s-pci.ids not found" % self.date)
         else:
             vendorID = ""
@@ -196,7 +193,7 @@ class PCIIds:
             for l in self.contents:
                 if l[0] == "#":
                     continue
-                elif len(l.strip()) == 0:
+                elif not l.strip():
                     continue
                 else:
                     if l.find("\t\t") == 0:
@@ -213,7 +210,8 @@ class PCIIds:
         """
         Reads the local file
         """
-        self.contents = open(filename).readlines()
+        with open(filename, 'r', encoding='utf-8') as f:
+            self.contents = f.readlines()
         self.date = self.findDate(self.contents)
 
     def loadLocal(self):
@@ -229,7 +227,7 @@ class PCIIds:
 
 def search_file(filename, search_path):
     """ Given a search path, find file with requested name """
-    for path in string.split(search_path, ":"):
+    for path in search_path.split(':'):
         candidate = os.path.join(path, filename)
         if os.path.exists(candidate):
             return os.path.abspath(candidate)
@@ -263,11 +261,16 @@ class ReadElf(object):
             num = int(spec)
             if num < self.elffile.num_sections():
                 return self.elffile.get_section(num)
-            else:
-                return None
+            return None
         except ValueError:
             # Not a number. Must be a name then
-            return self.elffile.get_section_by_name(str2bytes(spec))
+            section = self.elffile.get_section_by_name(force_unicode(spec))
+            if section is None:
+                # No match with a unicode name.
+                # Some versions of pyelftools (<= 0.23) store internal strings
+                # as bytes. Try again with the name encoded as bytes.
+                section = self.elffile.get_section_by_name(force_bytes(spec))
+            return section
 
     def pretty_print_pmdinfo(self, pmdinfo):
         global pcidb
@@ -304,7 +307,7 @@ class ReadElf(object):
             except KeyError:
                 continue
 
-        if (len(pmdinfo["pci_ids"]) != 0):
+        if pmdinfo["pci_ids"]:
             print("PMD HW SUPPORT:")
             if pcidb is not None:
                 self.pretty_print_pmdinfo(pmdinfo)
@@ -329,7 +332,7 @@ class ReadElf(object):
 
         while dataptr < len(data):
             while (dataptr < len(data) and
-                    not (32 <= byte2int(data[dataptr]) <= 127)):
+                   not 32 <= byte2int(data[dataptr]) <= 127):
                 dataptr += 1
 
             if dataptr >= len(data):
@@ -339,18 +342,20 @@ class ReadElf(object):
             while endptr < len(data) and byte2int(data[endptr]) != 0:
                 endptr += 1
 
-            mystring = bytes2str(data[dataptr:endptr])
+            # pyelftools may return byte-strings, force decode them
+            mystring = force_unicode(data[dataptr:endptr])
             rc = mystring.find("PMD_INFO_STRING")
-            if (rc != -1):
-                self.parse_pmd_info_string(mystring)
+            if rc != -1:
+                self.parse_pmd_info_string(mystring[rc:])
 
             dataptr = endptr
 
     def find_librte_eal(self, section):
         for tag in section.iter_tags():
-            if tag.entry.d_tag == 'DT_NEEDED':
-                if "librte_eal" in tag.needed:
-                    return tag.needed
+            # pyelftools may return byte-strings, force decode them
+            if force_unicode(tag.entry.d_tag) == 'DT_NEEDED':
+                if "librte_eal" in force_unicode(tag.needed):
+                    return force_unicode(tag.needed)
         return None
 
     def search_for_autoload_path(self):
@@ -371,7 +376,7 @@ class ReadElf(object):
                                       ":/usr/lib64:/lib64:/usr/lib:/lib")
                 if library is None:
                     return (None, None)
-                if raw_output is False:
+                if not raw_output:
                     print("Scanning for autoload path in %s" % library)
                 scanfile = open(library, 'rb')
                 scanelf = ReadElf(scanfile, sys.stdout)
@@ -393,7 +398,7 @@ class ReadElf(object):
 
         while dataptr < len(data):
             while (dataptr < len(data) and
-                    not (32 <= byte2int(data[dataptr]) <= 127)):
+                   not 32 <= byte2int(data[dataptr]) <= 127):
                 dataptr += 1
 
             if dataptr >= len(data):
@@ -403,9 +408,10 @@ class ReadElf(object):
             while endptr < len(data) and byte2int(data[endptr]) != 0:
                 endptr += 1
 
-            mystring = bytes2str(data[dataptr:endptr])
+            # pyelftools may return byte-strings, force decode them
+            mystring = force_unicode(data[dataptr:endptr])
             rc = mystring.find("DPDK_PLUGIN_PATH")
-            if (rc != -1):
+            if rc != -1:
                 rc = mystring.find("=")
                 return (mystring[rc + 1:], library)
 
@@ -416,15 +422,15 @@ class ReadElf(object):
 
     def get_dt_runpath(self, dynsec):
         for tag in dynsec.iter_tags():
-            if tag.entry.d_tag == 'DT_RUNPATH':
-                return tag.runpath
+            # pyelftools may return byte-strings, force decode them
+            if force_unicode(tag.entry.d_tag) == 'DT_RUNPATH':
+                return force_unicode(tag.runpath)
         return ""
 
     def process_dt_needed_entries(self):
         """ Look to see if there are any DT_NEEDED entries in the binary
             And process those if there are
         """
-        global raw_output
         runpath = ""
         ldlibpath = os.environ.get('LD_LIBRARY_PATH')
         if ldlibpath is None:
@@ -438,15 +444,13 @@ class ReadElf(object):
             return
 
         for tag in dynsec.iter_tags():
-            if tag.entry.d_tag == 'DT_NEEDED':
-                rc = tag.needed.find(b"librte_pmd")
-                if (rc != -1):
-                    library = search_file(tag.needed,
+            # pyelftools may return byte-strings, force decode them
+            if force_unicode(tag.entry.d_tag) == 'DT_NEEDED':
+                if 'librte_' in force_unicode(tag.needed):
+                    library = search_file(force_unicode(tag.needed),
                                           runpath + ":" + ldlibpath +
                                           ":/usr/lib64:/lib64:/usr/lib:/lib")
                     if library is not None:
-                        if raw_output is False:
-                            print("Scanning %s for pmd information" % library)
                         with open(library, 'rb') as file:
                             try:
                                 libelf = ReadElf(file, sys.stdout)
@@ -458,10 +462,24 @@ class ReadElf(object):
                             file.close()
 
 
+# compat: remove force_unicode & force_bytes when pyelftools<=0.23 support is
+# dropped.
+def force_unicode(s):
+    if hasattr(s, 'decode') and callable(s.decode):
+        s = s.decode('latin-1')  # same encoding used in pyelftools py3compat
+    return s
+
+
+def force_bytes(s):
+    if hasattr(s, 'encode') and callable(s.encode):
+        s = s.encode('latin-1')  # same encoding used in pyelftools py3compat
+    return s
+
+
 def scan_autoload_path(autoload_path):
     global raw_output
 
-    if os.path.exists(autoload_path) is False:
+    if not os.path.exists(autoload_path):
         return
 
     try:
@@ -485,7 +503,7 @@ def scan_autoload_path(autoload_path):
                 # No permission to read the file, skip it
                 continue
 
-            if raw_output is False:
+            if not raw_output:
                 print("Hw Support for library %s" % d)
             readelf.display_pmd_info_strings(".rodata")
             file.close()
@@ -498,8 +516,8 @@ def scan_for_autoload_pmds(dpdk_path):
     """
     global raw_output
 
-    if (os.path.isfile(dpdk_path) is False):
-        if raw_output is False:
+    if not os.path.isfile(dpdk_path):
+        if not raw_output:
             print("Must specify a file name")
         return
 
@@ -507,22 +525,22 @@ def scan_for_autoload_pmds(dpdk_path):
     try:
         readelf = ReadElf(file, sys.stdout)
     except ElfError:
-        if raw_output is False:
+        if not raw_output:
             print("Unable to parse %s" % file)
         return
 
     (autoload_path, scannedfile) = readelf.search_for_autoload_path()
-    if (autoload_path is None or autoload_path is ""):
-        if (raw_output is False):
+    if not autoload_path:
+        if not raw_output:
             print("No autoload path configured in %s" % dpdk_path)
         return
-    if (raw_output is False):
-        if (scannedfile is None):
+    if not raw_output:
+        if scannedfile is None:
             scannedfile = dpdk_path
         print("Found autoload path %s in %s" % (autoload_path, scannedfile))
 
     file.close()
-    if (raw_output is False):
+    if not raw_output:
         print("Discovered Autoload HW Support:")
     scan_autoload_path(autoload_path)
     return
@@ -534,64 +552,60 @@ def main(stream=None):
 
     pcifile_default = "./pci.ids"  # For unknown OS's assume local file
     if platform.system() == 'Linux':
-        pcifile_default = "/usr/share/hwdata/pci.ids"
+        # hwdata is the legacy location, misc is supported going forward
+        pcifile_default = "/usr/share/misc/pci.ids"
+        if not os.path.exists(pcifile_default):
+            pcifile_default = "/usr/share/hwdata/pci.ids"
     elif platform.system() == 'FreeBSD':
         pcifile_default = "/usr/local/share/pciids/pci.ids"
         if not os.path.exists(pcifile_default):
             pcifile_default = "/usr/share/misc/pci_vendors"
 
-    optparser = OptionParser(
-        usage='usage: %prog [-hrtp] [-d <pci id file] <elf-file>',
-        description="Dump pmd hardware support info",
-        add_help_option=True)
-    optparser.add_option('-r', '--raw',
-                         action='store_true', dest='raw_output',
-                         help='Dump raw json strings')
-    optparser.add_option("-d", "--pcidb", dest="pcifile",
-                         help="specify a pci database "
-                              "to get vendor names from",
-                         default=pcifile_default, metavar="FILE")
-    optparser.add_option("-t", "--table", dest="tblout",
-                         help="output information on hw support as a "
-                              "hex table",
-                         action='store_true')
-    optparser.add_option("-p", "--plugindir", dest="pdir",
-                         help="scan dpdk for autoload plugins",
-                         action='store_true')
+    parser = argparse.ArgumentParser(
+        usage='usage: %(prog)s [-hrtp] [-d <pci id file>] elf_file',
+        description="Dump pmd hardware support info")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-r', '--raw',
+                       action='store_true', dest='raw_output',
+                       help='dump raw json strings')
+    group.add_argument("-t", "--table", dest="tblout",
+                       help="output information on hw support as a hex table",
+                       action='store_true')
+    parser.add_argument("-d", "--pcidb", dest="pcifile",
+                        help="specify a pci database to get vendor names from",
+                        default=pcifile_default, metavar="FILE")
+    parser.add_argument("-p", "--plugindir", dest="pdir",
+                        help="scan dpdk for autoload plugins",
+                        action='store_true')
+    parser.add_argument("elf_file", help="driver shared object file")
+    args = parser.parse_args()
 
-    options, args = optparser.parse_args()
-
-    if options.raw_output:
+    if args.raw_output:
         raw_output = True
 
-    if options.pcifile:
-        pcidb = PCIIds(options.pcifile)
+    if args.tblout:
+        args.pcifile = None
+
+    if args.pcifile:
+        pcidb = PCIIds(args.pcifile)
         if pcidb is None:
             print("Pci DB file not found")
             exit(1)
 
-    if options.tblout:
-        options.pcifile = None
-        pcidb = None
-
-    if (len(args) == 0):
-        optparser.print_usage()
-        exit(1)
-
-    if options.pdir is True:
+    if args.pdir:
         exit(scan_for_autoload_pmds(args[0]))
 
     ldlibpath = os.environ.get('LD_LIBRARY_PATH')
-    if (ldlibpath is None):
+    if ldlibpath is None:
         ldlibpath = ""
 
-    if (os.path.exists(args[0]) is True):
-        myelffile = args[0]
+    if os.path.exists(args.elf_file):
+        myelffile = args.elf_file
     else:
-        myelffile = search_file(
-            args[0], ldlibpath + ":/usr/lib64:/lib64:/usr/lib:/lib")
+        myelffile = search_file(args.elf_file,
+                                ldlibpath + ":/usr/lib64:/lib64:/usr/lib:/lib")
 
-    if (myelffile is None):
+    if myelffile is None:
         print("File not found")
         sys.exit(1)
 

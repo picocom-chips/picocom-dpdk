@@ -39,6 +39,9 @@
 #include <rte_string_fns.h>
 #include <rte_acl.h>
 
+#include <cmdline_parse.h>
+#include <cmdline_parse_etheraddr.h>
+
 #if RTE_LOG_DP_LEVEL >= RTE_LOG_DEBUG
 #define L3FWDACL_DEBUG
 #endif
@@ -81,9 +84,6 @@
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
-/* ethernet addresses of ports */
-static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
-
 /* mask of enabled ports */
 static uint32_t enabled_port_mask;
 static int promiscuous_on; /**< Ports set in promiscuous mode off by default. */
@@ -125,7 +125,7 @@ static uint16_t nb_lcore_params = sizeof(lcore_params_array_default) /
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mq_mode	= ETH_MQ_RX_RSS,
-		.max_rx_pkt_len = ETHER_MAX_LEN,
+		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 		.split_hdr_size = 0,
 		.offloads = DEV_RX_OFFLOAD_CHECKSUM,
 	},
@@ -143,10 +143,47 @@ static struct rte_eth_conf port_conf = {
 
 static struct rte_mempool *pktmbuf_pool[NB_SOCKETS];
 
+/* ethernet addresses of ports */
+static struct rte_ether_hdr port_l2hdr[RTE_MAX_ETHPORTS];
+
+static const struct {
+	const char *name;
+	enum rte_acl_classify_alg alg;
+} acl_alg[] = {
+	{
+		.name = "scalar",
+		.alg = RTE_ACL_CLASSIFY_SCALAR,
+	},
+	{
+		.name = "sse",
+		.alg = RTE_ACL_CLASSIFY_SSE,
+	},
+	{
+		.name = "avx2",
+		.alg = RTE_ACL_CLASSIFY_AVX2,
+	},
+	{
+		.name = "neon",
+		.alg = RTE_ACL_CLASSIFY_NEON,
+	},
+	{
+		.name = "altivec",
+		.alg = RTE_ACL_CLASSIFY_ALTIVEC,
+	},
+	{
+		.name = "avx512x16",
+		.alg = RTE_ACL_CLASSIFY_AVX512X16,
+	},
+	{
+		.name = "avx512x32",
+		.alg = RTE_ACL_CLASSIFY_AVX512X32,
+	},
+};
+
 /***********************start of ACL part******************************/
 #ifdef DO_RFC_1812_CHECKS
 static inline int
-is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len);
+is_valid_ipv4_pkt(struct rte_ipv4_hdr *pkt, uint32_t link_len);
 #endif
 static inline void
 send_single_packet(struct rte_mbuf *m, uint16_t port);
@@ -158,12 +195,24 @@ send_single_packet(struct rte_mbuf *m, uint16_t port);
 #define ACL_LEAD_CHAR		('@')
 #define ROUTE_LEAD_CHAR		('R')
 #define COMMENT_LEAD_CHAR	('#')
-#define OPTION_CONFIG		"config"
-#define OPTION_NONUMA		"no-numa"
-#define OPTION_ENBJMO		"enable-jumbo"
-#define OPTION_RULE_IPV4	"rule_ipv4"
-#define OPTION_RULE_IPV6	"rule_ipv6"
-#define OPTION_SCALAR		"scalar"
+
+enum {
+#define OPT_CONFIG      "config"
+	OPT_CONFIG_NUM = 256,
+#define OPT_NONUMA      "no-numa"
+	OPT_NONUMA_NUM,
+#define OPT_ENBJMO      "enable-jumbo"
+	OPT_ENBJMO_NUM,
+#define OPT_RULE_IPV4   "rule_ipv4"
+	OPT_RULE_IPV4_NUM,
+#define OPT_RULE_IPV6	"rule_ipv6"
+	OPT_RULE_IPV6_NUM,
+#define OPT_ALG         "alg"
+	OPT_ALG_NUM,
+#define OPT_ETH_DEST    "eth-dest"
+	OPT_ETH_DEST_NUM,
+};
+
 #define ACL_DENY_SIGNATURE	0xf0000000
 #define RTE_LOGTYPE_L3FWDACL	RTE_LOGTYPE_USER3
 #define acl_log(format, ...)	RTE_LOG(ERR, L3FWDACL, format, ##__VA_ARGS__)
@@ -173,9 +222,9 @@ send_single_packet(struct rte_mbuf *m, uint16_t port);
 		*c = (unsigned char)(ip >> 8 & 0xff);\
 		*d = (unsigned char)(ip & 0xff);\
 	} while (0)
-#define OFF_ETHHEAD	(sizeof(struct ether_hdr))
-#define OFF_IPV42PROTO (offsetof(struct ipv4_hdr, next_proto_id))
-#define OFF_IPV62PROTO (offsetof(struct ipv6_hdr, proto))
+#define OFF_ETHHEAD	(sizeof(struct rte_ether_hdr))
+#define OFF_IPV42PROTO (offsetof(struct rte_ipv4_hdr, next_proto_id))
+#define OFF_IPV62PROTO (offsetof(struct rte_ipv6_hdr, proto))
 #define MBUF_IPV4_2PROTO(m)	\
 	rte_pktmbuf_mtod_offset((m), uint8_t *, OFF_ETHHEAD + OFF_IPV42PROTO)
 #define MBUF_IPV6_2PROTO(m)	\
@@ -252,32 +301,32 @@ struct rte_acl_field_def ipv4_defs[NUM_FIELDS_IPV4] = {
 		.size = sizeof(uint32_t),
 		.field_index = SRC_FIELD_IPV4,
 		.input_index = RTE_ACL_IPV4VLAN_SRC,
-		.offset = offsetof(struct ipv4_hdr, src_addr) -
-			offsetof(struct ipv4_hdr, next_proto_id),
+		.offset = offsetof(struct rte_ipv4_hdr, src_addr) -
+			offsetof(struct rte_ipv4_hdr, next_proto_id),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = DST_FIELD_IPV4,
 		.input_index = RTE_ACL_IPV4VLAN_DST,
-		.offset = offsetof(struct ipv4_hdr, dst_addr) -
-			offsetof(struct ipv4_hdr, next_proto_id),
+		.offset = offsetof(struct rte_ipv4_hdr, dst_addr) -
+			offsetof(struct rte_ipv4_hdr, next_proto_id),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_RANGE,
 		.size = sizeof(uint16_t),
 		.field_index = SRCP_FIELD_IPV4,
 		.input_index = RTE_ACL_IPV4VLAN_PORTS,
-		.offset = sizeof(struct ipv4_hdr) -
-			offsetof(struct ipv4_hdr, next_proto_id),
+		.offset = sizeof(struct rte_ipv4_hdr) -
+			offsetof(struct rte_ipv4_hdr, next_proto_id),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_RANGE,
 		.size = sizeof(uint16_t),
 		.field_index = DSTP_FIELD_IPV4,
 		.input_index = RTE_ACL_IPV4VLAN_PORTS,
-		.offset = sizeof(struct ipv4_hdr) -
-			offsetof(struct ipv4_hdr, next_proto_id) +
+		.offset = sizeof(struct rte_ipv4_hdr) -
+			offsetof(struct rte_ipv4_hdr, next_proto_id) +
 			sizeof(uint16_t),
 	},
 };
@@ -314,80 +363,84 @@ struct rte_acl_field_def ipv6_defs[NUM_FIELDS_IPV6] = {
 		.size = sizeof(uint32_t),
 		.field_index = SRC1_FIELD_IPV6,
 		.input_index = SRC1_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, src_addr) -
-			offsetof(struct ipv6_hdr, proto),
+		.offset = offsetof(struct rte_ipv6_hdr, src_addr) -
+			offsetof(struct rte_ipv6_hdr, proto),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = SRC2_FIELD_IPV6,
 		.input_index = SRC2_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, src_addr) -
-			offsetof(struct ipv6_hdr, proto) + sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, src_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) + sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = SRC3_FIELD_IPV6,
 		.input_index = SRC3_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, src_addr) -
-			offsetof(struct ipv6_hdr, proto) + 2 * sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, src_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) +
+			2 * sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = SRC4_FIELD_IPV6,
 		.input_index = SRC4_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, src_addr) -
-			offsetof(struct ipv6_hdr, proto) + 3 * sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, src_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) +
+			3 * sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = DST1_FIELD_IPV6,
 		.input_index = DST1_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, dst_addr)
-				- offsetof(struct ipv6_hdr, proto),
+		.offset = offsetof(struct rte_ipv6_hdr, dst_addr)
+				- offsetof(struct rte_ipv6_hdr, proto),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = DST2_FIELD_IPV6,
 		.input_index = DST2_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, dst_addr) -
-			offsetof(struct ipv6_hdr, proto) + sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, dst_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) + sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = DST3_FIELD_IPV6,
 		.input_index = DST3_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, dst_addr) -
-			offsetof(struct ipv6_hdr, proto) + 2 * sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, dst_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) +
+			2 * sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_MASK,
 		.size = sizeof(uint32_t),
 		.field_index = DST4_FIELD_IPV6,
 		.input_index = DST4_FIELD_IPV6,
-		.offset = offsetof(struct ipv6_hdr, dst_addr) -
-			offsetof(struct ipv6_hdr, proto) + 3 * sizeof(uint32_t),
+		.offset = offsetof(struct rte_ipv6_hdr, dst_addr) -
+			offsetof(struct rte_ipv6_hdr, proto) +
+			3 * sizeof(uint32_t),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_RANGE,
 		.size = sizeof(uint16_t),
 		.field_index = SRCP_FIELD_IPV6,
 		.input_index = SRCP_FIELD_IPV6,
-		.offset = sizeof(struct ipv6_hdr) -
-			offsetof(struct ipv6_hdr, proto),
+		.offset = sizeof(struct rte_ipv6_hdr) -
+			offsetof(struct rte_ipv6_hdr, proto),
 	},
 	{
 		.type = RTE_ACL_FIELD_TYPE_RANGE,
 		.size = sizeof(uint16_t),
 		.field_index = DSTP_FIELD_IPV6,
 		.input_index = SRCP_FIELD_IPV6,
-		.offset = sizeof(struct ipv6_hdr) -
-			offsetof(struct ipv6_hdr, proto) + sizeof(uint16_t),
+		.offset = sizeof(struct rte_ipv6_hdr) -
+			offsetof(struct rte_ipv6_hdr, proto) + sizeof(uint16_t),
 	},
 };
 
@@ -433,7 +486,7 @@ static struct {
 static struct{
 	const char *rule_ipv4_name;
 	const char *rule_ipv6_name;
-	int scalar;
+	enum rte_acl_classify_alg alg;
 } parm_config;
 
 const char cb_port_delim[] = ":";
@@ -542,9 +595,9 @@ dump_acl4_rule(struct rte_mbuf *m, uint32_t sig)
 {
 	uint32_t offset = sig & ~ACL_DENY_SIGNATURE;
 	unsigned char a, b, c, d;
-	struct ipv4_hdr *ipv4_hdr = rte_pktmbuf_mtod_offset(m,
-							    struct ipv4_hdr *,
-							    sizeof(struct ether_hdr));
+	struct rte_ipv4_hdr *ipv4_hdr =
+		rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *,
+					sizeof(struct rte_ether_hdr));
 
 	uint32_t_to_char(rte_bswap32(ipv4_hdr->src_addr), &a, &b, &c, &d);
 	printf("Packet Src:%hhu.%hhu.%hhu.%hhu ", a, b, c, d);
@@ -566,9 +619,9 @@ dump_acl6_rule(struct rte_mbuf *m, uint32_t sig)
 {
 	unsigned i;
 	uint32_t offset = sig & ~ACL_DENY_SIGNATURE;
-	struct ipv6_hdr *ipv6_hdr = rte_pktmbuf_mtod_offset(m,
-							    struct ipv6_hdr *,
-							    sizeof(struct ether_hdr));
+	struct rte_ipv6_hdr *ipv6_hdr =
+		rte_pktmbuf_mtod_offset(m, struct rte_ipv6_hdr *,
+					sizeof(struct rte_ether_hdr));
 
 	printf("Packet Src");
 	for (i = 0; i < RTE_DIM(ipv6_hdr->src_addr); i += sizeof(uint16_t))
@@ -620,12 +673,12 @@ static inline void
 prepare_one_packet(struct rte_mbuf **pkts_in, struct acl_search_t *acl,
 	int index)
 {
-	struct ipv4_hdr *ipv4_hdr;
+	struct rte_ipv4_hdr *ipv4_hdr;
 	struct rte_mbuf *pkt = pkts_in[index];
 
 	if (RTE_ETH_IS_IPV4_HDR(pkt->packet_type)) {
-		ipv4_hdr = rte_pktmbuf_mtod_offset(pkt, struct ipv4_hdr *,
-						   sizeof(struct ether_hdr));
+		ipv4_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr *,
+						sizeof(struct rte_ether_hdr));
 
 		/* Check to make sure the packet is valid (RFC1812) */
 		if (is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) >= 0) {
@@ -897,7 +950,7 @@ parse_ipv4_net(const char *in, uint32_t *addr, uint32_t *mask_len)
 	GET_CB_FIELD(in, d, 0, UINT8_MAX, '/');
 	GET_CB_FIELD(in, m, 0, sizeof(uint32_t) * CHAR_BIT, 0);
 
-	addr[0] = IPv4(a, b, c, d);
+	addr[0] = RTE_IPV4(a, b, c, d);
 	mask_len[0] = m;
 
 	return 0;
@@ -1086,13 +1139,58 @@ add_rules(const char *rule_path,
 	return 0;
 }
 
+static int
+usage_acl_alg(char *buf, size_t sz)
+{
+	uint32_t i, n, rc, tn;
+
+	n = 0;
+	tn = 0;
+	for (i = 0; i < RTE_DIM(acl_alg); i++) {
+		rc = snprintf(buf + n, sz - n,
+			i == RTE_DIM(acl_alg) - 1 ? "%s" : "%s|",
+			acl_alg[i].name);
+		tn += rc;
+		if (rc < sz - n)
+			n += rc;
+	}
+
+	return tn;
+}
+
+static const char *
+str_acl_alg(enum rte_acl_classify_alg alg)
+{
+	uint32_t i;
+
+	for (i = 0; i != RTE_DIM(acl_alg); i++) {
+		if (alg == acl_alg[i].alg)
+			return acl_alg[i].name;
+	}
+
+	return "default";
+}
+
+static enum rte_acl_classify_alg
+parse_acl_alg(const char *alg)
+{
+	uint32_t i;
+
+	for (i = 0; i != RTE_DIM(acl_alg); i++) {
+		if (strcmp(alg, acl_alg[i].name) == 0)
+			return acl_alg[i].alg;
+	}
+
+	return RTE_ACL_CLASSIFY_DEFAULT;
+}
+
 static void
 dump_acl_config(void)
 {
 	printf("ACL option are:\n");
-	printf(OPTION_RULE_IPV4": %s\n", parm_config.rule_ipv4_name);
-	printf(OPTION_RULE_IPV6": %s\n", parm_config.rule_ipv6_name);
-	printf(OPTION_SCALAR": %d\n", parm_config.scalar);
+	printf(OPT_RULE_IPV4": %s\n", parm_config.rule_ipv4_name);
+	printf(OPT_RULE_IPV6": %s\n", parm_config.rule_ipv6_name);
+	printf(OPT_ALG": %s\n", str_acl_alg(parm_config.alg));
 }
 
 static int
@@ -1133,8 +1231,8 @@ setup_acl(struct rte_acl_rule *route_base,
 	if ((context = rte_acl_create(&acl_param)) == NULL)
 		rte_exit(EXIT_FAILURE, "Failed to create ACL context\n");
 
-	if (parm_config.scalar && rte_acl_set_ctx_classify(context,
-			RTE_ACL_CLASSIFY_SCALAR) != 0)
+	if (parm_config.alg != RTE_ACL_CLASSIFY_DEFAULT &&
+			rte_acl_set_ctx_classify(context, parm_config.alg) != 0)
 		rte_exit(EXIT_FAILURE,
 			"Failed to setup classify method for  ACL context\n");
 
@@ -1271,8 +1369,13 @@ send_single_packet(struct rte_mbuf *m, uint16_t port)
 {
 	uint32_t lcore_id;
 	struct lcore_conf *qconf;
+	struct rte_ether_hdr *eh;
 
 	lcore_id = rte_lcore_id();
+
+	/* update src and dst mac*/
+	eh = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+	memcpy(eh, &port_l2hdr[port], sizeof(eh->d_addr) + sizeof(eh->s_addr));
 
 	qconf = &lcore_conf[lcore_id];
 	rte_eth_tx_buffer(port, qconf->tx_queue_id[port],
@@ -1281,14 +1384,14 @@ send_single_packet(struct rte_mbuf *m, uint16_t port)
 
 #ifdef DO_RFC_1812_CHECKS
 static inline int
-is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
+is_valid_ipv4_pkt(struct rte_ipv4_hdr *pkt, uint32_t link_len)
 {
 	/* From http://www.rfc-editor.org/rfc/rfc1812.txt section 5.2.2 */
 	/*
 	 * 1. The packet length reported by the Link Layer must be large
 	 * enough to hold the minimum length legal IP datagram (20 bytes).
 	 */
-	if (link_len < sizeof(struct ipv4_hdr))
+	if (link_len < sizeof(struct rte_ipv4_hdr))
 		return -1;
 
 	/* 2. The IP checksum must be correct. */
@@ -1313,7 +1416,7 @@ is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
 	 * datagram header, whose length is specified in the IP header length
 	 * field.
 	 */
-	if (rte_cpu_to_be_16(pkt->total_length) < sizeof(struct ipv4_hdr))
+	if (rte_cpu_to_be_16(pkt->total_length) < sizeof(struct rte_ipv4_hdr))
 		return -5;
 
 	return 0;
@@ -1322,7 +1425,7 @@ is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
 
 /* main processing loop */
 static int
-main_loop(__attribute__((unused)) void *dummy)
+main_loop(__rte_unused void *dummy)
 {
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	unsigned lcore_id;
@@ -1512,29 +1615,32 @@ init_lcore_rx_queues(void)
 static void
 print_usage(const char *prgname)
 {
+	char alg[PATH_MAX];
+
+	usage_acl_alg(alg, sizeof(alg));
 	printf("%s [EAL options] -- -p PORTMASK -P"
-		"--"OPTION_RULE_IPV4"=FILE"
-		"--"OPTION_RULE_IPV6"=FILE"
-		"  [--"OPTION_CONFIG" (port,queue,lcore)[,(port,queue,lcore]]"
-		"  [--"OPTION_ENBJMO" [--max-pkt-len PKTLEN]]\n"
+		"--"OPT_RULE_IPV4"=FILE"
+		"--"OPT_RULE_IPV6"=FILE"
+		"  [--"OPT_CONFIG" (port,queue,lcore)[,(port,queue,lcore]]"
+		"  [--"OPT_ENBJMO" [--max-pkt-len PKTLEN]]\n"
 		"  -p PORTMASK: hexadecimal bitmask of ports to configure\n"
 		"  -P : enable promiscuous mode\n"
-		"  --"OPTION_CONFIG": (port,queue,lcore): "
+		"  --"OPT_CONFIG": (port,queue,lcore): "
 		"rx queues configuration\n"
-		"  --"OPTION_NONUMA": optional, disable numa awareness\n"
-		"  --"OPTION_ENBJMO": enable jumbo frame"
+		"  --"OPT_NONUMA": optional, disable numa awareness\n"
+		"  --"OPT_ENBJMO": enable jumbo frame"
 		" which max packet len is PKTLEN in decimal (64-9600)\n"
-		"  --"OPTION_RULE_IPV4"=FILE: specify the ipv4 rules entries "
+		"  --"OPT_RULE_IPV4"=FILE: specify the ipv4 rules entries "
 		"file. "
 		"Each rule occupy one line. "
 		"2 kinds of rules are supported. "
 		"One is ACL entry at while line leads with character '%c', "
 		"another is route entry at while line leads with "
 		"character '%c'.\n"
-		"  --"OPTION_RULE_IPV6"=FILE: specify the ipv6 rules "
+		"  --"OPT_RULE_IPV6"=FILE: specify the ipv6 rules "
 		"entries file.\n"
-		"  --"OPTION_SCALAR": Use scalar function to do lookup\n",
-		prgname, ACL_LEAD_CHAR, ROUTE_LEAD_CHAR);
+		"  --"OPT_ALG": ACL classify method to use, one of: %s\n",
+		prgname, ACL_LEAD_CHAR, ROUTE_LEAD_CHAR, alg);
 }
 
 static int
@@ -1563,10 +1669,7 @@ parse_portmask(const char *portmask)
 	/* parse hexadecimal string */
 	pm = strtoul(portmask, &end, 16);
 	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
-
-	if (pm == 0)
-		return -1;
+		return 0;
 
 	return pm;
 }
@@ -1626,6 +1729,26 @@ parse_config(const char *q_arg)
 	return 0;
 }
 
+static const char *
+parse_eth_dest(const char *optarg)
+{
+	unsigned long portid;
+	char *port_end;
+
+	errno = 0;
+	portid = strtoul(optarg, &port_end, 0);
+	if (errno != 0 || port_end == optarg || *port_end++ != ',')
+		return "Invalid format";
+	else if (portid >= RTE_MAX_ETHPORTS)
+		return "port value exceeds RTE_MAX_ETHPORTS("
+			RTE_STR(RTE_MAX_ETHPORTS) ")";
+
+	if (cmdline_parse_etheraddr(NULL, port_end, &port_l2hdr[portid].d_addr,
+			sizeof(port_l2hdr[portid].d_addr)) < 0)
+		return "Invalid ethernet address";
+	return NULL;
+}
+
 /* Parse the argument given in the command line of the application */
 static int
 parse_args(int argc, char **argv)
@@ -1635,13 +1758,14 @@ parse_args(int argc, char **argv)
 	int option_index;
 	char *prgname = argv[0];
 	static struct option lgopts[] = {
-		{OPTION_CONFIG, 1, 0, 0},
-		{OPTION_NONUMA, 0, 0, 0},
-		{OPTION_ENBJMO, 0, 0, 0},
-		{OPTION_RULE_IPV4, 1, 0, 0},
-		{OPTION_RULE_IPV6, 1, 0, 0},
-		{OPTION_SCALAR, 0, 0, 0},
-		{NULL, 0, 0, 0}
+		{OPT_CONFIG,    1, NULL, OPT_CONFIG_NUM    },
+		{OPT_NONUMA,    0, NULL, OPT_NONUMA_NUM    },
+		{OPT_ENBJMO,    0, NULL, OPT_ENBJMO_NUM    },
+		{OPT_RULE_IPV4, 1, NULL, OPT_RULE_IPV4_NUM },
+		{OPT_RULE_IPV6, 1, NULL, OPT_RULE_IPV6_NUM },
+		{OPT_ALG,       1, NULL, OPT_ALG_NUM       },
+		{OPT_ETH_DEST,  1, NULL, OPT_ETH_DEST_NUM  },
+		{NULL,          0, 0,    0                 }
 	};
 
 	argvopt = argv;
@@ -1659,86 +1783,94 @@ parse_args(int argc, char **argv)
 				return -1;
 			}
 			break;
+
 		case 'P':
 			printf("Promiscuous mode selected\n");
 			promiscuous_on = 1;
 			break;
 
 		/* long options */
-		case 0:
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_CONFIG,
-					sizeof(OPTION_CONFIG))) {
-				ret = parse_config(optarg);
-				if (ret) {
-					printf("invalid config\n");
+		case OPT_CONFIG_NUM:
+			ret = parse_config(optarg);
+			if (ret) {
+				printf("invalid config\n");
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		case OPT_NONUMA_NUM:
+			printf("numa is disabled\n");
+			numa_on = 0;
+			break;
+
+		case OPT_ENBJMO_NUM:
+		{
+			struct option lenopts = {
+				"max-pkt-len",
+				required_argument,
+				0,
+				0
+			};
+
+			printf("jumbo frame is enabled\n");
+			port_conf.rxmode.offloads |=
+					DEV_RX_OFFLOAD_JUMBO_FRAME;
+			port_conf.txmode.offloads |=
+					DEV_TX_OFFLOAD_MULTI_SEGS;
+
+			/*
+			 * if no max-pkt-len set, then use the
+			 * default value RTE_ETHER_MAX_LEN
+			 */
+			if (getopt_long(argc, argvopt, "",
+					&lenopts, &option_index) == 0) {
+				ret = parse_max_pkt_len(optarg);
+				if ((ret < 64) ||
+					(ret > MAX_JUMBO_PKT_LEN)) {
+					printf("invalid packet "
+						"length\n");
 					print_usage(prgname);
 					return -1;
 				}
+				port_conf.rxmode.max_rx_pkt_len = ret;
 			}
-
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_NONUMA,
-					sizeof(OPTION_NONUMA))) {
-				printf("numa is disabled\n");
-				numa_on = 0;
-			}
-
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_ENBJMO, sizeof(OPTION_ENBJMO))) {
-				struct option lenopts = {
-					"max-pkt-len",
-					required_argument,
-					0,
-					0
-				};
-
-				printf("jumbo frame is enabled\n");
-				port_conf.rxmode.offloads |=
-						DEV_RX_OFFLOAD_JUMBO_FRAME;
-				port_conf.txmode.offloads |=
-						DEV_TX_OFFLOAD_MULTI_SEGS;
-
-				/*
-				 * if no max-pkt-len set, then use the
-				 * default value ETHER_MAX_LEN
-				 */
-				if (0 == getopt_long(argc, argvopt, "",
-						&lenopts, &option_index)) {
-					ret = parse_max_pkt_len(optarg);
-					if ((ret < 64) ||
-						(ret > MAX_JUMBO_PKT_LEN)) {
-						printf("invalid packet "
-							"length\n");
-						print_usage(prgname);
-						return -1;
-					}
-					port_conf.rxmode.max_rx_pkt_len = ret;
-				}
-				printf("set jumbo frame max packet length "
-					"to %u\n",
-					(unsigned int)
-					port_conf.rxmode.max_rx_pkt_len);
-			}
-
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_RULE_IPV4,
-					sizeof(OPTION_RULE_IPV4)))
-				parm_config.rule_ipv4_name = optarg;
-
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_RULE_IPV6,
-					sizeof(OPTION_RULE_IPV6))) {
-				parm_config.rule_ipv6_name = optarg;
-			}
-
-			if (!strncmp(lgopts[option_index].name,
-					OPTION_SCALAR, sizeof(OPTION_SCALAR)))
-				parm_config.scalar = 1;
-
-
+			printf("set jumbo frame max packet length "
+				"to %u\n",
+				(unsigned int)
+				port_conf.rxmode.max_rx_pkt_len);
+			break;
+		}
+		case OPT_RULE_IPV4_NUM:
+			parm_config.rule_ipv4_name = optarg;
 			break;
 
+		case OPT_RULE_IPV6_NUM:
+			parm_config.rule_ipv6_name = optarg;
+			break;
+
+		case OPT_ALG_NUM:
+			parm_config.alg = parse_acl_alg(optarg);
+			if (parm_config.alg ==
+					RTE_ACL_CLASSIFY_DEFAULT) {
+				printf("unknown %s value:\"%s\"\n",
+					OPT_ALG, optarg);
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+
+		case OPT_ETH_DEST_NUM:
+		{
+			const char *serr = parse_eth_dest(optarg);
+			if (serr != NULL) {
+				printf("invalid %s value:\"%s\": %s\n",
+					OPT_ETH_DEST, optarg, serr);
+				print_usage(prgname);
+				return -1;
+			}
+			break;
+		}
 		default:
 			print_usage(prgname);
 			return -1;
@@ -1754,10 +1886,10 @@ parse_args(int argc, char **argv)
 }
 
 static void
-print_ethaddr(const char *name, const struct ether_addr *eth_addr)
+print_ethaddr(const char *name, const struct rte_ether_addr *eth_addr)
 {
-	char buf[ETHER_ADDR_FMT_SIZE];
-	ether_format_addr(buf, ETHER_ADDR_FMT_SIZE, eth_addr);
+	char buf[RTE_ETHER_ADDR_FMT_SIZE];
+	rte_ether_format_addr(buf, RTE_ETHER_ADDR_FMT_SIZE, eth_addr);
 	printf("%s%s", name, buf);
 }
 
@@ -1810,6 +1942,8 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
+	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 
 	printf("\nChecking link status");
 	fflush(stdout);
@@ -1819,17 +1953,20 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
-				if (link.link_status)
-					printf(
-					"Port%d Link Up. Speed %u Mbps %s\n",
-						portid, link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex\n"));
-				else
-					printf("Port %d Link Down\n", portid);
+				rte_eth_link_to_str(link_status_text,
+					sizeof(link_status_text), &link);
+				printf("Port %d %s\n", portid,
+				       link_status_text);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
@@ -1856,6 +1993,20 @@ check_all_ports_link_status(uint32_t port_mask)
 	}
 }
 
+/*
+ * build-up default vaues for dest MACs.
+ */
+static void
+set_default_dest_mac(void)
+{
+	uint32_t i;
+
+	for (i = 0; i != RTE_DIM(port_l2hdr); i++) {
+		port_l2hdr[i].d_addr.addr_bytes[0] = RTE_ETHER_LOCAL_ADMIN_ADDR;
+		port_l2hdr[i].d_addr.addr_bytes[5] = i;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1876,6 +2027,8 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "Invalid EAL parameters\n");
 	argc -= ret;
 	argv += ret;
+
+	set_default_dest_mac();
 
 	/* parse application arguments (after the EAL ones) */
 	ret = parse_args(argc, argv);
@@ -1920,7 +2073,13 @@ main(int argc, char **argv)
 			n_tx_queue = MAX_TX_QUEUE_PER_PORT;
 		printf("Creating queues: nb_rxq=%d nb_txq=%u... ",
 			nb_rx_queue, (unsigned)n_tx_queue);
-		rte_eth_dev_info_get(portid, &dev_info);
+
+		ret = rte_eth_dev_info_get(portid, &dev_info);
+		if (ret != 0)
+			rte_exit(EXIT_FAILURE,
+				"Error during getting device (port %u) info: %s\n",
+				portid, strerror(-ret));
+
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -1950,8 +2109,14 @@ main(int argc, char **argv)
 				"rte_eth_dev_adjust_nb_rx_tx_desc: err=%d, port=%d\n",
 				ret, portid);
 
-		rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
-		print_ethaddr(" Address:", &ports_eth_addr[portid]);
+		ret = rte_eth_macaddr_get(portid, &port_l2hdr[portid].s_addr);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE,
+				"rte_eth_macaddr_get: err=%d, port=%d\n",
+				ret, portid);
+
+		print_ethaddr("Dst MAC:", &port_l2hdr[portid].d_addr);
+		print_ethaddr(", Src MAC:", &port_l2hdr[portid].s_addr);
 		printf(", ");
 
 		/* init memory */
@@ -1990,7 +2155,12 @@ main(int argc, char **argv)
 			printf("txq=%u,%d,%d ", lcore_id, queueid, socketid);
 			fflush(stdout);
 
-			rte_eth_dev_info_get(portid, &dev_info);
+			ret = rte_eth_dev_info_get(portid, &dev_info);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Error during getting device (port %u) info: %s\n",
+					portid, strerror(-ret));
+
 			txconf = &dev_info.default_txconf;
 			txconf->offloads = local_port_conf.txmode.offloads;
 			ret = rte_eth_tx_queue_setup(portid, queueid, nb_txd,
@@ -2018,14 +2188,10 @@ main(int argc, char **argv)
 		fflush(stdout);
 		/* init RX queues */
 		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
-			struct rte_eth_dev *dev;
-			struct rte_eth_conf *conf;
 			struct rte_eth_rxconf rxq_conf;
 
 			portid = qconf->rx_queue_list[queue].port_id;
 			queueid = qconf->rx_queue_list[queue].queue_id;
-			dev = &rte_eth_devices[portid];
-			conf = &dev->data->dev_conf;
 
 			if (numa_on)
 				socketid = (uint8_t)
@@ -2036,9 +2202,14 @@ main(int argc, char **argv)
 			printf("rxq=%d,%d,%d ", portid, queueid, socketid);
 			fflush(stdout);
 
-			rte_eth_dev_info_get(portid, &dev_info);
+			ret = rte_eth_dev_info_get(portid, &dev_info);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Error during getting device (port %u) info: %s\n",
+					portid, strerror(-ret));
+
 			rxq_conf = dev_info.default_rxconf;
-			rxq_conf.offloads = conf->rxmode.offloads;
+			rxq_conf.offloads = port_conf.rxmode.offloads;
 			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
 					socketid, &rxq_conf,
 					pktmbuf_pool[socketid]);
@@ -2069,18 +2240,26 @@ main(int argc, char **argv)
 		 * to itself through 2 cross-connected  ports of the
 		 * target machine.
 		 */
-		if (promiscuous_on)
-			rte_eth_promiscuous_enable(portid);
+		if (promiscuous_on) {
+			ret = rte_eth_promiscuous_enable(portid);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"rte_eth_promiscuous_enable: err=%s, port=%u\n",
+					rte_strerror(-ret), portid);
+		}
 	}
 
 	check_all_ports_link_status(enabled_port_mask);
 
 	/* launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MAIN);
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;
 	}
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

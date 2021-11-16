@@ -16,7 +16,7 @@
 #define PRETTY_HDR_FMT "%12s%12s%12s%12s%12s%12s%12s%12s%12s%12s\n\n"
 #define PRETTY_LINE_FMT "%12u%12u%12u%12u%12u%12u%12u%12.0f%12.0f%12.0f\n"
 #define CSV_HDR_FMT "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n"
-#define CSV_LINE_FMT "%10u;%10u;%u;%u;%u;%u;%u;%.f3;%.f3;%.f3\n"
+#define CSV_LINE_FMT "%10u,%10u,%u,%u,%u,%u,%u,%.3f,%.3f,%.3f\n"
 
 struct cperf_pmd_cyclecount_ctx {
 	uint8_t dev_id;
@@ -59,23 +59,36 @@ static const uint16_t iv_offset =
 static void
 cperf_pmd_cyclecount_test_free(struct cperf_pmd_cyclecount_ctx *ctx)
 {
-	if (ctx) {
-		if (ctx->sess) {
+	if (!ctx)
+		return;
+
+	if (ctx->sess) {
+#ifdef RTE_LIB_SECURITY
+		if (ctx->options->op_type == CPERF_PDCP ||
+				ctx->options->op_type == CPERF_DOCSIS) {
+			struct rte_security_ctx *sec_ctx =
+				(struct rte_security_ctx *)
+				rte_cryptodev_get_sec_ctx(ctx->dev_id);
+			rte_security_session_destroy(sec_ctx,
+				(struct rte_security_session *)ctx->sess);
+		} else
+#endif
+		{
 			rte_cryptodev_sym_session_clear(ctx->dev_id, ctx->sess);
 			rte_cryptodev_sym_session_free(ctx->sess);
 		}
-
-		if (ctx->pool)
-			rte_mempool_free(ctx->pool);
-
-		if (ctx->ops)
-			rte_free(ctx->ops);
-
-		if (ctx->ops_processed)
-			rte_free(ctx->ops_processed);
-
-		rte_free(ctx);
 	}
+
+	if (ctx->pool)
+		rte_mempool_free(ctx->pool);
+
+	if (ctx->ops)
+		rte_free(ctx->ops);
+
+	if (ctx->ops_processed)
+		rte_free(ctx->ops_processed);
+
+	rte_free(ctx);
 }
 
 void *
@@ -391,7 +404,7 @@ cperf_pmd_cyclecount_test_runner(void *test_ctx)
 	state.lcore = rte_lcore_id();
 	state.linearize = 0;
 
-	static int only_once;
+	static rte_atomic16_t display_once = RTE_ATOMIC16_INIT(0);
 	static bool warmup = true;
 
 	/*
@@ -437,13 +450,12 @@ cperf_pmd_cyclecount_test_runner(void *test_ctx)
 		}
 
 		if (!opts->csv) {
-			if (!only_once)
+			if (rte_atomic16_test_and_set(&display_once))
 				printf(PRETTY_HDR_FMT, "lcore id", "Buf Size",
 						"Burst Size", "Enqueued",
 						"Dequeued", "Enq Retries",
 						"Deq Retries", "Cycles/Op",
 						"Cycles/Enq", "Cycles/Deq");
-			only_once = 1;
 
 			printf(PRETTY_LINE_FMT, state.ctx->lcore_id,
 					opts->test_buffer_size, test_burst_size,
@@ -454,13 +466,12 @@ cperf_pmd_cyclecount_test_runner(void *test_ctx)
 					state.cycles_per_enq,
 					state.cycles_per_deq);
 		} else {
-			if (!only_once)
+			if (rte_atomic16_test_and_set(&display_once))
 				printf(CSV_HDR_FMT, "# lcore id", "Buf Size",
 						"Burst Size", "Enqueued",
 						"Dequeued", "Enq Retries",
 						"Deq Retries", "Cycles/Op",
 						"Cycles/Enq", "Cycles/Deq");
-			only_once = 1;
 
 			printf(CSV_LINE_FMT, state.ctx->lcore_id,
 					opts->test_buffer_size, test_burst_size,

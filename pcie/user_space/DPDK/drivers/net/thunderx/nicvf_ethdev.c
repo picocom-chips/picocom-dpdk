@@ -23,8 +23,8 @@
 #include <rte_dev.h>
 #include <rte_eal.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_pci.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_interrupts.h>
 #include <rte_log.h>
 #include <rte_memory.h>
@@ -44,31 +44,16 @@
 #include "nicvf_svf.h"
 #include "nicvf_logs.h"
 
-int nicvf_logtype_mbox;
-int nicvf_logtype_init;
-int nicvf_logtype_driver;
-
-static void nicvf_dev_stop(struct rte_eth_dev *dev);
+static int nicvf_dev_stop(struct rte_eth_dev *dev);
 static void nicvf_dev_stop_cleanup(struct rte_eth_dev *dev, bool cleanup);
 static void nicvf_vf_stop(struct rte_eth_dev *dev, struct nicvf *nic,
 			  bool cleanup);
 static int nicvf_vlan_offload_config(struct rte_eth_dev *dev, int mask);
 static int nicvf_vlan_offload_set(struct rte_eth_dev *dev, int mask);
 
-RTE_INIT(nicvf_init_log)
-{
-	nicvf_logtype_mbox = rte_log_register("pmd.net.thunderx.mbox");
-	if (nicvf_logtype_mbox >= 0)
-		rte_log_set_level(nicvf_logtype_mbox, RTE_LOG_NOTICE);
-
-	nicvf_logtype_init = rte_log_register("pmd.net.thunderx.init");
-	if (nicvf_logtype_init >= 0)
-		rte_log_set_level(nicvf_logtype_init, RTE_LOG_NOTICE);
-
-	nicvf_logtype_driver = rte_log_register("pmd.net.thunderx.driver");
-	if (nicvf_logtype_driver >= 0)
-		rte_log_set_level(nicvf_logtype_driver, RTE_LOG_NOTICE);
-}
+RTE_LOG_REGISTER_SUFFIX(nicvf_logtype_mbox, mbox, NOTICE);
+RTE_LOG_REGISTER_SUFFIX(nicvf_logtype_init, init, NOTICE);
+RTE_LOG_REGISTER_SUFFIX(nicvf_logtype_driver, driver, NOTICE);
 
 static void
 nicvf_link_status_update(struct nicvf *nic,
@@ -98,9 +83,9 @@ nicvf_interrupt(void *arg)
 			nicvf_link_status_update(nic, &link);
 			rte_eth_linkstatus_set(dev, &link);
 
-			_rte_eth_dev_callback_process(dev,
-						      RTE_ETH_EVENT_INTR_LSC,
-						      NULL);
+			rte_eth_dev_callback_process(dev,
+						     RTE_ETH_EVENT_INTR_LSC,
+						     NULL);
 		}
 	}
 
@@ -191,7 +176,7 @@ nicvf_dev_set_mtu(struct rte_eth_dev *dev, uint16_t mtu)
 		(frame_size + 2 * VLAN_TAG_SIZE > buffsz * NIC_HW_MAX_SEGS))
 		return -EINVAL;
 
-	if (frame_size > ETHER_MAX_LEN)
+	if (frame_size > NIC_HW_L2_MAX_LEN)
 		rxmode->offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME;
 	else
 		rxmode->offloads &= ~DEV_RX_OFFLOAD_JUMBO_FRAME;
@@ -200,7 +185,7 @@ nicvf_dev_set_mtu(struct rte_eth_dev *dev, uint16_t mtu)
 		return -EINVAL;
 
 	/* Update max_rx_pkt_len */
-	rxmode->max_rx_pkt_len = mtu + ETHER_HDR_LEN;
+	rxmode->max_rx_pkt_len = mtu + RTE_ETHER_HDR_LEN;
 	nic->mtu = mtu;
 
 	for (i = 0; i < nic->sqs_count; i++)
@@ -362,7 +347,7 @@ nicvf_dev_supported_ptypes_get(struct rte_eth_dev *dev)
 	return ptypes;
 }
 
-static void
+static int
 nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 {
 	int i;
@@ -370,6 +355,7 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 	struct nicvf *nic = nicvf_pmd_priv(dev);
 	uint16_t rx_start, rx_end;
 	uint16_t tx_start, tx_end;
+	int ret;
 
 	/* Reset all primary nic counters */
 	nicvf_rx_range(dev, nic, &rx_start, &rx_end);
@@ -380,7 +366,9 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 	for (i = tx_start; i <= tx_end; i++)
 		txqs |= (0x3 << (i * 2));
 
-	nicvf_mbox_reset_stat_counters(nic, 0x3FFF, 0x1F, rxqs, txqs);
+	ret = nicvf_mbox_reset_stat_counters(nic, 0x3FFF, 0x1F, rxqs, txqs);
+	if (ret != 0)
+		return ret;
 
 	/* Reset secondary nic queue counters */
 	for (i = 0; i < nic->sqs_count; i++) {
@@ -396,14 +384,19 @@ nicvf_dev_stats_reset(struct rte_eth_dev *dev)
 		for (i = tx_start; i <= tx_end; i++)
 			txqs |= (0x3 << ((i % MAX_SND_QUEUES_PER_QS) * 2));
 
-		nicvf_mbox_reset_stat_counters(snic, 0, 0, rxqs, txqs);
+		ret = nicvf_mbox_reset_stat_counters(snic, 0, 0, rxqs, txqs);
+		if (ret != 0)
+			return ret;
 	}
+
+	return 0;
 }
 
 /* Promiscuous mode enabled by default in LMAC to VF 1:1 map configuration */
-static void
+static int
 nicvf_dev_promisc_enable(struct rte_eth_dev *dev __rte_unused)
 {
+	return 0;
 }
 
 static inline uint64_t
@@ -488,9 +481,10 @@ nicvf_dev_reta_query(struct rte_eth_dev *dev,
 	int ret, i, j;
 
 	if (reta_size != NIC_MAX_RSS_IDR_TBL_SIZE) {
-		RTE_LOG(ERR, PMD, "The size of hash lookup table configured "
-			"(%d) doesn't match the number hardware can supported "
-			"(%d)", reta_size, NIC_MAX_RSS_IDR_TBL_SIZE);
+		PMD_DRV_LOG(ERR,
+			    "The size of hash lookup table configured "
+			    "(%u) doesn't match the number hardware can supported "
+			    "(%u)", reta_size, NIC_MAX_RSS_IDR_TBL_SIZE);
 		return -EINVAL;
 	}
 
@@ -518,9 +512,9 @@ nicvf_dev_reta_update(struct rte_eth_dev *dev,
 	int ret, i, j;
 
 	if (reta_size != NIC_MAX_RSS_IDR_TBL_SIZE) {
-		RTE_LOG(ERR, PMD, "The size of hash lookup table configured "
-			"(%d) doesn't match the number hardware can supported "
-			"(%d)", reta_size, NIC_MAX_RSS_IDR_TBL_SIZE);
+		PMD_DRV_LOG(ERR, "The size of hash lookup table configured "
+			"(%u) doesn't match the number hardware can supported "
+			"(%u)", reta_size, NIC_MAX_RSS_IDR_TBL_SIZE);
 		return -EINVAL;
 	}
 
@@ -561,8 +555,8 @@ nicvf_dev_rss_hash_update(struct rte_eth_dev *dev,
 
 	if (rss_conf->rss_key &&
 		rss_conf->rss_key_len != RSS_HASH_KEY_BYTE_SIZE) {
-		RTE_LOG(ERR, PMD, "Hash key size mismatch %d",
-				rss_conf->rss_key_len);
+		PMD_DRV_LOG(ERR, "Hash key size mismatch %u",
+			    rss_conf->rss_key_len);
 		return -EINVAL;
 	}
 
@@ -644,6 +638,7 @@ nicvf_qset_rbdr_alloc(struct rte_eth_dev *dev, struct nicvf *nic,
 				      NICVF_RBDR_BASE_ALIGN_BYTES, nic->node);
 	if (rz == NULL) {
 		PMD_INIT_LOG(ERR, "Failed to allocate mem for rbdr desc ring");
+		rte_free(rbdr);
 		return -ENOMEM;
 	}
 
@@ -1393,7 +1388,7 @@ nicvf_dev_rx_queue_setup(struct rte_eth_dev *dev, uint16_t qidx,
 	return 0;
 }
 
-static void
+static int
 nicvf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
 	struct nicvf *nic = nicvf_pmd_priv(dev);
@@ -1408,8 +1403,8 @@ nicvf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 	if (nicvf_hw_version(nic) != PCI_SUB_DEVICE_ID_CN81XX_NICVF)
 		dev_info->speed_capa |= ETH_LINK_SPEED_40G;
 
-	dev_info->min_rx_bufsize = ETHER_MIN_MTU;
-	dev_info->max_rx_pktlen = NIC_HW_MAX_MTU + ETHER_HDR_LEN;
+	dev_info->min_rx_bufsize = RTE_ETHER_MIN_MTU;
+	dev_info->max_rx_pktlen = NIC_HW_MAX_MTU + RTE_ETHER_HDR_LEN;
 	dev_info->max_rx_queues =
 			(uint16_t)MAX_RCV_QUEUES_PER_QS * (MAX_SQS_PER_VF + 1);
 	dev_info->max_tx_queues =
@@ -1440,6 +1435,8 @@ nicvf_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 			DEV_TX_OFFLOAD_UDP_CKSUM          |
 			DEV_TX_OFFLOAD_TCP_CKSUM,
 	};
+
+	return 0;
 }
 
 static nicvf_iova_addr_t
@@ -1736,7 +1733,7 @@ nicvf_dev_start(struct rte_eth_dev *dev)
 	/* Setup MTU based on max_rx_pkt_len or default */
 	mtu = dev->data->dev_conf.rxmode.offloads & DEV_RX_OFFLOAD_JUMBO_FRAME ?
 		dev->data->dev_conf.rxmode.max_rx_pkt_len
-			-  ETHER_HDR_LEN : ETHER_MTU;
+			-  RTE_ETHER_HDR_LEN : RTE_ETHER_MTU;
 
 	if (nicvf_dev_set_mtu(dev, mtu)) {
 		PMD_INIT_LOG(ERR, "Failed to set default mtu size");
@@ -1770,6 +1767,7 @@ nicvf_dev_stop_cleanup(struct rte_eth_dev *dev, bool cleanup)
 	struct nicvf *nic = nicvf_pmd_priv(dev);
 
 	PMD_INIT_FUNC_TRACE();
+	dev->data->dev_started = 0;
 
 	/* Teardown secondary vf first */
 	for (i = 0; i < nic->sqs_count; i++) {
@@ -1793,12 +1791,14 @@ nicvf_dev_stop_cleanup(struct rte_eth_dev *dev, bool cleanup)
 		PMD_INIT_LOG(ERR, "Failed to reclaim CPI config %d", ret);
 }
 
-static void
+static int
 nicvf_dev_stop(struct rte_eth_dev *dev)
 {
 	PMD_INIT_FUNC_TRACE();
 
 	nicvf_dev_stop_cleanup(dev, false);
+
+	return 0;
 }
 
 static void
@@ -1856,13 +1856,15 @@ nicvf_vf_stop(struct rte_eth_dev *dev, struct nicvf *nic, bool cleanup)
 	}
 }
 
-static void
+static int
 nicvf_dev_close(struct rte_eth_dev *dev)
 {
 	size_t i;
 	struct nicvf *nic = nicvf_pmd_priv(dev);
 
 	PMD_INIT_FUNC_TRACE();
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
 
 	nicvf_dev_stop_cleanup(dev, true);
 	nicvf_periodic_alarm_stop(nicvf_interrupt, dev);
@@ -1873,6 +1875,8 @@ nicvf_dev_close(struct rte_eth_dev *dev)
 
 		nicvf_periodic_alarm_stop(nicvf_vf_interrupt, nic->snicvf[i]);
 	}
+
+	return 0;
 }
 
 static int
@@ -1909,6 +1913,9 @@ nicvf_dev_configure(struct rte_eth_dev *dev)
 	uint8_t cqcount;
 
 	PMD_INIT_FUNC_TRACE();
+
+	if (rxmode->mq_mode & ETH_MQ_RX_RSS_FLAG)
+		rxmode->offloads |= DEV_RX_OFFLOAD_RSS_HASH;
 
 	if (!rte_eal_has_hugepages()) {
 		PMD_INIT_LOG(INFO, "Huge page is not configured");
@@ -1975,6 +1982,37 @@ nicvf_dev_configure(struct rte_eth_dev *dev)
 	return 0;
 }
 
+static int
+nicvf_dev_set_link_up(struct rte_eth_dev *dev)
+{
+	struct nicvf *nic = nicvf_pmd_priv(dev);
+	int rc, i;
+
+	rc = nicvf_mbox_set_link_up_down(nic, true);
+	if (rc)
+		goto done;
+
+	/* Start tx queues  */
+	for (i = 0; i < dev->data->nb_tx_queues; i++)
+		nicvf_dev_tx_queue_start(dev, i);
+
+done:
+	return rc;
+}
+
+static int
+nicvf_dev_set_link_down(struct rte_eth_dev *dev)
+{
+	struct nicvf *nic = nicvf_pmd_priv(dev);
+	int i;
+
+	/* Stop tx queues  */
+	for (i = 0; i < dev->data->nb_tx_queues; i++)
+		nicvf_dev_tx_queue_stop(dev, i);
+
+	return nicvf_mbox_set_link_up_down(nic, false);
+}
+
 /* Initialize and register driver with DPDK Application */
 static const struct eth_dev_ops nicvf_eth_dev_ops = {
 	.dev_configure            = nicvf_dev_configure,
@@ -1999,9 +2037,10 @@ static const struct eth_dev_ops nicvf_eth_dev_ops = {
 	.tx_queue_stop            = nicvf_dev_tx_queue_stop,
 	.rx_queue_setup           = nicvf_dev_rx_queue_setup,
 	.rx_queue_release         = nicvf_dev_rx_queue_release,
-	.rx_queue_count           = nicvf_dev_rx_queue_count,
 	.tx_queue_setup           = nicvf_dev_tx_queue_setup,
 	.tx_queue_release         = nicvf_dev_tx_queue_release,
+	.dev_set_link_up          = nicvf_dev_set_link_up,
+	.dev_set_link_down        = nicvf_dev_set_link_down,
 	.get_reg                  = nicvf_dev_get_regs,
 };
 
@@ -2083,6 +2122,13 @@ kvlist_free:
 	return ret;
 }
 static int
+nicvf_eth_dev_uninit(struct rte_eth_dev *dev)
+{
+	PMD_INIT_FUNC_TRACE();
+	nicvf_dev_close(dev);
+	return 0;
+}
+static int
 nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
 {
 	int ret;
@@ -2092,6 +2138,7 @@ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
 	PMD_INIT_FUNC_TRACE();
 
 	eth_dev->dev_ops = &nicvf_eth_dev_ops;
+	eth_dev->rx_queue_count = nicvf_dev_rx_queue_count;
 
 	/* For secondary processes, the primary has done all the work */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
@@ -2109,6 +2156,7 @@ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
 
 	pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
 	rte_eth_copy_pci_info(eth_dev, pci_dev);
+	eth_dev->data->dev_flags |= RTE_ETH_DEV_AUTOFILL_QUEUE_XSTATS;
 
 	nic->device_id = pci_dev->id.device_id;
 	nic->vendor_id = pci_dev->id.vendor_id;
@@ -2173,16 +2221,17 @@ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
 		return ENOTSUP;
 	}
 
-	eth_dev->data->mac_addrs = rte_zmalloc("mac_addr", ETHER_ADDR_LEN, 0);
+	eth_dev->data->mac_addrs = rte_zmalloc("mac_addr",
+					RTE_ETHER_ADDR_LEN, 0);
 	if (eth_dev->data->mac_addrs == NULL) {
 		PMD_INIT_LOG(ERR, "Failed to allocate memory for mac addr");
 		ret = -ENOMEM;
 		goto alarm_fail;
 	}
-	if (is_zero_ether_addr((struct ether_addr *)nic->mac_addr))
-		eth_random_addr(&nic->mac_addr[0]);
+	if (rte_is_zero_ether_addr((struct rte_ether_addr *)nic->mac_addr))
+		rte_eth_random_addr(&nic->mac_addr[0]);
 
-	ether_addr_copy((struct ether_addr *)nic->mac_addr,
+	rte_ether_addr_copy((struct rte_ether_addr *)nic->mac_addr,
 			&eth_dev->data->mac_addrs[0]);
 
 	ret = nicvf_mbox_set_mac_addr(nic, nic->mac_addr);
@@ -2205,6 +2254,7 @@ nicvf_eth_dev_init(struct rte_eth_dev *eth_dev)
 
 malloc_fail:
 	rte_free(eth_dev->data->mac_addrs);
+	eth_dev->data->mac_addrs = NULL;
 alarm_fail:
 	nicvf_periodic_alarm_stop(nicvf_interrupt, eth_dev);
 fail:
@@ -2254,7 +2304,7 @@ static int nicvf_eth_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
 
 static int nicvf_eth_pci_remove(struct rte_pci_device *pci_dev)
 {
-	return rte_eth_dev_pci_generic_remove(pci_dev, NULL);
+	return rte_eth_dev_pci_generic_remove(pci_dev, nicvf_eth_dev_uninit);
 }
 
 static struct rte_pci_driver rte_nicvf_pmd = {

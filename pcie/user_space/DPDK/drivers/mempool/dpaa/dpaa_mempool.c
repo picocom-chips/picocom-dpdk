@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- *   Copyright 2017 NXP
+ *   Copyright 2017,2019 NXP
  *
  */
 
@@ -35,7 +35,9 @@
 struct dpaa_memseg_list rte_dpaa_memsegs
 	= TAILQ_HEAD_INITIALIZER(rte_dpaa_memsegs);
 
-struct dpaa_bp_info rte_dpaa_bpid_info[DPAA_MAX_BPOOLS];
+struct dpaa_bp_info *rte_dpaa_bpid_info;
+
+RTE_LOG_REGISTER_DEFAULT(dpaa_logtype_mempool, NOTICE);
 
 static int
 dpaa_mbuf_create_pool(struct rte_mempool *mp)
@@ -51,6 +53,15 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 
 	MEMPOOL_INIT_FUNC_TRACE();
 
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
+		ret = rte_dpaa_portal_init((void *)0);
+		if (ret) {
+			DPAA_MEMPOOL_ERR(
+				"rte_dpaa_portal_init failed with ret: %d",
+				 ret);
+			return -1;
+		}
+	}
 	bp = bman_new_pool(&params);
 	if (!bp) {
 		DPAA_MEMPOOL_ERR("bman_new_pool() failed");
@@ -73,6 +84,16 @@ dpaa_mbuf_create_pool(struct rte_mempool *mp)
 	if (num_bufs)
 		DPAA_MEMPOOL_WARN("drained %u bufs from BPID %d",
 				  num_bufs, bpid);
+
+	if (rte_dpaa_bpid_info == NULL) {
+		rte_dpaa_bpid_info = (struct dpaa_bp_info *)rte_zmalloc(NULL,
+				sizeof(struct dpaa_bp_info) * DPAA_MAX_BPOOLS,
+				RTE_CACHE_LINE_SIZE);
+		if (rte_dpaa_bpid_info == NULL) {
+			bman_free_pool(bp);
+			return -ENOMEM;
+		}
+	}
 
 	rte_dpaa_bpid_info[bpid].mp = mp;
 	rte_dpaa_bpid_info[bpid].bpid = bpid;
@@ -113,6 +134,7 @@ dpaa_mbuf_free_pool(struct rte_mempool *mp)
 		DPAA_MEMPOOL_INFO("BMAN pool freed for bpid =%d",
 				  bp_info->bpid);
 		rte_free(mp->pool_data);
+		bp_info->bp = NULL;
 		mp->pool_data = NULL;
 	}
 }
@@ -148,7 +170,7 @@ dpaa_mbuf_free_bulk(struct rte_mempool *pool,
 	DPAA_MEMPOOL_DPDEBUG("Request to free %d buffers in bpid = %d",
 			     n, bp_info->bpid);
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
@@ -203,7 +225,7 @@ dpaa_mbuf_alloc_bulk(struct rte_mempool *pool,
 		return -1;
 	}
 
-	if (unlikely(!RTE_PER_LCORE(dpaa_io))) {
+	if (unlikely(!DPAA_PER_LCORE_PORTAL)) {
 		ret = rte_dpaa_portal_init((void *)0);
 		if (ret) {
 			DPAA_MEMPOOL_ERR("rte_dpaa_portal_init failed with ret: %d",
@@ -279,8 +301,6 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	struct dpaa_bp_info *bp_info;
 	unsigned int total_elt_sz;
 
-	MEMPOOL_INIT_FUNC_TRACE();
-
 	if (!mp || !mp->pool_data) {
 		DPAA_MEMPOOL_ERR("Invalid mempool provided\n");
 		return 0;
@@ -292,7 +312,7 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	bp_info = DPAA_MEMPOOL_TO_POOL_INFO(mp);
 	total_elt_sz = mp->header_size + mp->elt_size + mp->trailer_size;
 
-	DPAA_MEMPOOL_DEBUG("Req size %" PRIx64 " vs Available %u\n",
+	DPAA_MEMPOOL_DPDEBUG("Req size %" PRIx64 " vs Available %u\n",
 			   (uint64_t)len, total_elt_sz * mp->size);
 
 	/* Detect pool area has sufficient space for elements in this memzone */
@@ -324,8 +344,8 @@ dpaa_populate(struct rte_mempool *mp, unsigned int max_objs,
 	 */
 	TAILQ_INSERT_HEAD(&rte_dpaa_memsegs, ms, next);
 
-	return rte_mempool_op_populate_default(mp, max_objs, vaddr, paddr, len,
-					       obj_cb, obj_cb_arg);
+	return rte_mempool_op_populate_helper(mp, 0, max_objs, vaddr, paddr,
+					       len, obj_cb, obj_cb_arg);
 }
 
 static const struct rte_mempool_ops dpaa_mpool_ops = {

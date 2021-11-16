@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <sys/un.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -39,7 +38,7 @@ struct freq_info {
 	unsigned num_freqs;
 } __rte_cache_aligned;
 
-static struct freq_info global_core_freq_info[POWER_MGR_MAX_CPUS];
+static struct freq_info global_core_freq_info[RTE_MAX_LCORE];
 
 struct core_info ci;
 
@@ -60,16 +59,15 @@ core_info_init(void)
 	ci = get_core_info();
 
 	ci->core_count = get_nprocs_conf();
-	ci->branch_ratio_threshold = BRANCH_RATIO_THRESHOLD;
 	ci->cd = malloc(ci->core_count * sizeof(struct core_details));
+	memset(ci->cd, 0, ci->core_count * sizeof(struct core_details));
 	if (!ci->cd) {
 		RTE_LOG(ERR, POWER_MANAGER, "Failed to allocate memory for core info.");
 		return -1;
 	}
 	for (i = 0; i < ci->core_count; i++) {
 		ci->cd[i].global_enabled_cpus = 1;
-		ci->cd[i].oob_enabled = 0;
-		ci->cd[i].msr_fd = 0;
+		ci->cd[i].branch_ratio_threshold = BRANCH_RATIO_THRESHOLD;
 	}
 	printf("%d cores in system\n", ci->core_count);
 	return 0;
@@ -92,12 +90,15 @@ power_manager_init(void)
 		return -1;
 	}
 
-	if (ci->core_count > POWER_MGR_MAX_CPUS)
-		max_core_num = POWER_MGR_MAX_CPUS;
+	if (ci->core_count > RTE_MAX_LCORE)
+		max_core_num = RTE_MAX_LCORE;
 	else
 		max_core_num = ci->core_count;
 
 	for (i = 0; i < max_core_num; i++) {
+		if (rte_lcore_index(i) == -1)
+			continue;
+
 		if (ci->cd[i].global_enabled_cpus) {
 			if (rte_power_init(i) < 0)
 				RTE_LOG(ERR, POWER_MANAGER,
@@ -132,9 +133,9 @@ power_manager_get_current_frequency(unsigned core_num)
 {
 	uint32_t freq, index;
 
-	if (core_num >= POWER_MGR_MAX_CPUS) {
+	if (core_num >= RTE_MAX_LCORE) {
 		RTE_LOG(ERR, POWER_MANAGER, "Core(%u) is out of range 0...%d\n",
-				core_num, POWER_MGR_MAX_CPUS-1);
+				core_num, RTE_MAX_LCORE-1);
 		return -1;
 	}
 	if (!(ci.cd[core_num].global_enabled_cpus))
@@ -143,7 +144,7 @@ power_manager_get_current_frequency(unsigned core_num)
 	rte_spinlock_lock(&global_core_freq_info[core_num].power_sl);
 	index = rte_power_get_freq(core_num);
 	rte_spinlock_unlock(&global_core_freq_info[core_num].power_sl);
-	if (index >= POWER_MGR_MAX_CPUS)
+	if (index >= RTE_MAX_LCORE_FREQS)
 		freq = 0;
 	else
 		freq = global_core_freq_info[core_num].freqs[index];
@@ -166,12 +167,15 @@ power_manager_exit(void)
 		return -1;
 	}
 
-	if (ci->core_count > POWER_MGR_MAX_CPUS)
-		max_core_num = POWER_MGR_MAX_CPUS;
+	if (ci->core_count > RTE_MAX_LCORE)
+		max_core_num = RTE_MAX_LCORE;
 	else
 		max_core_num = ci->core_count;
 
 	for (i = 0; i < max_core_num; i++) {
+		if (rte_lcore_index(i) == -1)
+			continue;
+
 		if (ci->cd[i].global_enabled_cpus) {
 			if (rte_power_exit(i) < 0) {
 				RTE_LOG(ERR, POWER_MANAGER, "Unable to shutdown power manager "
@@ -246,7 +250,7 @@ power_manager_scale_core_med(unsigned int core_num)
 	struct core_info *ci;
 
 	ci = get_core_info();
-	if (core_num >= POWER_MGR_MAX_CPUS)
+	if (core_num >= RTE_MAX_LCORE)
 		return -1;
 	if (!(ci->cd[core_num].global_enabled_cpus))
 		return -1;

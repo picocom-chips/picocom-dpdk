@@ -21,8 +21,8 @@ enum {VIRTIO_RXQ, VIRTIO_TXQ, VIRTIO_QNUM};
 struct device_statistics {
 	uint64_t	tx;
 	uint64_t	tx_total;
-	rte_atomic64_t	rx_atomic;
-	rte_atomic64_t	rx_total_atomic;
+	uint64_t	rx_atomic;
+	uint64_t	rx_total_atomic;
 };
 
 struct vhost_queue {
@@ -35,7 +35,7 @@ struct vhost_dev {
 	/**< Number of memory regions for gpa to hpa translation. */
 	uint32_t nregions_hpa;
 	/**< Device MAC address (Obtained on first TX packet). */
-	struct ether_addr mac_address;
+	struct rte_ether_addr mac_address;
 	/**< RX VMDQ queue number. */
 	uint16_t vmdq_rx_q;
 	/**< Vlan tag assigned to the pool */
@@ -51,6 +51,7 @@ struct vhost_dev {
 	uint64_t features;
 	size_t hdr_len;
 	uint16_t nr_vrings;
+	uint16_t pkts_inflight;
 	struct rte_vhost_memory *mem;
 	struct device_statistics stats;
 	TAILQ_ENTRY(vhost_dev) global_vdev_entry;

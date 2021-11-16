@@ -158,6 +158,8 @@ print_stats(void)
 						kni_stats[i].tx_dropped);
 	}
 	printf("======  ==============  ============  ============  ============  ============\n");
+
+	fflush(stdout);
 }
 
 /* Custom handling of signals to handle stats and kni processing */
@@ -176,9 +178,13 @@ signal_handler(int signum)
 		return;
 	}
 
-	/* When we receive a RTMIN or SIGINT signal, stop kni processing */
-	if (signum == SIGRTMIN || signum == SIGINT){
-		printf("\nSIGRTMIN/SIGINT received. KNI processing stopping.\n");
+	/*
+	 * When we receive a RTMIN or SIGINT or SIGTERM signal,
+	 * stop kni processing
+	 */
+	if (signum == SIGRTMIN || signum == SIGINT || signum == SIGTERM) {
+		printf("\nSIGRTMIN/SIGINT/SIGTERM received. "
+			"KNI processing stopping.\n");
 		rte_atomic32_inc(&kni_stop);
 		return;
         }
@@ -595,7 +601,13 @@ init_port(uint16_t port)
 	/* Initialise device and RX/TX queues */
 	RTE_LOG(INFO, APP, "Initialising port %u ...\n", (unsigned)port);
 	fflush(stdout);
-	rte_eth_dev_info_get(port, &dev_info);
+
+	ret = rte_eth_dev_info_get(port, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		local_port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -630,8 +642,13 @@ init_port(uint16_t port)
 		rte_exit(EXIT_FAILURE, "Could not start port%u (%d)\n",
 						(unsigned)port, ret);
 
-	if (promiscuous_on)
-		rte_eth_promiscuous_enable(port);
+	if (promiscuous_on) {
+		ret = rte_eth_promiscuous_enable(port);
+		if (ret != 0)
+			rte_exit(EXIT_FAILURE,
+				"Could not enable promiscuous mode for port%u: %s\n",
+				port, rte_strerror(-ret));
+	}
 }
 
 /* Check the link status of all ports in up to 9s, and print them finally */
@@ -643,6 +660,8 @@ check_all_ports_link_status(uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
+	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 
 	printf("\nChecking link status\n");
 	fflush(stdout);
@@ -652,17 +671,20 @@ check_all_ports_link_status(uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
-				if (link.link_status)
-					printf(
-					"Port%d Link Up - speed %uMbps - %s\n",
-						portid, link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex\n"));
-				else
-					printf("Port %d Link Down\n", portid);
+				rte_eth_link_to_str(link_status_text,
+					sizeof(link_status_text), &link);
+				printf("Port %d %s\n", portid,
+					link_status_text);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
@@ -692,19 +714,15 @@ check_all_ports_link_status(uint32_t port_mask)
 static void
 log_link_state(struct rte_kni *kni, int prev, struct rte_eth_link *link)
 {
+	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 	if (kni == NULL || link == NULL)
 		return;
 
-	if (prev == ETH_LINK_DOWN && link->link_status == ETH_LINK_UP) {
-		RTE_LOG(INFO, APP, "%s NIC Link is Up %d Mbps %s %s.\n",
+	rte_eth_link_to_str(link_status_text, sizeof(link_status_text), link);
+	if (prev != link->link_status)
+		RTE_LOG(INFO, APP, "%s NIC %s",
 			rte_kni_get_name(kni),
-			link->link_speed,
-			link->link_autoneg ?  "(AutoNeg)" : "(Fixed)",
-			link->link_duplex ?  "Full Duplex" : "Half Duplex");
-	} else if (prev == ETH_LINK_UP && link->link_status == ETH_LINK_DOWN) {
-		RTE_LOG(INFO, APP, "%s NIC Link is Down.\n",
-			rte_kni_get_name(kni));
-	}
+			link_status_text);
 }
 
 /*
@@ -720,6 +738,7 @@ monitor_all_ports_link_status(void *arg)
 	struct kni_port_params **p = kni_port_params_array;
 	int prev;
 	(void) arg;
+	int ret;
 
 	while (monitor_links) {
 		rte_delay_ms(500);
@@ -727,7 +746,13 @@ monitor_all_ports_link_status(void *arg)
 			if ((ports_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				RTE_LOG(ERR, APP,
+					"Get link failed (port %u): %s\n",
+					portid, rte_strerror(-ret));
+				continue;
+			}
 			for (i = 0; i < p[portid]->nb_kni; i++) {
 				prev = rte_kni_update_link(p[portid]->kni[i],
 						link.link_status);
@@ -738,15 +763,16 @@ monitor_all_ports_link_status(void *arg)
 	return NULL;
 }
 
-/* Callback for request of changing MTU */
 static int
-kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
+kni_change_mtu_(uint16_t port_id, unsigned int new_mtu)
 {
 	int ret;
 	uint16_t nb_rxd = NB_RXD;
+	uint16_t nb_txd = NB_TXD;
 	struct rte_eth_conf conf;
 	struct rte_eth_dev_info dev_info;
 	struct rte_eth_rxconf rxq_conf;
+	struct rte_eth_txconf txq_conf;
 
 	if (!rte_eth_dev_is_valid_port(port_id)) {
 		RTE_LOG(ERR, APP, "Invalid port id %d\n", port_id);
@@ -756,11 +782,16 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 	RTE_LOG(INFO, APP, "Change MTU of port %d to %u\n", port_id, new_mtu);
 
 	/* Stop specific port */
-	rte_eth_dev_stop(port_id);
+	ret = rte_eth_dev_stop(port_id);
+	if (ret != 0) {
+		RTE_LOG(ERR, APP, "Failed to stop port %d: %s\n",
+			port_id, rte_strerror(-ret));
+		return ret;
+	}
 
 	memcpy(&conf, &port_conf, sizeof(conf));
 	/* Set new MTU */
-	if (new_mtu > ETHER_MAX_LEN)
+	if (new_mtu > RTE_ETHER_MAX_LEN)
 		conf.rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME;
 	else
 		conf.rxmode.offloads &= ~DEV_RX_OFFLOAD_JUMBO_FRAME;
@@ -774,19 +805,37 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 		return ret;
 	}
 
-	ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rxd, NULL);
+	ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rxd, &nb_txd);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Could not adjust number of descriptors "
 				"for port%u (%d)\n", (unsigned int)port_id,
 				ret);
 
-	rte_eth_dev_info_get(port_id, &dev_info);
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret != 0) {
+		RTE_LOG(ERR, APP,
+			"Error during getting device (port %u) info: %s\n",
+			port_id, strerror(-ret));
+
+		return ret;
+	}
+
 	rxq_conf = dev_info.default_rxconf;
 	rxq_conf.offloads = conf.rxmode.offloads;
 	ret = rte_eth_rx_queue_setup(port_id, 0, nb_rxd,
 		rte_eth_dev_socket_id(port_id), &rxq_conf, pktmbuf_pool);
 	if (ret < 0) {
 		RTE_LOG(ERR, APP, "Fail to setup Rx queue of port %d\n",
+				port_id);
+		return ret;
+	}
+
+	txq_conf = dev_info.default_txconf;
+	txq_conf.offloads = conf.txmode.offloads;
+	ret = rte_eth_tx_queue_setup(port_id, 0, nb_txd,
+		rte_eth_dev_socket_id(port_id), &txq_conf);
+	if (ret < 0) {
+		RTE_LOG(ERR, APP, "Fail to setup Tx queue of port %d\n",
 				port_id);
 		return ret;
 	}
@@ -799,6 +848,19 @@ kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
 	}
 
 	return 0;
+}
+
+/* Callback for request of changing MTU */
+static int
+kni_change_mtu(uint16_t port_id, unsigned int new_mtu)
+{
+	int ret;
+
+	rte_atomic32_inc(&kni_pause);
+	ret =  kni_change_mtu_(port_id, new_mtu);
+	rte_atomic32_dec(&kni_pause);
+
+	return ret;
 }
 
 /* Callback for request of configuring network interface up/down */
@@ -818,10 +880,23 @@ kni_config_network_interface(uint16_t port_id, uint8_t if_up)
 	rte_atomic32_inc(&kni_pause);
 
 	if (if_up != 0) { /* Configure network interface up */
-		rte_eth_dev_stop(port_id);
+		ret = rte_eth_dev_stop(port_id);
+		if (ret != 0) {
+			RTE_LOG(ERR, APP, "Failed to stop port %d: %s\n",
+				port_id, rte_strerror(-ret));
+			rte_atomic32_dec(&kni_pause);
+			return ret;
+		}
 		ret = rte_eth_dev_start(port_id);
-	} else /* Configure network interface down */
-		rte_eth_dev_stop(port_id);
+	} else { /* Configure network interface down */
+		ret = rte_eth_dev_stop(port_id);
+		if (ret != 0) {
+			RTE_LOG(ERR, APP, "Failed to stop port %d: %s\n",
+				port_id, rte_strerror(-ret));
+			rte_atomic32_dec(&kni_pause);
+			return ret;
+		}
+	}
 
 	rte_atomic32_dec(&kni_pause);
 
@@ -832,10 +907,10 @@ kni_config_network_interface(uint16_t port_id, uint8_t if_up)
 }
 
 static void
-print_ethaddr(const char *name, struct ether_addr *mac_addr)
+print_ethaddr(const char *name, struct rte_ether_addr *mac_addr)
 {
-	char buf[ETHER_ADDR_FMT_SIZE];
-	ether_format_addr(buf, ETHER_ADDR_FMT_SIZE, mac_addr);
+	char buf[RTE_ETHER_ADDR_FMT_SIZE];
+	rte_ether_format_addr(buf, RTE_ETHER_ADDR_FMT_SIZE, mac_addr);
 	RTE_LOG(INFO, APP, "\t%s%s\n", name, buf);
 }
 
@@ -851,10 +926,10 @@ kni_config_mac_address(uint16_t port_id, uint8_t mac_addr[])
 	}
 
 	RTE_LOG(INFO, APP, "Configure mac address of %d\n", port_id);
-	print_ethaddr("Address:", (struct ether_addr *)mac_addr);
+	print_ethaddr("Address:", (struct rte_ether_addr *)mac_addr);
 
 	ret = rte_eth_dev_default_mac_addr_set(port_id,
-					       (struct ether_addr *)mac_addr);
+					(struct rte_ether_addr *)mac_addr);
 	if (ret < 0)
 		RTE_LOG(ERR, APP, "Failed to config mac_addr for port %d\n",
 			port_id);
@@ -869,6 +944,7 @@ kni_alloc(uint16_t port_id)
 	struct rte_kni *kni;
 	struct rte_kni_conf conf;
 	struct kni_port_params **params = kni_port_params_array;
+	int ret;
 
 	if (port_id >= RTE_MAX_ETHPORTS || !params[port_id])
 		return -1;
@@ -891,30 +967,31 @@ kni_alloc(uint16_t port_id)
 		conf.mbuf_size = MAX_PACKET_SZ;
 		/*
 		 * The first KNI device associated to a port
-		 * is the master, for multiple kernel thread
+		 * is the main, for multiple kernel thread
 		 * environment.
 		 */
 		if (i == 0) {
 			struct rte_kni_ops ops;
 			struct rte_eth_dev_info dev_info;
-			const struct rte_pci_device *pci_dev;
-			const struct rte_bus *bus = NULL;
 
-			memset(&dev_info, 0, sizeof(dev_info));
-			rte_eth_dev_info_get(port_id, &dev_info);
+			ret = rte_eth_dev_info_get(port_id, &dev_info);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Error during getting device (port %u) info: %s\n",
+					port_id, strerror(-ret));
 
-			if (dev_info.device)
-				bus = rte_bus_find_by_device(dev_info.device);
-			if (bus && !strcmp(bus->name, "pci")) {
-				pci_dev = RTE_DEV_TO_PCI(dev_info.device);
-				conf.addr = pci_dev->addr;
-				conf.id = pci_dev->id;
-			}
 			/* Get the interface default mac address */
-			rte_eth_macaddr_get(port_id,
-					(struct ether_addr *)&conf.mac_addr);
+			ret = rte_eth_macaddr_get(port_id,
+				(struct rte_ether_addr *)&conf.mac_addr);
+			if (ret != 0)
+				rte_exit(EXIT_FAILURE,
+					"Failed to get MAC address (port %u): %s\n",
+					port_id, rte_strerror(-ret));
 
 			rte_eth_dev_get_mtu(port_id, &conf.mtu);
+
+			conf.min_mtu = dev_info.min_mtu;
+			conf.max_mtu = dev_info.max_mtu;
 
 			memset(&ops, 0, sizeof(ops));
 			ops.port_id = port_id;
@@ -939,6 +1016,7 @@ static int
 kni_free_kni(uint16_t port_id)
 {
 	uint8_t i;
+	int ret;
 	struct kni_port_params **p = kni_port_params_array;
 
 	if (port_id >= RTE_MAX_ETHPORTS || !p[port_id])
@@ -949,7 +1027,10 @@ kni_free_kni(uint16_t port_id)
 			printf("Fail to release kni\n");
 		p[port_id]->kni[i] = NULL;
 	}
-	rte_eth_dev_stop(port_id);
+	ret = rte_eth_dev_stop(port_id);
+	if (ret != 0)
+		RTE_LOG(ERR, APP, "Failed to stop port %d: %s\n",
+			port_id, rte_strerror(-ret));
 
 	return 0;
 }
@@ -970,6 +1051,7 @@ main(int argc, char** argv)
 	signal(SIGUSR2, signal_handler);
 	signal(SIGRTMIN, signal_handler);
 	signal(SIGINT, signal_handler);
+	signal(SIGTERM, signal_handler);
 
 	/* Initialise EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1038,8 +1120,8 @@ main(int argc, char** argv)
 			"Could not create link status thread!\n");
 
 	/* Launch per-lcore function on every lcore */
-	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(i) {
+	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MAIN);
+	RTE_LCORE_FOREACH_WORKER(i) {
 		if (rte_eal_wait_lcore(i) < 0)
 			return -1;
 	}
@@ -1057,6 +1139,9 @@ main(int argc, char** argv)
 			rte_free(kni_port_params_array[i]);
 			kni_port_params_array[i] = NULL;
 		}
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

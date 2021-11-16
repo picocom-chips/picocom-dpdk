@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright (c) 2017-2018 Solarflare Communications Inc.
- * All rights reserved.
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2017-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -42,6 +42,16 @@ enum sfc_dp_type {
 
 /** Datapath queue run-time information */
 struct sfc_dp_queue {
+	/*
+	 * Typically the structure is located at the end of Rx/Tx queue
+	 * data structure and not used on datapath. So, it is not a
+	 * problem to have extra fields even if not used. However,
+	 * put stats at top of the structure to be closer to fields
+	 * used on datapath or reap to have more chances to be cache-hot.
+	 */
+	uint32_t			rx_dbells;
+	uint32_t			tx_dbells;
+
 	uint16_t			port_id;
 	uint16_t			queue_id;
 	struct rte_pci_addr		pci_addr;
@@ -50,6 +60,11 @@ struct sfc_dp_queue {
 void sfc_dp_queue_init(struct sfc_dp_queue *dpq,
 		       uint16_t port_id, uint16_t queue_id,
 		       const struct rte_pci_addr *pci_addr);
+
+/* Maximum datapath log level to be included in build. */
+#ifndef SFC_DP_LOG_LEVEL
+#define SFC_DP_LOG_LEVEL	RTE_LOG_NOTICE
+#endif
 
 /*
  * Helper macro to define datapath logging macros and have uniform
@@ -60,6 +75,8 @@ void sfc_dp_queue_init(struct sfc_dp_queue *dpq,
 		const struct sfc_dp_queue *_dpq = (dpq);		\
 		const struct rte_pci_addr *_addr = &(_dpq)->pci_addr;	\
 									\
+		if (RTE_LOG_ ## level > SFC_DP_LOG_LEVEL)		\
+			break;						\
 		SFC_GENERIC_LOG(level,					\
 			RTE_FMT("%s " PCI_PRI_FMT			\
 				" #%" PRIu16 ".%" PRIu16 ": "		\
@@ -81,10 +98,19 @@ struct sfc_dp {
 	unsigned int			hw_fw_caps;
 #define SFC_DP_HW_FW_CAP_EF10				0x1
 #define SFC_DP_HW_FW_CAP_RX_ES_SUPER_BUFFER		0x2
+#define SFC_DP_HW_FW_CAP_RX_EFX				0x4
+#define SFC_DP_HW_FW_CAP_TX_EFX				0x8
+#define SFC_DP_HW_FW_CAP_EF100				0x10
 };
 
 /** List of datapath variants */
 TAILQ_HEAD(sfc_dp_list, sfc_dp);
+
+typedef unsigned int sfc_sw_index_t;
+#define SFC_SW_INDEX_INVALID	((sfc_sw_index_t)(UINT_MAX))
+
+typedef int32_t	sfc_ethdev_qid_t;
+#define SFC_ETHDEV_QID_INVALID	((sfc_ethdev_qid_t)(-1))
 
 /* Check if available HW/FW capabilities are sufficient for the datapath */
 static inline bool

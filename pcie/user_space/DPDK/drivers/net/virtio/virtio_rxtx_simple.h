@@ -23,11 +23,11 @@ virtio_rxq_rearm_vec(struct virtnet_rx *rxvq)
 	struct rte_mbuf **sw_ring;
 	struct vring_desc *start_dp;
 	int ret;
-	struct virtqueue *vq = rxvq->vq;
+	struct virtqueue *vq = virtnet_rxq_to_vq(rxvq);
 
 	desc_idx = vq->vq_avail_idx & (vq->vq_nentries - 1);
 	sw_ring = &vq->sw_ring[desc_idx];
-	start_dp = &vq->vq_ring.desc[desc_idx];
+	start_dp = &vq->vq_split.ring.desc[desc_idx];
 
 	ret = rte_mempool_get_bulk(rxvq->mpool, (void **)sw_ring,
 		RTE_VIRTIO_VPMD_RX_REARM_THRESH);
@@ -43,8 +43,7 @@ virtio_rxq_rearm_vec(struct virtnet_rx *rxvq)
 		p = (uintptr_t)&sw_ring[i]->rearm_data;
 		*(uint64_t *)p = rxvq->mbuf_initializer;
 
-		start_dp[i].addr =
-			VIRTIO_MBUF_ADDR(sw_ring[i], vq) +
+		start_dp[i].addr = sw_ring[i]->buf_iova +
 			RTE_PKTMBUF_HEADROOM - vq->hw->vtnet_hdr_size;
 		start_dp[i].len = sw_ring[i]->buf_len -
 			RTE_PKTMBUF_HEADROOM + vq->hw->vtnet_hdr_size;

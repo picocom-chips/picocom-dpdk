@@ -10,19 +10,6 @@ This application has a generic framework to add new eventdev based test cases to
 verify functionality and measure the performance parameters of DPDK eventdev
 devices.
 
-Compiling the Application
--------------------------
-
-**Build the application**
-
-Execute the ``dpdk-setup.sh`` script to build the DPDK library together with the
-``dpdk-test-eventdev`` application.
-
-Initially, the user must select a DPDK target to choose the correct target type
-and compiler options to use when building the libraries.
-The user must have all libraries, modules, updates and compilers installed
-in the system prior to this,
-as described in the earlier chapters in this Getting Started Guide.
 
 Running the Application
 -----------------------
@@ -129,31 +116,74 @@ The following are the application command-line options:
 
         Use event timer adapter as producer.
 
- * ``--prod_type_timerdev_burst``
+* ``--prod_type_timerdev_burst``
 
-        Use burst mode event timer adapter as producer.
+       Use burst mode event timer adapter as producer.
 
- * ``--timer_tick_nsec``
+* ``--timer_tick_nsec``
 
-        Used to dictate number of nano seconds between bucket traversal of the
-        event timer adapter. Refer `rte_event_timer_adapter_conf`.
+       Used to dictate number of nano seconds between bucket traversal of the
+       event timer adapter. Refer `rte_event_timer_adapter_conf`.
 
- * ``--max_tmo_nsec``
+* ``--max_tmo_nsec``
 
-        Used to configure event timer adapter max arm timeout in nano seconds.
+       Used to configure event timer adapter max arm timeout in nano seconds.
 
- * ``--expiry_nsec``
+* ``--expiry_nsec``
 
-        Dictate the number of nano seconds after which the event timer expires.
+       Dictate the number of nano seconds after which the event timer expires.
 
- * ``--nb_timers``
+* ``--nb_timers``
 
-        Number of event timers each producer core will generate.
+       Number of event timers each producer core will generate.
 
- * ``--nb_timer_adptrs``
+* ``--nb_timer_adptrs``
 
-        Number of event timer adapters to be used. Each adapter is used in
-        round robin manner by the producer cores.
+       Number of event timer adapters to be used. Each adapter is used in
+       round robin manner by the producer cores.
+
+* ``--deq_tmo_nsec``
+
+       Global dequeue timeout for all the event ports if the provided dequeue
+       timeout is out of the supported range of event device it will be
+       adjusted to the highest/lowest supported dequeue timeout supported.
+
+* ``--mbuf_sz``
+
+       Set packet mbuf size. Can be used to configure Jumbo Frames. Only
+       applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--max_pkt_sz``
+
+       Set max packet mbuf size. Can be used configure Rx/Tx scatter gather.
+       Only applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--nb_eth_queues``
+
+       Configure multiple Rx queues per each ethernet port.
+       Only applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--enable_vector``
+
+       Enable event vector for Rx/Tx adapters.
+       Only applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--vector_size``
+
+       Vector size to configure for the Rx adapter.
+       Only applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--vector_tmo_ns``
+
+       Vector timeout nanoseconds to be configured for the Rx adapter.
+       Only applicable for `pipeline_atq` and `pipeline_queue` tests.
+
+* ``--per_port_pool``
+
+        Configure unique mempool per ethernet device, the size of each pool
+        is equal to `pool_sz`.
+        Only applicable for pipeline_atq` and `pipeline_queue` tests.
+
 
 Eventdev Tests
 --------------
@@ -225,6 +255,7 @@ Supported application command line options are following::
    --nb_flows
    --nb_pkts
    --worker_deq_depth
+   --deq_tmo_nsec
 
 Example
 ^^^^^^^
@@ -233,7 +264,7 @@ Example command to run order queue test:
 
 .. code-block:: console
 
-   sudo build/app/dpdk-test-eventdev --vdev=event_sw0 -- \
+   sudo <build_dir>/app/dpdk-test-eventdev --vdev=event_sw0 -- \
                 --test=order_queue --plcores 1 --wlcores 2,3
 
 
@@ -287,6 +318,7 @@ Supported application command line options are following::
    --nb_flows
    --nb_pkts
    --worker_deq_depth
+   --deq_tmo_nsec
 
 Example
 ^^^^^^^
@@ -295,7 +327,7 @@ Example command to run order ``all types queue`` test:
 
 .. code-block:: console
 
-   sudo build/app/dpdk-test-eventdev --vdev=event_octeontx -- \
+   sudo <build_dir>/app/dpdk-test-eventdev --vdev=event_octeontx -- \
                         --test=order_atq --plcores 1 --wlcores 2,3
 
 
@@ -386,6 +418,7 @@ Supported application command line options are following::
         --expiry_nsec
         --nb_timers
         --nb_timer_adptrs
+        --deq_tmo_nsec
 
 Example
 ^^^^^^^
@@ -394,7 +427,7 @@ Example command to run perf queue test:
 
 .. code-block:: console
 
-   sudo build/app/dpdk-test-eventdev -c 0xf -s 0x1 --vdev=event_sw0 -- \
+   sudo <build_dir>/app/dpdk-test-eventdev -c 0xf -s 0x1 --vdev=event_sw0 -- \
         --test=perf_queue --plcores=2 --wlcore=3 --stlist=p --nb_pkts=0
 
 Example command to run perf queue test with ethernet ports:
@@ -408,7 +441,7 @@ Example command to run perf queue test with event timer adapter:
 
 .. code-block:: console
 
-   sudo  build/app/dpdk-test-eventdev --vdev="event_octeontx" -- \
+   sudo  <build_dir>/app/dpdk-test-eventdev --vdev="event_octeontx" -- \
                 --wlcores 4 --plcores 12 --test perf_queue --stlist=a \
                 --prod_type_timerdev --fwd_latency
 
@@ -485,6 +518,7 @@ Supported application command line options are following::
         --expiry_nsec
         --nb_timers
         --nb_timer_adptrs
+        --deq_tmo_nsec
 
 Example
 ^^^^^^^
@@ -493,14 +527,14 @@ Example command to run perf ``all types queue`` test:
 
 .. code-block:: console
 
-   sudo build/app/dpdk-test-eventdev --vdev=event_octeontx -- \
+   sudo <build_dir>/app/dpdk-test-eventdev --vdev=event_octeontx -- \
                 --test=perf_atq --plcores=2 --wlcore=3 --stlist=p --nb_pkts=0
 
 Example command to run perf ``all types queue`` test with event timer adapter:
 
 .. code-block:: console
 
-   sudo  build/app/dpdk-test-eventdev --vdev="event_octeontx" -- \
+   sudo  <build_dir>/app/dpdk-test-eventdev --vdev="event_octeontx" -- \
                 --wlcores 4 --plcores 12 --test perf_atq --verbose 20 \
                 --stlist=a --prod_type_timerdev --fwd_latency
 
@@ -598,6 +632,12 @@ Supported application command line options are following::
         --stlist
         --worker_deq_depth
         --prod_type_ethdev
+        --deq_tmo_nsec
+        --nb_eth_queues
+        --enable_vector
+        --vector_size
+        --vector_tmo_ns
+        --per_port_pool
 
 
 .. Note::
@@ -611,9 +651,16 @@ Example command to run pipeline queue test:
 
 .. code-block:: console
 
-    sudo build/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
+    sudo <build_dir>/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
         --test=pipeline_queue --wlcore=1 --prod_type_ethdev --stlist=a
 
+Example command to run pipeline atq test with vector events:
+
+.. code-block:: console
+
+    sudo <build_dir>/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
+        --test=pipeline_queue --wlcore=1 --prod_type_ethdev --stlist=a \
+        --enable_vector  --vector_size 512
 
 PIPELINE_ATQ Test
 ~~~~~~~~~~~~~~~~~~~
@@ -689,6 +736,12 @@ Supported application command line options are following::
         --stlist
         --worker_deq_depth
         --prod_type_ethdev
+        --deq_tmo_nsec
+        --nb_eth_queues
+        --enable_vector
+        --vector_size
+        --vector_tmo_ns
+        --per_port_pool
 
 
 .. Note::
@@ -698,9 +751,17 @@ Supported application command line options are following::
 Example
 ^^^^^^^
 
-Example command to run pipeline queue test:
+Example command to run pipeline atq test:
 
 .. code-block:: console
 
-    sudo build/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
+    sudo <build_dir>/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
         --test=pipeline_atq --wlcore=1 --prod_type_ethdev --stlist=a
+
+Example command to run pipeline atq test with vector events:
+
+.. code-block:: console
+
+    sudo <build_dir>/app/dpdk-test-eventdev -c 0xf -s 0x8 --vdev=event_sw0 -- \
+        --test=pipeline_atq --wlcore=1 --prod_type_ethdev --stlist=a \
+        --enable_vector  --vector_size 512

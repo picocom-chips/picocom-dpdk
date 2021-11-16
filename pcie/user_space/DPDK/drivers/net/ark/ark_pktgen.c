@@ -2,14 +2,10 @@
  * Copyright (c) 2015-2018 Atomic Rules LLC
  */
 
-#include <getopt.h>
-#include <sys/time.h>
-#include <locale.h>
 #include <unistd.h>
+#include <pthread.h>
 
-#include <rte_eal.h>
-
-#include <rte_ethdev_driver.h>
+#include <rte_string_fns.h>
 #include <rte_malloc.h>
 
 #include "ark_pktgen.h"
@@ -82,7 +78,7 @@ ark_pktgen_init(void *adr, int ord, int l2_mode)
 		rte_malloc("ark_pkt_gen_inst_pmd",
 			   sizeof(struct ark_pkt_gen_inst), 0);
 	if (inst == NULL) {
-		PMD_DRV_LOG(ERR, "Failed to malloc ark_pkt_gen_inst.\n");
+		ARK_PMD_LOG(ERR, "Failed to malloc ark_pkt_gen_inst.\n");
 		return inst;
 	}
 	inst->regs = (struct ark_pkt_gen_regs *)adr;
@@ -125,12 +121,12 @@ ark_pktgen_pause(ark_pkt_gen_t handle)
 	while (!ark_pktgen_paused(handle)) {
 		usleep(1000);
 		if (cnt++ > 100) {
-			PMD_DRV_LOG(ERR, "Pktgen %d failed to pause.\n",
+			ARK_PMD_LOG(NOTICE, "Pktgen %d failed to pause.\n",
 				    inst->ordinal);
 			break;
 		}
 	}
-	PMD_DEBUG_LOG(DEBUG, "Pktgen %d paused.\n", inst->ordinal);
+	ARK_PMD_LOG(DEBUG, "Pktgen %d paused.\n", inst->ordinal);
 }
 
 void
@@ -140,7 +136,7 @@ ark_pktgen_reset(ark_pkt_gen_t handle)
 
 	if (!ark_pktgen_is_running(handle) &&
 	    !ark_pktgen_paused(handle)) {
-		PMD_DEBUG_LOG(DEBUG, "Pktgen %d is not running"
+		ARK_PMD_LOG(DEBUG, "Pktgen %d is not running"
 			      " and is not paused. No need to reset.\n",
 			      inst->ordinal);
 		return;
@@ -148,13 +144,13 @@ ark_pktgen_reset(ark_pkt_gen_t handle)
 
 	if (ark_pktgen_is_running(handle) &&
 	    !ark_pktgen_paused(handle)) {
-		PMD_DEBUG_LOG(DEBUG,
+		ARK_PMD_LOG(DEBUG,
 			      "Pktgen %d is not paused. Pausing first.\n",
 			      inst->ordinal);
 		ark_pktgen_pause(handle);
 	}
 
-	PMD_DEBUG_LOG(DEBUG, "Resetting pktgen %d.\n", inst->ordinal);
+	ARK_PMD_LOG(DEBUG, "Resetting pktgen %d.\n", inst->ordinal);
 	inst->regs->pkt_start_stop = (1 << 8);
 }
 
@@ -192,17 +188,17 @@ ark_pktgen_wait_done(ark_pkt_gen_t handle)
 	int wait_cycle = 10;
 
 	if (ark_pktgen_is_gen_forever(handle))
-		PMD_DRV_LOG(ERR, "Pktgen wait_done will not terminate"
+		ARK_PMD_LOG(NOTICE, "Pktgen wait_done will not terminate"
 			    " because gen_forever=1\n");
 
 	while (!ark_pktgen_tx_done(handle) && (wait_cycle > 0)) {
 		usleep(1000);
 		wait_cycle--;
-		PMD_DEBUG_LOG(DEBUG,
+		ARK_PMD_LOG(DEBUG,
 			      "Waiting for pktgen %d to finish sending...\n",
 			      inst->ordinal);
 	}
-	PMD_DEBUG_LOG(DEBUG, "Pktgen %d done.\n", inst->ordinal);
+	ARK_PMD_LOG(DEBUG, "Pktgen %d done.\n", inst->ordinal);
 }
 
 uint32_t
@@ -305,7 +301,7 @@ options(const char *id)
 			return &toptions[i];
 	}
 
-	PMD_DRV_LOG(ERR,
+	ARK_PMD_LOG(ERR,
 		    "Pktgen: Could not find requested option!, "
 		    "option = %s\n",
 		    id
@@ -329,7 +325,7 @@ pmd_set_arg(char *arg, char *val)
 			o->v.INT = atoll(val);
 			break;
 		case OTSTRING:
-			snprintf(o->v.STR, ARK_MAX_STR_LEN, "%s", val);
+			strlcpy(o->v.STR, val, ARK_MAX_STR_LEN);
 			break;
 		}
 		return 1;
@@ -464,8 +460,23 @@ ark_pktgen_setup(ark_pkt_gen_t handle)
 	if (options("reset")->v.BOOL)
 		ark_pktgen_reset(handle);
 	if (options("run")->v.BOOL) {
-		PMD_DEBUG_LOG(DEBUG, "Starting packet generator on port %d\n",
+		ARK_PMD_LOG(DEBUG, "Starting packet generator on port %d\n",
 				options("port")->v.INT);
 		ark_pktgen_run(handle);
 	}
+}
+
+void *
+ark_pktgen_delay_start(void *arg)
+{
+	struct ark_pkt_gen_inst *inst = (struct ark_pkt_gen_inst *)arg;
+
+	/* This function is used exclusively for regression testing, We
+	 * perform a blind sleep here to ensure that the external test
+	 * application has time to setup the test before we generate packets
+	 */
+	pthread_detach(pthread_self());
+	usleep(100000);
+	ark_pktgen_run(inst);
+	return NULL;
 }

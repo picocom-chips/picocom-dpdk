@@ -49,34 +49,26 @@ pkt_burst_mac_forward(struct fwd_stream *fs)
 	struct rte_mbuf  *pkts_burst[MAX_PKT_BURST];
 	struct rte_port  *txp;
 	struct rte_mbuf  *mb;
-	struct ether_hdr *eth_hdr;
+	struct rte_ether_hdr *eth_hdr;
 	uint32_t retry;
 	uint16_t nb_rx;
 	uint16_t nb_tx;
 	uint16_t i;
 	uint64_t ol_flags = 0;
 	uint64_t tx_offloads;
-#ifdef RTE_TEST_PMD_RECORD_CORE_CYCLES
-	uint64_t start_tsc;
-	uint64_t end_tsc;
-	uint64_t core_cycles;
-#endif
+	uint64_t start_tsc = 0;
 
-#ifdef RTE_TEST_PMD_RECORD_CORE_CYCLES
-	start_tsc = rte_rdtsc();
-#endif
+	get_start_cycles(&start_tsc);
 
 	/*
 	 * Receive a burst of packets and forward them.
 	 */
 	nb_rx = rte_eth_rx_burst(fs->rx_port, fs->rx_queue, pkts_burst,
 				 nb_pkt_per_burst);
+	inc_rx_burst_stats(fs, nb_rx);
 	if (unlikely(nb_rx == 0))
 		return;
 
-#ifdef RTE_TEST_PMD_RECORD_BURST_STATS
-	fs->rx_burst_stats.pkt_burst_spread[nb_rx]++;
-#endif
 	fs->rx_packets += nb_rx;
 	txp = &ports[fs->tx_port];
 	tx_offloads = txp->dev_conf.txmode.offloads;
@@ -91,15 +83,15 @@ pkt_burst_mac_forward(struct fwd_stream *fs)
 			rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[i + 1],
 						       void *));
 		mb = pkts_burst[i];
-		eth_hdr = rte_pktmbuf_mtod(mb, struct ether_hdr *);
-		ether_addr_copy(&peer_eth_addrs[fs->peer_addr],
+		eth_hdr = rte_pktmbuf_mtod(mb, struct rte_ether_hdr *);
+		rte_ether_addr_copy(&peer_eth_addrs[fs->peer_addr],
 				&eth_hdr->d_addr);
-		ether_addr_copy(&ports[fs->tx_port].eth_addr,
+		rte_ether_addr_copy(&ports[fs->tx_port].eth_addr,
 				&eth_hdr->s_addr);
 		mb->ol_flags &= IND_ATTACHED_MBUF | EXT_ATTACHED_MBUF;
 		mb->ol_flags |= ol_flags;
-		mb->l2_len = sizeof(struct ether_hdr);
-		mb->l3_len = sizeof(struct ipv4_hdr);
+		mb->l2_len = sizeof(struct rte_ether_hdr);
+		mb->l3_len = sizeof(struct rte_ipv4_hdr);
 		mb->vlan_tci = txp->tx_vlan_id;
 		mb->vlan_tci_outer = txp->tx_vlan_id_outer;
 	}
@@ -117,20 +109,15 @@ pkt_burst_mac_forward(struct fwd_stream *fs)
 	}
 
 	fs->tx_packets += nb_tx;
-#ifdef RTE_TEST_PMD_RECORD_BURST_STATS
-	fs->tx_burst_stats.pkt_burst_spread[nb_tx]++;
-#endif
+	inc_tx_burst_stats(fs, nb_tx);
 	if (unlikely(nb_tx < nb_rx)) {
 		fs->fwd_dropped += (nb_rx - nb_tx);
 		do {
 			rte_pktmbuf_free(pkts_burst[nb_tx]);
 		} while (++nb_tx < nb_rx);
 	}
-#ifdef RTE_TEST_PMD_RECORD_CORE_CYCLES
-	end_tsc = rte_rdtsc();
-	core_cycles = (end_tsc - start_tsc);
-	fs->core_cycles = (uint64_t) (fs->core_cycles + core_cycles);
-#endif
+
+	get_end_cycles(fs, start_tsc);
 }
 
 struct fwd_engine mac_fwd_engine = {

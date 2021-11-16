@@ -66,7 +66,7 @@ struct port_stats{
 	unsigned rx;
 	unsigned tx;
 	unsigned drop;
-} __attribute__((aligned(RTE_CACHE_LINE_SIZE / 2)));
+} __rte_aligned(RTE_CACHE_LINE_SIZE / 2);
 
 static int proc_id = -1;
 static unsigned num_procs = 0;
@@ -209,7 +209,13 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
 	printf("# Initialising port %u... ", port);
 	fflush(stdout);
 
-	rte_eth_dev_info_get(port, &info);
+	retval = rte_eth_dev_info_get(port, &info);
+	if (retval != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port, strerror(-retval));
+		return retval;
+	}
+
 	info.default_rxconf.rx_drop_en = 1;
 
 	if (info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
@@ -255,7 +261,9 @@ smp_port_init(uint16_t port, struct rte_mempool *mbuf_pool,
 			return retval;
 	}
 
-	rte_eth_promiscuous_enable(port);
+	retval = rte_eth_promiscuous_enable(port);
+	if (retval != 0)
+		return retval;
 
 	retval  = rte_eth_dev_start(port);
 	if (retval < 0)
@@ -271,7 +279,7 @@ static void
 assign_ports_to_cores(void)
 {
 
-	const unsigned lcores = rte_eal_get_configuration()->lcore_count;
+	const unsigned int lcores = rte_lcore_count();
 	const unsigned port_pairs = num_ports / 2;
 	const unsigned pairs_per_lcore = port_pairs / lcores;
 	unsigned extra_pairs = port_pairs % lcores;
@@ -356,6 +364,8 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 	uint16_t portid;
 	uint8_t count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
+	int ret;
+	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 
 	printf("\nChecking link status");
 	fflush(stdout);
@@ -365,17 +375,20 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(portid, &link);
+			ret = rte_eth_link_get_nowait(portid, &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
-				if (link.link_status)
-					printf(
-					"Port%d Link Up. Speed %u Mbps - %s\n",
-						portid, link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex\n"));
-				else
-					printf("Port %d Link Down\n", portid);
+				rte_eth_link_to_str(link_status_text,
+					sizeof(link_status_text), &link);
+				printf("Port %d %s\n", portid,
+				       link_status_text);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
@@ -442,6 +455,7 @@ main(int argc, char **argv)
 	if (mp == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot get memory pool for buffers\n");
 
+	/* Primary instance initialized. 8< */
 	if (num_ports & 1)
 		rte_exit(EXIT_FAILURE, "Application must use an even number of ports\n");
 	for(i = 0; i < num_ports; i++){
@@ -449,6 +463,7 @@ main(int argc, char **argv)
 			if (smp_port_init(ports[i], mp, (uint16_t)num_procs) < 0)
 				rte_exit(EXIT_FAILURE, "Error initialising ports\n");
 	}
+	/* >8 End of primary instance initialization. */
 
 	if (proc_type == RTE_PROC_PRIMARY)
 		check_all_ports_link_status((uint8_t)num_ports, (~0x0));
@@ -457,7 +472,10 @@ main(int argc, char **argv)
 
 	RTE_LOG(INFO, APP, "Finished Process Init.\n");
 
-	rte_eal_mp_remote_launch(lcore_main, NULL, CALL_MASTER);
+	rte_eal_mp_remote_launch(lcore_main, NULL, CALL_MAIN);
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

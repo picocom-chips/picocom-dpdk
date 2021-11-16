@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <sys/types.h>
-#include <sys/unistd.h>
+#include <unistd.h>
 #include <sys/queue.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -18,21 +18,22 @@
 #include <getopt.h>
 #include <signal.h>
 
-#include "rte_atomic.h"
-#include "rte_common.h"
-#include "rte_eal.h"
-#include "rte_cycles.h"
-#include "rte_ether.h"
-#include "rte_ethdev.h"
-#include "rte_ip.h"
-#include "rte_lcore.h"
-#include "rte_malloc.h"
-#include "rte_mbuf.h"
-#include "rte_memory.h"
-#include "rte_mempool.h"
-#include "rte_log.h"
-#include "rte_bbdev.h"
-#include "rte_bbdev_op.h"
+#include <rte_atomic.h>
+#include <rte_common.h>
+#include <rte_eal.h>
+#include <rte_cycles.h>
+#include <rte_ether.h>
+#include <rte_ethdev.h>
+#include <rte_ip.h>
+#include <rte_lcore.h>
+#include <rte_malloc.h>
+#include <rte_mbuf.h>
+#include <rte_mbuf_dyn.h>
+#include <rte_memory.h>
+#include <rte_mempool.h>
+#include <rte_log.h>
+#include <rte_bbdev.h>
+#include <rte_bbdev_op.h>
 
 /* LLR values - negative value for '1' bit */
 #define LLR_1_BIT 0x81
@@ -59,10 +60,19 @@
 	} \
 } while (0)
 
+static int input_dynfield_offset = -1;
+
+static inline struct rte_mbuf **
+mbuf_input(struct rte_mbuf *mbuf)
+{
+	return RTE_MBUF_DYNFIELD(mbuf,
+			input_dynfield_offset, struct rte_mbuf **);
+}
+
 static const struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mq_mode = ETH_MQ_RX_NONE,
-		.max_rx_pkt_len = ETHER_MAX_LEN,
+		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 		.split_hdr_size = 0,
 	},
 	.txmode = {
@@ -273,7 +283,7 @@ signal_handler(int signum)
 }
 
 static void
-print_mac(unsigned int portid, struct ether_addr *bbdev_ports_eth_address)
+print_mac(unsigned int portid, struct rte_ether_addr *bbdev_ports_eth_address)
 {
 	printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
 			(unsigned int) portid,
@@ -294,11 +304,11 @@ pktmbuf_free_bulk(struct rte_mbuf **mbufs, unsigned int nb_to_free)
 }
 
 static inline void
-pktmbuf_userdata_free_bulk(struct rte_mbuf **mbufs, unsigned int nb_to_free)
+pktmbuf_input_free_bulk(struct rte_mbuf **mbufs, unsigned int nb_to_free)
 {
 	unsigned int i;
 	for (i = 0; i < nb_to_free; ++i) {
-		struct rte_mbuf *rx_pkt = mbufs[i]->userdata;
+		struct rte_mbuf *rx_pkt = *mbuf_input(mbufs[i]);
 		rte_pktmbuf_free(rx_pkt);
 		rte_pktmbuf_free(mbufs[i]);
 	}
@@ -312,6 +322,7 @@ check_port_link_status(uint16_t port_id)
 #define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
 	uint8_t count;
 	struct rte_eth_link link;
+	int link_get_err = -EINVAL;
 
 	printf("\nChecking link status.");
 	fflush(stdout);
@@ -319,14 +330,16 @@ check_port_link_status(uint16_t port_id)
 	for (count = 0; count <= MAX_CHECK_TIME &&
 			!rte_atomic16_read(&global_exit_flag); count++) {
 		memset(&link, 0, sizeof(link));
-		rte_eth_link_get_nowait(port_id, &link);
+		link_get_err = rte_eth_link_get_nowait(port_id, &link);
 
-		if (link.link_status) {
+		if (link_get_err >= 0 && link.link_status) {
 			const char *dp = (link.link_duplex ==
 				ETH_LINK_FULL_DUPLEX) ?
 				"full-duplex" : "half-duplex";
-			printf("\nPort %u Link Up - speed %u Mbps - %s\n",
-				port_id, link.link_speed, dp);
+			printf("\nPort %u Link Up - speed %s - %s\n",
+				port_id,
+				rte_eth_link_speed_to_str(link.link_speed),
+				dp);
 			return 0;
 		}
 		printf(".");
@@ -334,21 +347,26 @@ check_port_link_status(uint16_t port_id)
 		rte_delay_ms(CHECK_INTERVAL);
 	}
 
-	printf("\nPort %d Link Down\n", port_id);
+	if (link_get_err >= 0)
+		printf("\nPort %d Link Down\n", port_id);
+	else
+		printf("\nGet link failed (port %d): %s\n", port_id,
+		       rte_strerror(-link_get_err));
+
 	return 0;
 }
 
 static inline void
 add_ether_hdr(struct rte_mbuf *pkt_src, struct rte_mbuf *pkt_dst)
 {
-	struct ether_hdr *eth_from;
-	struct ether_hdr *eth_to;
+	struct rte_ether_hdr *eth_from;
+	struct rte_ether_hdr *eth_to;
 
-	eth_from = rte_pktmbuf_mtod(pkt_src, struct ether_hdr *);
-	eth_to = rte_pktmbuf_mtod(pkt_dst, struct ether_hdr *);
+	eth_from = rte_pktmbuf_mtod(pkt_src, struct rte_ether_hdr *);
+	eth_to = rte_pktmbuf_mtod(pkt_dst, struct rte_ether_hdr *);
 
 	/* copy header */
-	rte_memcpy(eth_to, eth_from, sizeof(struct ether_hdr));
+	rte_memcpy(eth_to, eth_from, sizeof(struct rte_ether_hdr));
 }
 
 static inline void
@@ -377,7 +395,7 @@ transform_enc_out_dec_in(struct rte_mbuf **mbufs, uint8_t *temp_buf,
 
 	for (i = 0; i < num_pkts; ++i) {
 		uint16_t pkt_data_len = rte_pktmbuf_data_len(mbufs[i]) -
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 
 		/* Resize the packet if needed */
 		if (pkt_data_len < ncb) {
@@ -395,7 +413,8 @@ transform_enc_out_dec_in(struct rte_mbuf **mbufs, uint8_t *temp_buf,
 			for (l = start_bit_idx; l < start_bit_idx + d; ++l) {
 				uint8_t *data = rte_pktmbuf_mtod_offset(
 					mbufs[i], uint8_t *,
-					sizeof(struct ether_hdr) + (l >> 3));
+					sizeof(struct rte_ether_hdr) +
+					(l >> 3));
 				if (*data & (0x80 >> (l & 7)))
 					temp_buf[out_idx] = LLR_1_BIT;
 				else
@@ -410,7 +429,7 @@ transform_enc_out_dec_in(struct rte_mbuf **mbufs, uint8_t *temp_buf,
 		}
 
 		rte_memcpy(rte_pktmbuf_mtod_offset(mbufs[i], uint8_t *,
-				sizeof(struct ether_hdr)), temp_buf, ncb);
+				sizeof(struct rte_ether_hdr)), temp_buf, ncb);
 	}
 }
 
@@ -420,12 +439,12 @@ verify_data(struct rte_mbuf **mbufs, uint16_t num_pkts)
 	uint16_t i;
 	for (i = 0; i < num_pkts; ++i) {
 		struct rte_mbuf *out = mbufs[i];
-		struct rte_mbuf *in = out->userdata;
+		struct rte_mbuf *in = *mbuf_input(out);
 
 		if (memcmp(rte_pktmbuf_mtod_offset(in, uint8_t *,
-				sizeof(struct ether_hdr)),
+				sizeof(struct rte_ether_hdr)),
 				rte_pktmbuf_mtod_offset(out, uint8_t *,
-				sizeof(struct ether_hdr)),
+				sizeof(struct rte_ether_hdr)),
 				K / 8 - CRC_24B_LEN))
 			printf("Input and output buffers are not equal!\n");
 	}
@@ -439,7 +458,7 @@ initialize_ports(struct app_config_params *app_params,
 	uint16_t port_id = app_params->port_id;
 	uint16_t q;
 	/* ethernet addresses of ports */
-	struct ether_addr bbdev_port_eth_addr;
+	struct rte_ether_addr bbdev_port_eth_addr;
 
 	/* initialize ports */
 	printf("\nInitializing port %u...\n", app_params->port_id);
@@ -476,9 +495,20 @@ initialize_ports(struct app_config_params *app_params,
 		}
 	}
 
-	rte_eth_promiscuous_enable(port_id);
+	ret = rte_eth_promiscuous_enable(port_id);
+	if (ret != 0) {
+		printf("Cannot enable promiscuous mode: err=%s, port=%u\n",
+			rte_strerror(-ret), port_id);
+		return ret;
+	}
 
-	rte_eth_macaddr_get(port_id, &bbdev_port_eth_addr);
+	ret = rte_eth_macaddr_get(port_id, &bbdev_port_eth_addr);
+	if (ret < 0) {
+		printf("rte_eth_macaddr_get: err=%d, queue=%u\n",
+			ret, q);
+		return -1;
+	}
+
 	print_mac(port_id, &bbdev_port_eth_addr);
 
 	return 0;
@@ -641,6 +671,8 @@ print_stats(struct stats_lcore_params *stats_lcore)
 		print_lcore_stats(stats_lcore->lconf[l_id].lcore_stats, l_id);
 	}
 
+	fflush(stdout);
+
 	free(xstats);
 	free(xstats_names);
 }
@@ -707,14 +739,14 @@ run_encoding(struct lcore_conf *lcore_conf)
 		char *data;
 		const uint16_t pkt_data_len =
 				rte_pktmbuf_data_len(rx_pkts_burst[i]) -
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 		/* save input mbuf pointer for later comparison */
-		enc_out_pkts[i]->userdata = rx_pkts_burst[i];
+		*mbuf_input(enc_out_pkts[i]) = rx_pkts_burst[i];
 
 		/* copy ethernet header */
 		rte_pktmbuf_reset(enc_out_pkts[i]);
 		data = rte_pktmbuf_append(enc_out_pkts[i],
-				sizeof(struct ether_hdr));
+				sizeof(struct rte_ether_hdr));
 		if (data == NULL) {
 			printf(
 				"Not enough space for ethernet header in encoder output mbuf\n");
@@ -728,7 +760,7 @@ run_encoding(struct lcore_conf *lcore_conf)
 		bbdev_ops_burst[i]->turbo_enc.input.data =
 				rx_pkts_burst[i];
 		bbdev_ops_burst[i]->turbo_enc.input.offset =
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 		/* Encoder will attach the CRC24B, adjust the length */
 		bbdev_ops_burst[i]->turbo_enc.input.length = in_data_len;
 
@@ -746,14 +778,14 @@ run_encoding(struct lcore_conf *lcore_conf)
 		bbdev_ops_burst[i]->turbo_enc.output.data =
 				enc_out_pkts[i];
 		bbdev_ops_burst[i]->turbo_enc.output.offset =
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 	}
 
 	/* Enqueue packets on BBDevice */
 	nb_enq = rte_bbdev_enqueue_enc_ops(bbdev_id, enc_queue_id,
 			bbdev_ops_burst, nb_rx);
 	if (unlikely(nb_enq < nb_rx)) {
-		pktmbuf_userdata_free_bulk(&enc_out_pkts[nb_enq],
+		pktmbuf_input_free_bulk(&enc_out_pkts[nb_enq],
 				nb_rx - nb_enq);
 		rte_bbdev_enc_op_free_bulk(&bbdev_ops_burst[nb_enq],
 				nb_rx - nb_enq);
@@ -783,7 +815,7 @@ run_encoding(struct lcore_conf *lcore_conf)
 	nb_sent = rte_ring_enqueue_burst(enc_to_dec_ring, (void **)enc_out_pkts,
 			nb_deq, NULL);
 	if (unlikely(nb_sent < nb_deq)) {
-		pktmbuf_userdata_free_bulk(&enc_out_pkts[nb_sent],
+		pktmbuf_input_free_bulk(&enc_out_pkts[nb_sent],
 				nb_deq - nb_sent);
 		lcore_stats->enc_to_dec_lost_packets += nb_deq - nb_sent;
 	}
@@ -820,7 +852,7 @@ run_decoding(struct lcore_conf *lcore_conf)
 
 	if (unlikely(rte_bbdev_dec_op_alloc_bulk(bbdev_op_pool, bbdev_ops_burst,
 			nb_recv) != 0)) {
-		pktmbuf_userdata_free_bulk(recv_pkts_burst, nb_recv);
+		pktmbuf_input_free_bulk(recv_pkts_burst, nb_recv);
 		lcore_stats->rx_lost_packets += nb_recv;
 		return;
 	}
@@ -834,22 +866,22 @@ run_decoding(struct lcore_conf *lcore_conf)
 
 		bbdev_ops_burst[i]->turbo_dec.input.data = recv_pkts_burst[i];
 		bbdev_ops_burst[i]->turbo_dec.input.offset =
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 		bbdev_ops_burst[i]->turbo_dec.input.length =
 				rte_pktmbuf_data_len(recv_pkts_burst[i])
-				- sizeof(struct ether_hdr);
+				- sizeof(struct rte_ether_hdr);
 
 		bbdev_ops_burst[i]->turbo_dec.hard_output.data =
 				recv_pkts_burst[i];
 		bbdev_ops_burst[i]->turbo_dec.hard_output.offset =
-				sizeof(struct ether_hdr);
+				sizeof(struct rte_ether_hdr);
 	}
 
 	/* Enqueue packets on BBDevice */
 	nb_enq = rte_bbdev_enqueue_dec_ops(bbdev_id, bbdev_queue_id,
 			bbdev_ops_burst, nb_recv);
 	if (unlikely(nb_enq < nb_recv)) {
-		pktmbuf_userdata_free_bulk(&recv_pkts_burst[nb_enq],
+		pktmbuf_input_free_bulk(&recv_pkts_burst[nb_enq],
 				nb_recv - nb_enq);
 		rte_bbdev_dec_op_free_bulk(&bbdev_ops_burst[nb_enq],
 				nb_recv - nb_enq);
@@ -876,12 +908,12 @@ run_decoding(struct lcore_conf *lcore_conf)
 
 	/* Free the RX mbufs after verification */
 	for (i = 0; i < nb_deq; ++i)
-		rte_pktmbuf_free(recv_pkts_burst[i]->userdata);
+		rte_pktmbuf_free(*mbuf_input(recv_pkts_burst[i]));
 
 	/* Transmit the packets */
 	nb_tx = rte_eth_tx_burst(port_id, tx_queue_id, recv_pkts_burst, nb_deq);
 	if (unlikely(nb_tx < nb_deq)) {
-		pktmbuf_userdata_free_bulk(&recv_pkts_burst[nb_tx],
+		pktmbuf_input_free_bulk(&recv_pkts_burst[nb_tx],
 				nb_deq - nb_tx);
 		lcore_stats->tx_lost_packets += nb_deq - nb_tx;
 	}
@@ -1022,7 +1054,13 @@ main(int argc, char **argv)
 	struct stats_lcore_params stats_lcore;
 	struct rte_ring *enc_to_dec_ring;
 	bool stats_thread_started = false;
-	unsigned int master_lcore_id = rte_get_master_lcore();
+	unsigned int main_lcore_id = rte_get_main_lcore();
+
+	static const struct rte_mbuf_dynfield input_dynfield_desc = {
+		.name = "example_bbdev_dynfield_input",
+		.size = sizeof(struct rte_mbuf *),
+		.align = __alignof__(struct rte_mbuf *),
+	};
 
 	rte_atomic16_init(&global_exit_flag);
 
@@ -1093,6 +1131,12 @@ main(int argc, char **argv)
 	if (bbdev_mbuf_mempool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create ethdev mbuf mempool\n");
 
+	/* register mbuf field to store input pointer */
+	input_dynfield_offset =
+		rte_mbuf_dynfield_register(&input_dynfield_desc);
+	if (input_dynfield_offset < 0)
+		rte_exit(EXIT_FAILURE, "Cannot register mbuf field\n");
+
 	/* initialize ports */
 	ret = initialize_ports(&app_params, ethdev_mbuf_mempool);
 
@@ -1125,9 +1169,9 @@ main(int argc, char **argv)
 	stats_lcore.app_params = &app_params;
 	stats_lcore.lconf = lcore_conf;
 
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (lcore_conf[lcore_id].core_type != 0)
-			/* launch per-lcore processing loop on slave lcores */
+			/* launch per-lcore processing loop on worker lcores */
 			rte_eal_remote_launch(processing_loop,
 					&lcore_conf[lcore_id], lcore_id);
 		else if (!stats_thread_started) {
@@ -1139,17 +1183,20 @@ main(int argc, char **argv)
 	}
 
 	if (!stats_thread_started &&
-			lcore_conf[master_lcore_id].core_type != 0)
+			lcore_conf[main_lcore_id].core_type != 0)
 		rte_exit(EXIT_FAILURE,
 				"Not enough lcores to run the statistics printing loop!");
-	else if (lcore_conf[master_lcore_id].core_type != 0)
-		processing_loop(&lcore_conf[master_lcore_id]);
+	else if (lcore_conf[main_lcore_id].core_type != 0)
+		processing_loop(&lcore_conf[main_lcore_id]);
 	else if (!stats_thread_started)
 		stats_loop(&stats_lcore);
 
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		ret |= rte_eal_wait_lcore(lcore_id);
 	}
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return ret;
 }

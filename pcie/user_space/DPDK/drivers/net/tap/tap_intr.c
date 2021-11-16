@@ -7,7 +7,6 @@
  * Interrupts handling for tap driver.
  */
 
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -60,7 +59,7 @@ tap_rx_intr_vec_install(struct rte_eth_dev *dev)
 
 	if (!dev->data->dev_conf.intr_conf.rxq)
 		return 0;
-	intr_handle->intr_vec = malloc(sizeof(intr_handle->intr_vec[rxqs_n]));
+	intr_handle->intr_vec = malloc(sizeof(int) * rxqs_n);
 	if (intr_handle->intr_vec == NULL) {
 		rte_errno = ENOMEM;
 		TAP_LOG(ERR,
@@ -72,7 +71,7 @@ tap_rx_intr_vec_install(struct rte_eth_dev *dev)
 		struct rx_queue *rxq = pmd->dev->data->rx_queues[i];
 
 		/* Skip queues that cannot request interrupts. */
-		if (!rxq || process_private->rxq_fds[i] <= 0) {
+		if (!rxq || process_private->rxq_fds[i] == -1) {
 			/* Use invalid intr_vec[] index to disable entry. */
 			intr_handle->intr_vec[i] =
 				RTE_INTR_VEC_RXTX_OFFSET +

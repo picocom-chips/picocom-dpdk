@@ -19,7 +19,7 @@
 #include <rte_pipeline.h>
 
 #include <rte_ethdev_core.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_tm_driver.h>
 #include <rte_flow_driver.h>
 #include <rte_mtr_driver.h>
@@ -28,14 +28,15 @@
 #include "conn.h"
 
 #define NAME_SIZE                                            64
+#define SOFTNIC_PATH_MAX                                     4096
 
 /**
  * PMD Parameters
  */
 
 struct pmd_params {
-	const char *name;
-	const char *firmware;
+	char name[NAME_SIZE];
+	char firmware[SOFTNIC_PATH_MAX];
 	uint16_t conn_port;
 	uint32_t cpu_id;
 	int sc; /**< Service cores. */
@@ -83,6 +84,16 @@ struct softnic_mtr_meter_profile {
 
 TAILQ_HEAD(softnic_mtr_meter_profile_list, softnic_mtr_meter_profile);
 
+/* MTR meter policy */
+struct softnic_mtr_meter_policy {
+	TAILQ_ENTRY(softnic_mtr_meter_policy) node;
+	uint32_t meter_policy_id;
+	enum rte_table_action_policer policer[RTE_COLORS];
+	uint32_t n_users;
+};
+
+TAILQ_HEAD(softnic_mtr_meter_policy_list, softnic_mtr_meter_policy);
+
 /* MTR meter object */
 struct softnic_mtr {
 	TAILQ_ENTRY(softnic_mtr) node;
@@ -95,6 +106,7 @@ TAILQ_HEAD(softnic_mtr_list, softnic_mtr);
 
 struct mtr_internals {
 	struct softnic_mtr_meter_profile_list meter_profiles;
+	struct softnic_mtr_meter_policy_list meter_policies;
 	struct softnic_mtr_list mtrs;
 };
 
@@ -161,13 +173,22 @@ TAILQ_HEAD(softnic_link_list, softnic_link);
 #define TM_MAX_PIPES_PER_SUBPORT			4096
 #endif
 
+#ifndef TM_MAX_PIPE_PROFILE
+#define TM_MAX_PIPE_PROFILE				256
+#endif
+
+#ifndef TM_MAX_SUBPORT_PROFILE
+#define TM_MAX_SUBPORT_PROFILE				256
+#endif
+
 struct tm_params {
 	struct rte_sched_port_params port_params;
-
 	struct rte_sched_subport_params subport_params[TM_MAX_SUBPORTS];
-
-	struct rte_sched_pipe_params
-		pipe_profiles[RTE_SCHED_PIPE_PROFILES_PER_PORT];
+	struct rte_sched_subport_profile_params
+		subport_profile[TM_MAX_SUBPORT_PROFILE];
+	uint32_t n_subport_profiles;
+	uint32_t subport_to_profile[TM_MAX_SUBPORT_PROFILE];
+	struct rte_sched_pipe_params pipe_profiles[TM_MAX_PIPE_PROFILE];
 	uint32_t n_pipe_profiles;
 	uint32_t pipe_to_profile[TM_MAX_SUBPORTS * TM_MAX_PIPES_PER_SUBPORT];
 };
@@ -545,7 +566,7 @@ TAILQ_HEAD(pipeline_list, pipeline);
 #endif
 
 /**
- * Master thead: data plane thread context
+ * Main thread: data plane thread context
  */
 struct softnic_thread {
 	struct rte_ring *msgq_req;
@@ -668,6 +689,10 @@ softnic_mtr_find(struct pmd_internals *p,
 struct softnic_mtr_meter_profile *
 softnic_mtr_meter_profile_find(struct pmd_internals *p,
 	uint32_t meter_profile_id);
+
+struct softnic_mtr_meter_policy *
+softnic_mtr_meter_policy_find(struct pmd_internals *p,
+	uint32_t meter_policy_id);
 
 extern const struct rte_mtr_ops pmd_mtr_ops;
 
@@ -832,9 +857,6 @@ softnic_table_action_profile_create(struct pmd_internals *p,
 	const char *name,
 	struct softnic_table_action_profile_params *params);
 
-enum rte_table_action_policer
-softnic_table_action_policer(enum rte_mtr_policer_action action);
-
 /**
  * Pipeline
  */
@@ -948,6 +970,9 @@ struct softnic_table_rule_match {
 	} match;
 };
 
+#ifndef SYM_CRYPTO_MAX_KEY_SIZE
+#define SYM_CRYPTO_MAX_KEY_SIZE		(256)
+#endif
 struct softnic_table_rule_action {
 	uint64_t action_mask;
 	struct rte_table_action_fwd_params fwd;
@@ -962,6 +987,7 @@ struct softnic_table_rule_action {
 	struct rte_table_action_tag_params tag;
 	struct rte_table_action_decap_params decap;
 	struct rte_table_action_sym_crypto_params sym_crypto;
+	uint8_t sym_crypto_key[SYM_CRYPTO_MAX_KEY_SIZE];
 };
 
 struct rte_flow {

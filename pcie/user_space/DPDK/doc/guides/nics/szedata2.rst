@@ -5,22 +5,15 @@ SZEDATA2 poll mode driver library
 =================================
 
 The SZEDATA2 poll mode driver library implements support for the Netcope
-FPGA Boards (**NFB-***), FPGA-based programmable NICs.
-The SZEDATA2 PMD uses interface provided by the libsze2 library to communicate
-with the NFB cards over the sze2 layer.
+FPGA Boards (**NFB-40G2, NFB-100G2, NFB-200G2QL**) and Silicom **FB2CGG3** card,
+FPGA-based programmable NICs. The SZEDATA2 PMD uses interface provided by the libsze2
+library to communicate with the NFB cards over the sze2 layer.
 
 More information about the
 `NFB cards <http://www.netcope.com/en/products/fpga-boards>`_
 and used technology
 (`Netcope Development Kit <http://www.netcope.com/en/products/fpga-development-kit>`_)
 can be found on the `Netcope Technologies website <http://www.netcope.com/>`_.
-
-.. note::
-
-   This driver has external dependencies.
-   Therefore it is disabled in default configuration files.
-   It can be enabled by setting ``CONFIG_RTE_LIBRTE_PMD_SZEDATA2=y``
-   and recompiling.
 
 .. note::
 
@@ -63,15 +56,6 @@ The minimum version of the provided packages:
 
 * for DPDK up to 18.02 (including): **3.0.5**
 
-Configuration
--------------
-
-These configuration options can be modified before compilation in the
-``.config`` file:
-
-*  ``CONFIG_RTE_LIBRTE_PMD_SZEDATA2`` default value: **n**
-
-   Value **y** enables compilation of szedata2 PMD.
 
 Using the SZEDATA2 PMD
 ----------------------
@@ -89,7 +73,7 @@ The NFB cards are multi-port multi-queue cards, where (generally) data from any
 Ethernet port may be sent to any queue.
 They were historically represented in DPDK as a single port.
 
-However, the new NFB-200G2QL card employs an addon cable which allows to connect
+However, the new NFB-200G2QL card employs an add-on cable which allows to connect
 it to two physical PCI-E slots at the same time (see the diagram below).
 This is done to allow 200 Gbps of traffic to be transferred through the PCI-E
 bus (note that a single PCI-E 3.0 x16 slot provides only 125 Gbps theoretical
@@ -129,7 +113,7 @@ transmit channel:
 
 .. code-block:: console
 
-   $RTE_TARGET/app/testpmd -l 0-3 -n 2 \
+   ./<build_dir>/app/dpdk-testpmd -l 0-3 -n 2 \
    -- --port-topology=chained --rxq=2 --txq=2 --nb-cores=2 -i -a
 
 Example output:

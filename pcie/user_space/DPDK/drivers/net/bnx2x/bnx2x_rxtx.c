@@ -311,7 +311,6 @@ bnx2x_dev_tx_queue_setup(struct rte_eth_dev *dev,
 	txq->tx_bd_tail = 0;
 	txq->tx_bd_head = 0;
 	txq->nb_tx_avail = txq->nb_tx_desc;
-	dev->tx_pkt_burst = bnx2x_xmit_pkts;
 	dev->data->tx_queues[queue_idx] = txq;
 	if (!sc->tx_queues) sc->tx_queues = dev->data->tx_queues;
 
@@ -322,12 +321,15 @@ static inline void
 bnx2x_upd_rx_prod_fast(struct bnx2x_softc *sc, struct bnx2x_fastpath *fp,
 		uint16_t rx_bd_prod, uint16_t rx_cq_prod)
 {
-	union ustorm_eth_rx_producers rx_prods;
+	union {
+		struct ustorm_eth_rx_producers rx_prods;
+		uint32_t val;
+	} val = { {0} };
 
-	rx_prods.prod.bd_prod  = rx_bd_prod;
-	rx_prods.prod.cqe_prod = rx_cq_prod;
+	val.rx_prods.bd_prod  = rx_bd_prod;
+	val.rx_prods.cqe_prod = rx_cq_prod;
 
-	REG_WR(sc, fp->ustorm_rx_prods_offset, rx_prods.raw_data[0]);
+	REG_WR(sc, fp->ustorm_rx_prods_offset, val.val);
 }
 
 static uint16_t
@@ -342,8 +344,11 @@ bnx2x_recv_pkts(void *p_rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 	struct rte_mbuf *new_mb;
 	uint16_t rx_pref;
 	struct eth_fast_path_rx_cqe *cqe_fp;
-	uint16_t len, pad;
+	uint16_t len, pad, bd_len, buf_len;
 	struct rte_mbuf *rx_mb = NULL;
+	static bool log_once = true;
+
+	rte_spinlock_lock(&(fp)->rx_mtx);
 
 	hw_cq_cons = le16toh(*fp->rx_cq_cons_sb);
 	if ((hw_cq_cons & USABLE_RCQ_ENTRIES_PER_PAGE) ==
@@ -356,8 +361,10 @@ bnx2x_recv_pkts(void *p_rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 	sw_cq_cons = rxq->rx_cq_head;
 	sw_cq_prod = rxq->rx_cq_tail;
 
-	if (sw_cq_cons == hw_cq_cons)
+	if (sw_cq_cons == hw_cq_cons) {
+		rte_spinlock_unlock(&(fp)->rx_mtx);
 		return 0;
+	}
 
 	while (nb_rx < nb_pkts && sw_cq_cons != hw_cq_cons) {
 
@@ -379,6 +386,20 @@ bnx2x_recv_pkts(void *p_rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 
 		len = cqe_fp->pkt_len_or_gro_seg_len;
 		pad = cqe_fp->placement_offset;
+		bd_len = cqe_fp->len_on_bd;
+		buf_len = rxq->sw_ring[bd_cons]->buf_len;
+
+		/* Check for sufficient buffer length */
+		if (unlikely(buf_len < len + (pad + RTE_PKTMBUF_HEADROOM))) {
+			if (unlikely(log_once)) {
+				PMD_DRV_LOG(ERR, sc, "mbuf size %d is not enough to hold Rx packet length more than %d",
+					    buf_len - RTE_PKTMBUF_HEADROOM,
+					    buf_len -
+					    (pad + RTE_PKTMBUF_HEADROOM));
+				log_once = false;
+			}
+			goto next_rx;
+		}
 
 		new_mb = rte_mbuf_raw_alloc(rxq->mb_pool);
 		if (unlikely(!new_mb)) {
@@ -403,7 +424,8 @@ bnx2x_recv_pkts(void *p_rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 		rx_mb->data_off = pad + RTE_PKTMBUF_HEADROOM;
 		rx_mb->nb_segs = 1;
 		rx_mb->next = NULL;
-		rx_mb->pkt_len = rx_mb->data_len = len;
+		rx_mb->pkt_len = len;
+		rx_mb->data_len = bd_len;
 		rx_mb->port = rxq->port_id;
 		rte_prefetch1(rte_pktmbuf_mtod(rx_mb, void *));
 
@@ -413,7 +435,7 @@ bnx2x_recv_pkts(void *p_rxq, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 		 */
 		if (cqe_fp->pars_flags.flags & PARSING_FLAGS_VLAN) {
 			rx_mb->vlan_tci = cqe_fp->vlan_tag;
-			rx_mb->ol_flags |= PKT_RX_VLAN;
+			rx_mb->ol_flags |= PKT_RX_VLAN | PKT_RX_VLAN_STRIPPED;
 		}
 
 		rx_pkts[nb_rx] = rx_mb;
@@ -438,15 +460,29 @@ next_rx:
 
 	bnx2x_upd_rx_prod_fast(sc, fp, bd_prod, sw_cq_prod);
 
+	rte_spinlock_unlock(&(fp)->rx_mtx);
+
 	return nb_rx;
 }
 
-int
-bnx2x_dev_rx_init(struct rte_eth_dev *dev)
+static uint16_t
+bnx2x_rxtx_pkts_dummy(__rte_unused void *p_rxq,
+		      __rte_unused struct rte_mbuf **rx_pkts,
+		      __rte_unused uint16_t nb_pkts)
+{
+	return 0;
+}
+
+void bnx2x_dev_rxtx_init_dummy(struct rte_eth_dev *dev)
+{
+	dev->rx_pkt_burst = bnx2x_rxtx_pkts_dummy;
+	dev->tx_pkt_burst = bnx2x_rxtx_pkts_dummy;
+}
+
+void bnx2x_dev_rxtx_init(struct rte_eth_dev *dev)
 {
 	dev->rx_pkt_burst = bnx2x_recv_pkts;
-
-	return 0;
+	dev->tx_pkt_burst = bnx2x_xmit_pkts;
 }
 
 void

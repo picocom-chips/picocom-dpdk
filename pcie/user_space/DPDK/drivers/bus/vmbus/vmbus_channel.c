@@ -27,18 +27,6 @@ vmbus_sync_set_bit(volatile uint32_t *addr, uint32_t mask)
 }
 
 static inline void
-vmbus_send_interrupt(const struct rte_vmbus_device *dev, uint32_t relid)
-{
-	uint32_t *int_addr;
-	uint32_t int_mask;
-
-	int_addr = dev->int_page + relid / 32;
-	int_mask = 1u << (relid % 32);
-
-	vmbus_sync_set_bit(int_addr, int_mask);
-}
-
-static inline void
 vmbus_set_monitor(const struct rte_vmbus_device *dev, uint32_t monitor_id)
 {
 	uint32_t *monitor_addr, monitor_mask;
@@ -55,7 +43,6 @@ static void
 vmbus_set_event(const struct rte_vmbus_device *dev,
 		const struct vmbus_channel *chan)
 {
-	vmbus_send_interrupt(dev, chan->relid);
 	vmbus_set_monitor(dev, chan->monitor_id);
 }
 
@@ -199,6 +186,7 @@ bool rte_vmbus_chan_rx_empty(const struct vmbus_channel *channel)
 {
 	const struct vmbus_br *br = &channel->rxbr;
 
+	rte_smp_rmb();
 	return br->vbr->rindex == br->vbr->windex;
 }
 
@@ -213,7 +201,7 @@ void rte_vmbus_chan_signal_read(struct vmbus_channel *chan, uint32_t bytes_read)
 		return;
 
 	/* Make sure reading of pending happens after new read index */
-	rte_mb();
+	rte_smp_mb();
 
 	pending_sz = rbr->vbr->pending_send;
 	if (!pending_sz)
@@ -352,12 +340,21 @@ int vmbus_chan_create(const struct rte_vmbus_device *device,
 int rte_vmbus_chan_open(struct rte_vmbus_device *device,
 			struct vmbus_channel **new_chan)
 {
+	struct mapped_vmbus_resource *uio_res;
 	int err;
+
+	uio_res = vmbus_uio_find_resource(device);
+	if (!uio_res) {
+		VMBUS_LOG(ERR, "can't find uio resource");
+		return -EINVAL;
+	}
 
 	err = vmbus_chan_create(device, device->relid, 0,
 				device->monitor_id, new_chan);
-	if (!err)
+	if (!err) {
 		device->primary = *new_chan;
+		uio_res->primary = *new_chan;
+	}
 
 	return err;
 }
@@ -396,11 +393,16 @@ void rte_vmbus_chan_close(struct vmbus_channel *chan)
 	const struct rte_vmbus_device *device = chan->device;
 	struct vmbus_channel *primary = device->primary;
 
-	if (chan != primary)
+	/*
+	 * intentionally leak primary channel because
+	 * secondary may still reference it
+	 */
+	if (chan != primary) {
 		STAILQ_REMOVE(&primary->subchannel_list, chan,
 			      vmbus_channel, next);
+		rte_free(chan);
+	}
 
-	rte_free(chan);
 }
 
 static void vmbus_dump_ring(FILE *f, const char *id, const struct vmbus_br *br)

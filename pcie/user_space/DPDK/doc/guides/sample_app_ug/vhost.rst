@@ -38,7 +38,7 @@ Start the vswitch example
 
 .. code-block:: console
 
-        ./vhost-switch -l 0-3 -n 4 --socket-mem 1024  \
+        ./dpdk-vhost-switch -l 0-3 -n 4 --socket-mem 1024  \
              -- --socket-file /tmp/sock0 --client \
              ...
 
@@ -72,19 +72,19 @@ Run testpmd inside guest
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Make sure you have DPDK built inside the guest. Also make sure the
-corresponding virtio-net PCI device is bond to a uio driver, which
+corresponding virtio-net PCI device is bond to a UIO driver, which
 could be done by:
 
 .. code-block:: console
 
    modprobe uio_pci_generic
-   $RTE_SDK/usertools/dpdk-devbind.py -b uio_pci_generic 0000:00:04.0
+   dpdk/usertools/dpdk-devbind.py -b uio_pci_generic 0000:00:04.0
 
 Then start testpmd for packet forwarding testing.
 
 .. code-block:: console
 
-    ./x86_64-native-gcc/app/testpmd -l 0-1 -- -i
+    ./<build_dir>/app/dpdk-testpmd -l 0-1 -- -i
     > start tx_first
 
 Inject packets
@@ -116,7 +116,7 @@ will create it. Put simply, it's the server to create the socket file.
 The vm2vm parameter sets the mode of packet switching between guests in
 the host.
 
-- 0 disables vm2vm, impling that VM's packets will always go to the NIC port.
+- 0 disables vm2vm, implying that VM's packets will always go to the NIC port.
 - 1 means a normal mac lookup packet routing.
 - 2 means hardware mode packet forwarding between guests, it allows packets
   go to the NIC port, hardware L2 switch will determine which guest the
@@ -148,7 +148,7 @@ default value is 15.
 
 **--dequeue-zero-copy**
 Dequeue zero copy will be enabled when this option is given. it is worth to
-note that if NIC is binded to driver with iommu enabled, dequeue zero copy
+note that if NIC is bound to driver with iommu enabled, dequeue zero copy
 cannot work at VM2NIC mode (vm2vm=0) due to currently we don't setup iommu
 dma mapping for guest memory.
 
@@ -161,6 +161,17 @@ enabled and cannot be disabled.
 **--builtin-net-driver**
 A very simple vhost-user net driver which demonstrates how to use the generic
 vhost APIs will be used when this option is given. It is disabled by default.
+
+**--dma-type**
+This parameter is used to specify DMA type for async vhost-user net driver which
+demonstrates how to use the async vhost APIs. It's used in combination with dmas.
+
+**--dmas**
+This parameter is used to specify the assigned DMA device of a vhost device.
+Async vhost-user net driver will be used if --dmas is set. For example
+--dmas [txd0@00:04.0,txd1@00:04.1] means use DMA channel 00:04.0 for vhost
+device 0 enqueue operation and use DMA channel 00:04.1 for vhost device 1
+enqueue operation.
 
 Common Issues
 -------------
@@ -177,7 +188,7 @@ Common Issues
 
   .. code-block:: console
 
-      cat /sys/kernel/mm/hugepages/hugepages-<pagesize>/nr_hugepages
+     dpdk-hugepages.py --show
 
   The command above indicates how many hugepages are free to support QEMU's
   allocation request.
@@ -192,12 +203,14 @@ Common Issues
   max queue number is larger than 128, device start will fail due to
   insufficient mbuf.
 
-  Change the default number to make it work as below, just set the number
-  according to the NIC's property. ::
-
-      make EXTRA_CFLAGS="-DMAX_QUEUES=320"
-
 * Option "builtin-net-driver" is incompatible with QEMU
 
   QEMU vhost net device start will fail if protocol feature is not negotiated.
   DPDK virtio-user pmd can be the replacement of QEMU.
+
+* Device start fails when enabling "builtin-net-driver" without memory
+  pre-allocation
+
+  The builtin example doesn't support dynamic memory allocation. When vhost
+  backend enables "builtin-net-driver", "--socket-mem" option should be
+  added at virtio-user pmd side as a startup item.

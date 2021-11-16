@@ -6,11 +6,13 @@
 # To build this example as a standalone application with an already-installed
 # DPDK instance, use 'make'
 
-if host_machine.system() != 'linux'
-	build = false
+if not is_linux
+    build = false
+    subdir_done()
 endif
+
 deps += 'vhost'
 allow_experimental_apis = true
 sources = files(
-	'main.c'
+        'main.c',
 )

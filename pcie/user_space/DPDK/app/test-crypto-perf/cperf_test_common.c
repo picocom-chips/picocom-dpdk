@@ -30,6 +30,7 @@ fill_single_seg_mbuf(struct rte_mbuf *m, struct rte_mempool *mp,
 		mbuf_offset + mbuf_hdr_size;
 	m->buf_len = segment_sz;
 	m->data_len = data_len;
+	m->pkt_len = data_len;
 
 	/* Use headroom specified for the buffer */
 	m->data_off = headroom;
@@ -85,7 +86,7 @@ static void
 mempool_obj_init(struct rte_mempool *mp,
 		 void *opaque_arg,
 		 void *obj,
-		 __attribute__((unused)) unsigned int i)
+		 __rte_unused unsigned int i)
 {
 	struct obj_params *params = opaque_arg;
 	struct rte_crypto_op *op = obj;
@@ -193,7 +194,7 @@ cperf_alloc_common_memory(const struct cperf_options *options,
 				(mbuf_size * segments_nb);
 		params.dst_buf_offset = *dst_buf_offset;
 		/* Destination buffer will be one segment only */
-		obj_size += max_size;
+		obj_size += max_size + sizeof(struct rte_mbuf);
 	}
 
 	*pool = rte_mempool_create_empty(pool_name,

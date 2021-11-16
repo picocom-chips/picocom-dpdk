@@ -66,7 +66,7 @@ static uint16_t num_queues, num_vmdq_queues;
 static uint16_t vmdq_pool_base, vmdq_queue_base;
 static uint8_t rss_enable;
 
-/* empty vmdq+dcb configuration structure. Filled in programatically */
+/* Empty vmdq+dcb configuration structure. Filled in programmatically. 8< */
 static const struct rte_eth_conf vmdq_dcb_conf_default = {
 	.rxmode = {
 		.mq_mode        = ETH_MQ_RX_VMDQ_DCB,
@@ -108,10 +108,12 @@ static const struct rte_eth_conf vmdq_dcb_conf_default = {
 		},
 	},
 };
+/* >8 End of empty vmdq+dcb configuration structure. */
 
 /* array used for printing out statistics */
 volatile unsigned long rxPackets[MAX_QUEUES] = {0};
 
+/* Dividing up the possible user priority values. 8< */
 const uint16_t vlan_tags[] = {
 	0,  1,  2,  3,  4,  5,  6,  7,
 	8,  9, 10, 11,	12, 13, 14, 15,
@@ -121,12 +123,12 @@ const uint16_t vlan_tags[] = {
 
 const uint16_t num_vlans = RTE_DIM(vlan_tags);
 /* pool mac addr template, pool mac addr is like: 52 54 00 12 port# pool# */
-static struct ether_addr pool_addr_template = {
+static struct rte_ether_addr pool_addr_template = {
 	.addr_bytes = {0x52, 0x54, 0x00, 0x12, 0x00, 0x00}
 };
 
 /* ethernet addresses of ports */
-static struct ether_addr vmdq_ports_eth_addr[RTE_MAX_ETHPORTS];
+static struct rte_ether_addr vmdq_ports_eth_addr[RTE_MAX_ETHPORTS];
 
 /* Builds up the correct configuration for vmdq+dcb based on the vlan tags array
  * given above, and the number of traffic classes available for use. */
@@ -179,6 +181,7 @@ get_eth_conf(struct rte_eth_conf *eth_conf)
 	}
 	return 0;
 }
+/* >8 End of dividing up the possible user priority values. */
 
 /*
  * Initialises a given port using global settings and with the rx buffers
@@ -202,7 +205,14 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	 * The max pool number from dev_info will be used to validate the pool
 	 * number specified in cmd line
 	 */
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port, strerror(-retval));
+
+		return retval;
+	}
+
 	max_nb_pools = (uint32_t)dev_info.max_vmdq_pools;
 	/*
 	 * We allow to process part of VMDQ pools specified by num_pools in
@@ -253,7 +263,14 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	if (retval < 0)
 		return retval;
 
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port, strerror(-retval));
+
+		return retval;
+	}
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -319,7 +336,12 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return retval;
 	}
 
-	rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
+	retval = rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
+	if (retval < 0) {
+		printf("port %d MAC address get failed: %s\n", port,
+		       rte_strerror(-retval));
+		return retval;
+	}
 	printf("Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
 			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
 			(unsigned)port,
@@ -330,9 +352,9 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			vmdq_ports_eth_addr[port].addr_bytes[4],
 			vmdq_ports_eth_addr[port].addr_bytes[5]);
 
-	/* Set mac for each pool.*/
+	/* Set mac for each pool. 8< */
 	for (q = 0; q < num_pools; q++) {
-		struct ether_addr mac;
+		struct rte_ether_addr mac;
 
 		mac = pool_addr_template;
 		mac.addr_bytes[4] = port;
@@ -349,6 +371,7 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			return retval;
 		}
 	}
+	/* >8 End of set mac for each pool. */
 
 	return 0;
 }
@@ -405,10 +428,7 @@ parse_portmask(const char *portmask)
 	/* parse hexadecimal string */
 	pm = strtoul(portmask, &end, 16);
 	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
-
-	if (pm == 0)
-		return -1;
+		return 0;
 
 	return pm;
 }
@@ -494,17 +514,17 @@ vmdq_parse_args(int argc, char **argv)
 static void
 update_mac_address(struct rte_mbuf *m, unsigned dst_port)
 {
-	struct ether_hdr *eth;
+	struct rte_ether_hdr *eth;
 	void *tmp;
 
-	eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
+	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
 	/* 02:00:00:00:00:xx */
 	tmp = &eth->d_addr.addr_bytes[0];
 	*((uint64_t *)tmp) = 0x000000000002 + ((uint64_t)dst_port << 40);
 
 	/* src addr */
-	ether_addr_copy(&vmdq_ports_eth_addr[dst_port], &eth->s_addr);
+	rte_ether_addr_copy(&vmdq_ports_eth_addr[dst_port], &eth->s_addr);
 }
 
 /* When we receive a HUP signal, print out our stats */
@@ -563,7 +583,7 @@ lcore_main(void *arg)
 
 	for (;;) {
 		struct rte_mbuf *buf[MAX_PKT_BURST];
-		const uint16_t buf_size = sizeof(buf) / sizeof(buf[0]);
+		const uint16_t buf_size = RTE_DIM(buf);
 		for (p = 0; p < num_ports; p++) {
 			const uint8_t src = ports[p];
 			const uint8_t dst = ports[p ^ 1]; /* 0 <-> 1, 2 <-> 3 etc */
@@ -683,13 +703,16 @@ main(int argc, char *argv[])
 			rte_exit(EXIT_FAILURE, "Cannot initialize network ports\n");
 	}
 
-	/* call lcore_main() on every slave lcore */
+	/* call lcore_main() on every worker lcore */
 	i = 0;
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		rte_eal_remote_launch(lcore_main, (void*)i++, lcore_id);
 	}
-	/* call on master too */
+	/* call on main too */
 	(void) lcore_main((void*)i);
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

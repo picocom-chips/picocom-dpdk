@@ -14,10 +14,7 @@
 #include <rte_mbuf.h>
 #include <rte_meter.h>
 
-/*
- * Traffic metering configuration
- *
- */
+/* Traffic metering configuration. 8< */
 #define APP_MODE_FWD                    0
 #define APP_MODE_SRTCM_COLOR_BLIND      1
 #define APP_MODE_SRTCM_COLOR_AWARE      2
@@ -25,6 +22,7 @@
 #define APP_MODE_TRTCM_COLOR_AWARE      4
 
 #define APP_MODE	APP_MODE_SRTCM_COLOR_BLIND
+/* >8 End of traffic metering configuration. */
 
 
 #include "main.h"
@@ -54,7 +52,7 @@ static struct rte_mempool *pool = NULL;
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mq_mode	= ETH_MQ_RX_RSS,
-		.max_rx_pkt_len = ETHER_MAX_LEN,
+		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 		.split_hdr_size = 0,
 		.offloads = DEV_RX_OFFLOAD_CHECKSUM,
 	},
@@ -88,6 +86,7 @@ static uint16_t port_tx;
 static struct rte_mbuf *pkts_rx[PKT_RX_BURST_MAX];
 struct rte_eth_dev_tx_buffer *tx_buffer;
 
+/* Traffic meter parameters are configured in the application. 8< */
 struct rte_meter_srtcm_params app_srtcm_params = {
 	.cir = 1000000 * 46,
 	.cbs = 2048,
@@ -102,6 +101,7 @@ struct rte_meter_trtcm_params app_trtcm_params = {
 	.cbs = 2048,
 	.pbs = 2048
 };
+/* >8 End of traffic meter parameters are configured in the application. */
 
 struct rte_meter_trtcm_profile app_trtcm_profile;
 
@@ -145,7 +145,8 @@ app_pkt_handle(struct rte_mbuf *pkt, uint64_t time)
 {
 	uint8_t input_color, output_color;
 	uint8_t *pkt_data = rte_pktmbuf_mtod(pkt, uint8_t *);
-	uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt) - sizeof(struct ether_hdr);
+	uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt) -
+		sizeof(struct rte_ether_hdr);
 	uint8_t flow_id = (uint8_t)(pkt_data[APP_PKT_FLOW_POS] & (APP_FLOWS_MAX - 1));
 	input_color = pkt_data[APP_PKT_COLOR_POS];
 	enum policer_action action;
@@ -155,7 +156,7 @@ app_pkt_handle(struct rte_mbuf *pkt, uint64_t time)
 		&PROFILE,
 		time,
 		pkt_len,
-		(enum rte_meter_color) input_color);
+		(enum rte_color) input_color);
 
 	/* Apply policing and set the output color */
 	action = policer_table[input_color][output_color];
@@ -165,8 +166,8 @@ app_pkt_handle(struct rte_mbuf *pkt, uint64_t time)
 }
 
 
-static __attribute__((noreturn)) int
-main_loop(__attribute__((unused)) void *dummy)
+static __rte_noreturn int
+main_loop(__rte_unused void *dummy)
 {
 	uint64_t current_time, last_time = rte_rdtsc();
 	uint32_t lcore_id = rte_lcore_id();
@@ -219,10 +220,7 @@ parse_portmask(const char *portmask)
 	/* parse hexadecimal string */
 	pm = strtoul(portmask, &end, 16);
 	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
-		return -1;
-
-	if (pm == 0)
-		return -1;
+		return 0;
 
 	return pm;
 }
@@ -328,7 +326,13 @@ main(int argc, char **argv)
 
 	/* NIC init */
 	conf = port_conf;
-	rte_eth_dev_info_get(port_rx, &dev_info);
+
+	ret = rte_eth_dev_info_get(port_rx, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port_rx, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
@@ -368,7 +372,13 @@ main(int argc, char **argv)
 	rte_exit(EXIT_FAILURE, "Port %d TX queue setup error (%d)\n", port_rx, ret);
 
 	conf = port_conf;
-	rte_eth_dev_info_get(port_tx, &dev_info);
+
+	ret = rte_eth_dev_info_get(port_tx, &dev_info);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Error during getting device (port %u) info: %s\n",
+			port_tx, strerror(-ret));
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		conf.txmode.offloads |= DEV_TX_OFFLOAD_MBUF_FAST_FREE;
 
@@ -426,9 +436,17 @@ main(int argc, char **argv)
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Port %d start error (%d)\n", port_tx, ret);
 
-	rte_eth_promiscuous_enable(port_rx);
+	ret = rte_eth_promiscuous_enable(port_rx);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Port %d promiscuous mode enable error (%s)\n",
+			port_rx, rte_strerror(-ret));
 
-	rte_eth_promiscuous_enable(port_tx);
+	ret = rte_eth_promiscuous_enable(port_tx);
+	if (ret != 0)
+		rte_exit(EXIT_FAILURE,
+			"Port %d promiscuous mode enable error (%s)\n",
+			port_rx, rte_strerror(-ret));
 
 	/* App configuration */
 	ret = app_configure_flow_table();
@@ -436,11 +454,14 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "Invalid configure flow table\n");
 
 	/* Launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	rte_eal_mp_remote_launch(main_loop, NULL, CALL_MAIN);
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;
 	}
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

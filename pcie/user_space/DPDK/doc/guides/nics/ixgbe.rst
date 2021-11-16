@@ -15,7 +15,6 @@ There is no change to PMD API. The RX/TX handler are the only two entries for vP
 They are transparently registered at runtime RX/TX execution if all condition checks pass.
 
 1.  To date, only an SSE version of IX GBE vPMD is available.
-    To ensure that vPMD is in the binary code, ensure that the option CONFIG_RTE_IXGBE_INC_VECTOR=y is in the configure file.
 
 Some constraints apply as pre-conditions for specific optimizations on bulk packet transfers.
 The following sections explain RX and TX constraints in the vPMD.
@@ -81,6 +80,31 @@ To guarantee the constraint, capabilities in dev_conf.rxmode.offloads will be ch
 *   dev_conf
 
 fdir_conf->mode will also be checked.
+
+VF Runtime Options
+^^^^^^^^^^^^^^^^^^
+
+The following ``devargs`` options can be enabled at runtime. They must
+be passed as part of EAL arguments. For example,
+
+.. code-block:: console
+
+   dpdk-testpmd -a af:10.0,pflink_fullchk=1 -- -i
+
+- ``pflink_fullchk`` (default **0**)
+
+  When calling ``rte_eth_link_get_nowait()`` to get VF link status,
+  this option is used to control how VF synchronizes its status with
+  PF's. If set, VF will not only check the PF's physical link status
+  by reading related register, but also check the mailbox status. We
+  call this behavior as fully checking. And checking mailbox will
+  trigger PF's mailbox interrupt generation. If unset, the application
+  can get the VF's link status quickly by just reading the PF's link
+  status register, this will avoid the whole system's mailbox interrupt
+  generation.
+
+  ``rte_eth_link_get()`` will still use the mailbox method regardless
+  of the pflink_fullchk setting.
 
 RX Burst Size
 ^^^^^^^^^^^^^
@@ -203,8 +227,8 @@ as a workaround.
 X550 does not support legacy interrupt mode
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Desccription
-^^^^^^^^^^^^
+Description
+^^^^^^^^^^^
 X550 cannot get interrupts if using ``uio_pci_generic`` module or using legacy
 interrupt mode of ``igb_uio`` or ``vfio``. Because the errata of X550 states
 that the Interrupt Status bit is not implemented. The errata is the item #22
@@ -227,6 +251,21 @@ Do not bind ``igb_uio`` with legacy mode in X550 NICs.
 Before binding ``vfio`` with legacy mode in X550 NICs, use ``modprobe vfio ``
 ``nointxmask=1`` to load ``vfio`` module if the intx is not shared with other
 devices.
+
+RSS isn't supported when QinQ is enabled
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Due to FW limitation, IXGBE doesn't support RSS when QinQ is enabled currently.
+
+UDP with zero checksum is reported as error
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Intel 82599 10 Gigabit Ethernet Controller Specification Update (Revision 2.87)
+Errata: 44 Integrity Error Reported for IPv4/UDP Packets With Zero Checksum
+
+To support UDP zero checksum, the zero and bad UDP checksum packet is marked as
+PKT_RX_L4_CKSUM_UNKNOWN, so the application needs to recompute the checksum to
+validate it.
 
 Inline crypto processing support
 --------------------------------
@@ -253,7 +292,7 @@ option ``representor`` the user can specify which virtual functions to create
 port representors for on initialization of the PF PMD by passing the VF IDs of
 the VFs which are required.::
 
-  -w DBDF,representor=[0,1,4]
+  -a DBDF,representor=[0,1,4]
 
 Currently hot-plugging of representor ports is not supported so all required
 representors must be specified on the creation of the PF.

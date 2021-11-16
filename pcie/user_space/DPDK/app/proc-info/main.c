@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <inttypes.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <strings.h>
 
 #include <rte_eal.h>
 #include <rte_common.h>
@@ -30,15 +32,15 @@
 #include <rte_string_fns.h>
 #include <rte_metrics.h>
 #include <rte_cycles.h>
+#ifdef RTE_LIB_SECURITY
 #include <rte_security.h>
+#endif
 #include <rte_cryptodev.h>
 #include <rte_tm.h>
 #include <rte_hexdump.h>
 
 /* Maximum long option length for option parsing. */
 #define MAX_LONG_OPT_SZ 64
-#define RTE_LOGTYPE_APP RTE_LOGTYPE_USER1
-
 #define MAX_STRING_LEN 256
 
 #define STATS_BDR_FMT "========================================"
@@ -46,7 +48,7 @@
 	STATS_BDR_FMT, s, w, STATS_BDR_FMT)
 
 /**< mask of enabled ports */
-static uint32_t enabled_port_mask;
+static unsigned long enabled_port_mask;
 /**< Enable stats. */
 static uint32_t enable_stats;
 /**< Enable xstats. */
@@ -92,6 +94,9 @@ static char *mempool_name;
 /**< Enable iter mempool. */
 static uint32_t enable_iter_mempool;
 static char *mempool_iter_name;
+/**< Enable dump regs. */
+static uint32_t enable_dump_regs;
+static char *dump_regs_file_prefix;
 
 /**< display usage */
 static void
@@ -117,7 +122,8 @@ proc_info_usage(const char *prgname)
 		"  --show-crypto: to display crypto information\n"
 		"  --show-ring[=name]: to display ring information\n"
 		"  --show-mempool[=name]: to display mempool information\n"
-		"  --iter-mempool=name: iterate mempool elements to display content\n",
+		"  --iter-mempool=name: iterate mempool elements to display content\n"
+		"  --dump-regs=file-prefix: dump registers to file with the file-prefix\n",
 		prgname);
 }
 
@@ -128,23 +134,17 @@ static int
 parse_portmask(const char *portmask)
 {
 	char *end = NULL;
-	unsigned long pm;
 
 	errno = 0;
 
 	/* parse hexadecimal string */
-	pm = strtoul(portmask, &end, 16);
-	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0') ||
-		(errno != 0)) {
-		printf("%s ERROR parsing the port mask\n", __func__);
+	enabled_port_mask = strtoul(portmask, &end, 16);
+	if (portmask[0] == '\0' || end == NULL || *end != '\0' || errno != 0) {
+		fprintf(stderr, "Invalid portmask '%s'\n", portmask);
 		return -1;
 	}
 
-	if (pm == 0)
-		return -1;
-
-	return pm;
-
+	return 0;
 }
 
 /*
@@ -193,7 +193,7 @@ proc_info_preparse_args(int argc, char **argv)
 				proc_info_usage(prgname);
 				return -1;
 			}
-			snprintf(host_id, sizeof(host_id), "%s", argv[i+1]);
+			strlcpy(host_id, argv[i + 1], sizeof(host_id));
 		}
 	}
 
@@ -201,7 +201,7 @@ proc_info_preparse_args(int argc, char **argv)
 		int err = gethostname(host_id, MAX_LONG_OPT_SZ-1);
 
 		if (err)
-			strcpy(host_id, "unknown");
+			strlcpy(host_id, "unknown", sizeof(host_id));
 	}
 
 	return 0;
@@ -230,6 +230,7 @@ proc_info_parse_args(int argc, char **argv)
 		{"show-ring", optional_argument, NULL, 0},
 		{"show-mempool", optional_argument, NULL, 0},
 		{"iter-mempool", required_argument, NULL, 0},
+		{"dump-regs", required_argument, NULL, 0},
 		{NULL, 0, 0, 0}
 	};
 
@@ -242,9 +243,7 @@ proc_info_parse_args(int argc, char **argv)
 		switch (opt) {
 		/* portmask */
 		case 'p':
-			enabled_port_mask = parse_portmask(optarg);
-			if (enabled_port_mask == 0) {
-				printf("invalid portmask\n");
+			if (parse_portmask(optarg) < 0) {
 				proc_info_usage(prgname);
 				return -1;
 			}
@@ -294,6 +293,10 @@ proc_info_parse_args(int argc, char **argv)
 					"iter-mempool", MAX_LONG_OPT_SZ)) {
 				enable_iter_mempool = 1;
 				mempool_iter_name = optarg;
+			} else if (!strncmp(long_option[option_index].name,
+					"dump-regs", MAX_LONG_OPT_SZ)) {
+				enable_dump_regs = 1;
+				dump_regs_file_prefix = optarg;
 			}
 			break;
 		case 1:
@@ -308,14 +311,13 @@ proc_info_parse_args(int argc, char **argv)
 			} else if (!strncmp(long_option[option_index].name,
 					"xstats-ids",
 					MAX_LONG_OPT_SZ))	{
-				nb_xstats_ids = parse_xstats_ids(optarg,
+				int ret = parse_xstats_ids(optarg,
 						xstats_ids, MAX_NB_XSTATS_IDS);
-
-				if (nb_xstats_ids <= 0) {
+				if (ret <= 0) {
 					printf("xstats-id list parse error.\n");
 					return -1;
 				}
-
+				nb_xstats_ids = ret;
 			}
 			break;
 		default:
@@ -396,50 +398,48 @@ static void collectd_resolve_cnt_type(char *cnt_type, size_t cnt_type_len,
 	if ((type_end != NULL) &&
 	    (strncmp(cnt_name, "rx_", strlen("rx_")) == 0)) {
 		if (strncmp(type_end, "_errors", strlen("_errors")) == 0)
-			strncpy(cnt_type, "if_rx_errors", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_errors", cnt_type_len);
 		else if (strncmp(type_end, "_dropped", strlen("_dropped")) == 0)
-			strncpy(cnt_type, "if_rx_dropped", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_dropped", cnt_type_len);
 		else if (strncmp(type_end, "_bytes", strlen("_bytes")) == 0)
-			strncpy(cnt_type, "if_rx_octets", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_octets", cnt_type_len);
 		else if (strncmp(type_end, "_packets", strlen("_packets")) == 0)
-			strncpy(cnt_type, "if_rx_packets", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_packets", cnt_type_len);
 		else if (strncmp(type_end, "_placement",
 				 strlen("_placement")) == 0)
-			strncpy(cnt_type, "if_rx_errors", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_errors", cnt_type_len);
 		else if (strncmp(type_end, "_buff", strlen("_buff")) == 0)
-			strncpy(cnt_type, "if_rx_errors", cnt_type_len);
+			strlcpy(cnt_type, "if_rx_errors", cnt_type_len);
 		else
 			/* Does not fit obvious type: use a more generic one */
-			strncpy(cnt_type, "derive", cnt_type_len);
+			strlcpy(cnt_type, "derive", cnt_type_len);
 	} else if ((type_end != NULL) &&
 		(strncmp(cnt_name, "tx_", strlen("tx_"))) == 0) {
 		if (strncmp(type_end, "_errors", strlen("_errors")) == 0)
-			strncpy(cnt_type, "if_tx_errors", cnt_type_len);
+			strlcpy(cnt_type, "if_tx_errors", cnt_type_len);
 		else if (strncmp(type_end, "_dropped", strlen("_dropped")) == 0)
-			strncpy(cnt_type, "if_tx_dropped", cnt_type_len);
+			strlcpy(cnt_type, "if_tx_dropped", cnt_type_len);
 		else if (strncmp(type_end, "_bytes", strlen("_bytes")) == 0)
-			strncpy(cnt_type, "if_tx_octets", cnt_type_len);
+			strlcpy(cnt_type, "if_tx_octets", cnt_type_len);
 		else if (strncmp(type_end, "_packets", strlen("_packets")) == 0)
-			strncpy(cnt_type, "if_tx_packets", cnt_type_len);
+			strlcpy(cnt_type, "if_tx_packets", cnt_type_len);
 		else
 			/* Does not fit obvious type: use a more generic one */
-			strncpy(cnt_type, "derive", cnt_type_len);
+			strlcpy(cnt_type, "derive", cnt_type_len);
 	} else if ((type_end != NULL) &&
 		   (strncmp(cnt_name, "flow_", strlen("flow_"))) == 0) {
 		if (strncmp(type_end, "_filters", strlen("_filters")) == 0)
-			strncpy(cnt_type, "operations", cnt_type_len);
+			strlcpy(cnt_type, "filter_result", cnt_type_len);
 		else if (strncmp(type_end, "_errors", strlen("_errors")) == 0)
-			strncpy(cnt_type, "errors", cnt_type_len);
-		else if (strncmp(type_end, "_filters", strlen("_filters")) == 0)
-			strncpy(cnt_type, "filter_result", cnt_type_len);
+			strlcpy(cnt_type, "errors", cnt_type_len);
 	} else if ((type_end != NULL) &&
 		   (strncmp(cnt_name, "mac_", strlen("mac_"))) == 0) {
 		if (strncmp(type_end, "_errors", strlen("_errors")) == 0)
-			strncpy(cnt_type, "errors", cnt_type_len);
+			strlcpy(cnt_type, "errors", cnt_type_len);
 	} else {
 		/* Does not fit obvious type, or strrchr error: */
 		/* use a more generic type */
-		strncpy(cnt_type, "derive", cnt_type_len);
+		strlcpy(cnt_type, "derive", cnt_type_len);
 	}
 }
 
@@ -580,8 +580,16 @@ err:
 static void
 nic_xstats_clear(uint16_t port_id)
 {
+	int ret;
+
 	printf("\n Clearing NIC xstats for port %d\n", port_id);
-	rte_eth_xstats_reset(port_id);
+	ret = rte_eth_xstats_reset(port_id);
+	if (ret != 0) {
+		printf("\n Error clearing xstats for port %d: %s\n", port_id,
+		       strerror(-ret));
+		return;
+	}
+
 	printf("\n  NIC extended statistics for port %d cleared\n", port_id);
 }
 
@@ -647,58 +655,206 @@ metrics_display(int port_id)
 }
 
 static void
+show_security_context(uint16_t portid, bool inline_offload)
+{
+	void *p_ctx;
+	const struct rte_security_capability *s_cap;
+
+	if (inline_offload)
+		p_ctx = rte_eth_dev_get_sec_ctx(portid);
+	else
+		p_ctx = rte_cryptodev_get_sec_ctx(portid);
+
+	if (p_ctx == NULL)
+		return;
+
+	printf("  - crypto context\n");
+	printf("\t  -- security context - %p\n", p_ctx);
+	printf("\t  -- size %u\n",
+	       rte_security_session_get_size(p_ctx));
+
+	s_cap = rte_security_capabilities_get(p_ctx);
+	if (s_cap) {
+		printf("\t  -- action (0x%x), protocol (0x%x),"
+		       " offload flags (0x%x)\n",
+		       s_cap->action,
+		       s_cap->protocol,
+		       s_cap->ol_flags);
+		printf("\t  -- capabilities - oper type %x\n",
+		       s_cap->crypto_capabilities->op);
+	}
+}
+
+static void
+show_offloads(uint64_t offloads,
+	      const char *(show_offload)(uint64_t))
+{
+	printf(" offloads :");
+	while (offloads != 0) {
+		uint64_t offload_flag = 1ULL << __builtin_ctzll(offloads);
+		printf(" %s", show_offload(offload_flag));
+		offloads &= ~offload_flag;
+	}
+}
+
+static void
 show_port(void)
 {
-	uint16_t i = 0;
-	int ret = 0, j, k;
+	int i, ret, j, k;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - Port PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - Port PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
-	RTE_ETH_FOREACH_DEV(i) {
+	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
 		uint16_t mtu = 0;
 		struct rte_eth_link link;
 		struct rte_eth_dev_info dev_info;
-		struct rte_eth_rxq_info queue_info;
 		struct rte_eth_rss_conf rss_conf;
+		char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
+		struct rte_eth_fc_conf fc_conf;
+		struct rte_ether_addr mac;
+		struct rte_eth_dev_owner owner;
+
+		/* Skip if port is not in mask */
+		if ((enabled_port_mask & (1ul << i)) == 0)
+			continue;
+
+		/* Skip if port is unused */
+		if (!rte_eth_dev_is_valid_port(i))
+			continue;
 
 		memset(&rss_conf, 0, sizeof(rss_conf));
 
-		snprintf(bdr_str, MAX_STRING_LEN, " Port (%u)", i);
+		snprintf(bdr_str, MAX_STRING_LEN, " Port %u ", i);
 		STATS_BDR_STR(5, bdr_str);
 		printf("  - generic config\n");
 
-		printf("\t  -- Socket %d\n", rte_eth_dev_socket_id(i));
-		rte_eth_link_get(i, &link);
-		printf("\t  -- link speed %d duplex %d,"
-				" auto neg %d status %d\n",
-				link.link_speed,
-				link.link_duplex,
-				link.link_autoneg,
-				link.link_status);
-		printf("\t  -- promiscuous (%d)\n",
-				rte_eth_promiscuous_get(i));
+		ret = rte_eth_dev_info_get(i, &dev_info);
+		if (ret != 0) {
+			printf("Error during getting device info: %s\n",
+				strerror(-ret));
+			return;
+		}
+
+		printf("\t  -- driver %s device %s socket %d\n",
+		       dev_info.driver_name, dev_info.device->name,
+		       rte_eth_dev_socket_id(i));
+
+		ret = rte_eth_dev_owner_get(i, &owner);
+		if (ret == 0 && owner.id != RTE_ETH_DEV_NO_OWNER)
+			printf("\t --  owner %#"PRIx64":%s\n",
+			       owner.id, owner.name);
+
+		ret = rte_eth_link_get(i, &link);
+		if (ret < 0) {
+			printf("Link get failed (port %u): %s\n",
+			       i, rte_strerror(-ret));
+		} else {
+			rte_eth_link_to_str(link_status_text,
+					sizeof(link_status_text),
+					&link);
+			printf("\t%s\n", link_status_text);
+		}
+
+		ret = rte_eth_dev_flow_ctrl_get(i, &fc_conf);
+		if (ret == 0 && fc_conf.mode != RTE_FC_NONE)  {
+			printf("\t  -- flow control mode %s%s high %u low %u pause %u%s%s\n",
+			       fc_conf.mode == RTE_FC_RX_PAUSE ? "rx " :
+			       fc_conf.mode == RTE_FC_TX_PAUSE ? "tx " :
+			       fc_conf.mode == RTE_FC_FULL ? "full" : "???",
+			       fc_conf.autoneg ? " auto" : "",
+			       fc_conf.high_water,
+			       fc_conf.low_water,
+			       fc_conf.pause_time,
+			       fc_conf.send_xon ? " xon" : "",
+			       fc_conf.mac_ctrl_frame_fwd ? " mac_ctrl" : "");
+		}
+
+		ret = rte_eth_macaddr_get(i, &mac);
+		if (ret == 0) {
+			char ebuf[RTE_ETHER_ADDR_FMT_SIZE];
+
+			rte_ether_format_addr(ebuf, sizeof(ebuf), &mac);
+			printf("\t  -- mac %s\n", ebuf);
+		}
+
+		ret = rte_eth_promiscuous_get(i);
+		if (ret >= 0)
+			printf("\t  -- promiscuous mode %s\n",
+			       ret > 0 ? "enabled" : "disabled");
+
+		ret = rte_eth_allmulticast_get(i);
+		if (ret >= 0)
+			printf("\t  -- all multicast mode %s\n",
+			       ret > 0 ? "enabled" : "disabled");
+
 		ret = rte_eth_dev_get_mtu(i, &mtu);
 		if (ret == 0)
 			printf("\t  -- mtu (%d)\n", mtu);
 
-		rte_eth_dev_info_get(i, &dev_info);
-
-		printf("  - queue\n");
 		for (j = 0; j < dev_info.nb_rx_queues; j++) {
+			struct rte_eth_rxq_info queue_info;
+			int count;
+
 			ret = rte_eth_rx_queue_info_get(i, j, &queue_info);
-			if (ret == 0) {
-				printf("\t  -- queue %d rx scatter %d"
-						" descriptors %d"
-						" offloads 0x%"PRIx64
-						" mempool socket %d\n",
-						j,
-						queue_info.scattered_rx,
-						queue_info.nb_desc,
-						queue_info.conf.offloads,
-						queue_info.mp->socket_id);
-			}
+			if (ret != 0)
+				break;
+
+			if (j == 0)
+				printf("  - rx queue\n");
+
+			printf("\t  -- %d descriptors ", j);
+			count = rte_eth_rx_queue_count(i, j);
+			if (count >= 0)
+				printf("%d/", count);
+			printf("%u", queue_info.nb_desc);
+
+			if (queue_info.scattered_rx)
+				printf(" scattered");
+
+			if (queue_info.conf.rx_drop_en)
+				printf(" drop_en");
+
+			if (queue_info.conf.rx_deferred_start)
+				printf(" deferred_start");
+
+			if (queue_info.rx_buf_size != 0)
+				printf(" rx buffer size %u",
+				       queue_info.rx_buf_size);
+
+			printf(" mempool %s socket %d",
+			       queue_info.mp->name,
+			       queue_info.mp->socket_id);
+
+			if (queue_info.conf.offloads != 0)
+				show_offloads(queue_info.conf.offloads, rte_eth_dev_rx_offload_name);
+
+			printf("\n");
+		}
+
+		for (j = 0; j < dev_info.nb_tx_queues; j++) {
+			struct rte_eth_txq_info queue_info;
+
+			ret = rte_eth_tx_queue_info_get(i, j, &queue_info);
+			if (ret != 0)
+				break;
+
+			if (j == 0)
+				printf("  - tx queue\n");
+
+			printf("\t  -- %d descriptors %d",
+			       j, queue_info.nb_desc);
+
+			printf(" thresh %u/%u",
+			       queue_info.conf.tx_rs_thresh,
+			       queue_info.conf.tx_free_thresh);
+
+			if (queue_info.conf.tx_deferred_start)
+				printf(" deferred_start");
+
+			if (queue_info.conf.offloads != 0)
+				show_offloads(queue_info.conf.offloads, rte_eth_dev_tx_offload_name);
+			printf("\n");
 		}
 
 		ret = rte_eth_dev_rss_hash_conf_get(i, &rss_conf);
@@ -714,28 +870,10 @@ show_port(void)
 			}
 		}
 
-		printf("  - cyrpto context\n");
-		void *p_ctx = rte_eth_dev_get_sec_ctx(i);
-		printf("\t  -- security context - %p\n", p_ctx);
-
-		if (p_ctx) {
-			printf("\t  -- size %u\n",
-					rte_security_session_get_size(p_ctx));
-			const struct rte_security_capability *s_cap =
-				rte_security_capabilities_get(p_ctx);
-			if (s_cap) {
-				printf("\t  -- action (0x%x), protocol (0x%x),"
-						" offload flags (0x%x)\n",
-						s_cap->action,
-						s_cap->protocol,
-						s_cap->ol_flags);
-				printf("\t  -- capabilities - oper type %x\n",
-						s_cap->crypto_capabilities->op);
-			}
-		}
+#ifdef RTE_LIB_SECURITY
+		show_security_context(i, true);
+#endif
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -821,8 +959,7 @@ show_tm(void)
 	unsigned int j, k;
 	uint16_t i = 0;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - TM PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - TM PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
 	RTE_ETH_FOREACH_DEV(i) {
@@ -836,7 +973,13 @@ show_tm(void)
 		memset(&cap, 0, sizeof(cap));
 		memset(&error, 0, sizeof(error));
 
-		rte_eth_dev_info_get(i, &dev_info);
+		ret = rte_eth_dev_info_get(i, &dev_info);
+		if (ret != 0) {
+			printf("Error during getting device (port %u) info: %s\n",
+				i, strerror(-ret));
+			return;
+		}
+
 		printf("  - Generic for port (%u)\n"
 			"\t  -- driver name %s\n"
 			"\t  -- max vf (%u)\n"
@@ -873,21 +1016,21 @@ show_tm(void)
 
 		printf("  - mark support:\n");
 		printf("\t  -- vlan dei: GREEN (%d) YELLOW (%d) RED (%d)\n",
-			cap.mark_vlan_dei_supported[RTE_TM_GREEN],
-			cap.mark_vlan_dei_supported[RTE_TM_YELLOW],
-			cap.mark_vlan_dei_supported[RTE_TM_RED]);
+			cap.mark_vlan_dei_supported[RTE_COLOR_GREEN],
+			cap.mark_vlan_dei_supported[RTE_COLOR_YELLOW],
+			cap.mark_vlan_dei_supported[RTE_COLOR_RED]);
 		printf("\t  -- ip ecn tcp: GREEN (%d) YELLOW (%d) RED (%d)\n",
-			cap.mark_ip_ecn_tcp_supported[RTE_TM_GREEN],
-			cap.mark_ip_ecn_tcp_supported[RTE_TM_YELLOW],
-			cap.mark_ip_ecn_tcp_supported[RTE_TM_RED]);
+			cap.mark_ip_ecn_tcp_supported[RTE_COLOR_GREEN],
+			cap.mark_ip_ecn_tcp_supported[RTE_COLOR_YELLOW],
+			cap.mark_ip_ecn_tcp_supported[RTE_COLOR_RED]);
 		printf("\t  -- ip ecn sctp: GREEN (%d) YELLOW (%d) RED (%d)\n",
-			cap.mark_ip_ecn_sctp_supported[RTE_TM_GREEN],
-			cap.mark_ip_ecn_sctp_supported[RTE_TM_YELLOW],
-			cap.mark_ip_ecn_sctp_supported[RTE_TM_RED]);
+			cap.mark_ip_ecn_sctp_supported[RTE_COLOR_GREEN],
+			cap.mark_ip_ecn_sctp_supported[RTE_COLOR_YELLOW],
+			cap.mark_ip_ecn_sctp_supported[RTE_COLOR_RED]);
 		printf("\t  -- ip dscp: GREEN (%d) YELLOW (%d) RED (%d)\n",
-			cap.mark_ip_dscp_supported[RTE_TM_GREEN],
-			cap.mark_ip_dscp_supported[RTE_TM_YELLOW],
-			cap.mark_ip_dscp_supported[RTE_TM_RED]);
+			cap.mark_ip_dscp_supported[RTE_COLOR_GREEN],
+			cap.mark_ip_dscp_supported[RTE_COLOR_YELLOW],
+			cap.mark_ip_dscp_supported[RTE_COLOR_RED]);
 
 		printf("  - mask stats (0x%"PRIx64")"
 			" dynamic update (0x%"PRIx64")\n",
@@ -1004,16 +1147,14 @@ show_tm(void)
 				" pkts (%"PRIu64") bytes (%"PRIu64")\n"
 				"\t  -- RED:"
 				" pkts (%"PRIu64") bytes (%"PRIu64")\n",
-				stats.leaf.n_pkts_dropped[RTE_TM_GREEN],
-				stats.leaf.n_bytes_dropped[RTE_TM_GREEN],
-				stats.leaf.n_pkts_dropped[RTE_TM_YELLOW],
-				stats.leaf.n_bytes_dropped[RTE_TM_YELLOW],
-				stats.leaf.n_pkts_dropped[RTE_TM_RED],
-				stats.leaf.n_bytes_dropped[RTE_TM_RED]);
+				stats.leaf.n_pkts_dropped[RTE_COLOR_GREEN],
+				stats.leaf.n_bytes_dropped[RTE_COLOR_GREEN],
+				stats.leaf.n_pkts_dropped[RTE_COLOR_YELLOW],
+				stats.leaf.n_bytes_dropped[RTE_COLOR_YELLOW],
+				stats.leaf.n_pkts_dropped[RTE_COLOR_RED],
+				stats.leaf.n_bytes_dropped[RTE_COLOR_RED]);
 		}
 	}
-
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -1036,7 +1177,7 @@ display_crypto_feature_info(uint64_t x)
 	printf("\t\t  + AESNI: CPU (%c), HW (%c)\n",
 		(x & RTE_CRYPTODEV_FF_CPU_AESNI) ? 'y' : 'n',
 		(x & RTE_CRYPTODEV_FF_HW_ACCELERATED) ? 'y' : 'n');
-	printf("\t\t  + INLINE (%c)\n",
+	printf("\t\t  + SECURITY OFFLOAD (%c)\n",
 		(x & RTE_CRYPTODEV_FF_SECURITY) ? 'y' : 'n');
 	printf("\t\t  + ARM: NEON (%c), CE (%c)\n",
 		(x & RTE_CRYPTODEV_FF_CPU_NEON) ? 'y' : 'n',
@@ -1059,8 +1200,7 @@ show_crypto(void)
 {
 	uint8_t crypto_dev_count = rte_cryptodev_count(), i;
 
-	snprintf(bdr_str, MAX_STRING_LEN, " show - CRYPTO PMD %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - CRYPTO PMD ");
 	STATS_BDR_STR(10, bdr_str);
 
 	for (i = 0; i < crypto_dev_count; i++) {
@@ -1071,39 +1211,39 @@ show_crypto(void)
 
 		printf("  - device (%u)\n", i);
 		printf("\t  -- name (%s)\n"
-			"\t  -- driver (%s)\n"
-			"\t  -- id (%u) on socket (%d)\n"
-			"\t  -- queue pairs (%d)\n",
-			rte_cryptodev_name_get(i),
-			dev_info.driver_name,
-			dev_info.driver_id,
-			dev_info.device->numa_node,
-			rte_cryptodev_queue_pair_count(i));
+		       "\t  -- driver (%s)\n"
+		       "\t  -- id (%u) on socket (%d)\n"
+		       "\t  -- queue pairs (%d)\n",
+		       rte_cryptodev_name_get(i),
+		       dev_info.driver_name,
+		       dev_info.driver_id,
+		       dev_info.device->numa_node,
+		       rte_cryptodev_queue_pair_count(i));
 
 		display_crypto_feature_info(dev_info.feature_flags);
 
-		memset(&stats, 0, sizeof(0));
 		if (rte_cryptodev_stats_get(i, &stats) == 0) {
 			printf("\t  -- stats\n");
 			printf("\t\t  + enqueue count (%"PRIu64")"
-				" error (%"PRIu64")\n",
-				stats.enqueued_count,
-				stats.enqueue_err_count);
+			       " error (%"PRIu64")\n",
+			       stats.enqueued_count,
+			       stats.enqueue_err_count);
 			printf("\t\t  + dequeue count (%"PRIu64")"
-				" error (%"PRIu64")\n",
-				stats.dequeued_count,
-				stats.dequeue_err_count);
+			       " error (%"PRIu64")\n",
+			       stats.dequeued_count,
+			       stats.dequeue_err_count);
 		}
-	}
 
-	STATS_BDR_STR(50, "");
+#ifdef RTE_LIB_SECURITY
+		show_security_context(i, false);
+#endif
+	}
 }
 
 static void
 show_ring(char *name)
 {
-	snprintf(bdr_str, MAX_STRING_LEN, " show - RING %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - RING ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
@@ -1134,22 +1274,21 @@ show_ring(char *name)
 	}
 
 	rte_ring_list_dump(stdout);
-	STATS_BDR_STR(50, "");
 }
 
 static void
 show_mempool(char *name)
 {
-	uint64_t flags = 0;
-
-	snprintf(bdr_str, MAX_STRING_LEN, " show - MEMPOOL %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " show - MEMPOOL ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
 		struct rte_mempool *ptr = rte_mempool_lookup(name);
 		if (ptr != NULL) {
-			flags = ptr->flags;
+			struct rte_mempool_ops *ops;
+			uint64_t flags = ptr->flags;
+
+			ops = rte_mempool_get_ops(ptr->ops_index);
 			printf("  - Name: %s on socket %d\n"
 				"  - flags:\n"
 				"\t  -- No spread (%c)\n"
@@ -1179,14 +1318,14 @@ show_mempool(char *name)
 			printf("  - Count: avail (%u), in use (%u)\n",
 				rte_mempool_avail_count(ptr),
 				rte_mempool_in_use_count(ptr));
+			printf("  - ops_index %d ops_name %s\n",
+				ptr->ops_index, ops ? ops->name : "NA");
 
-			STATS_BDR_STR(50, "");
 			return;
 		}
 	}
 
 	rte_mempool_list_dump(stdout);
-	STATS_BDR_STR(50, "");
 }
 
 static void
@@ -1204,8 +1343,7 @@ mempool_itr_obj(struct rte_mempool *mp, void *opaque,
 static void
 iter_mempool(char *name)
 {
-	snprintf(bdr_str, MAX_STRING_LEN, " iter - MEMPOOL %"PRIu64,
-			rte_get_tsc_hz());
+	snprintf(bdr_str, MAX_STRING_LEN, " iter - MEMPOOL ");
 	STATS_BDR_STR(10, bdr_str);
 
 	if (name != NULL) {
@@ -1215,12 +1353,88 @@ iter_mempool(char *name)
 			uint32_t ret = rte_mempool_obj_iter(ptr,
 					mempool_itr_obj, NULL);
 			printf("\n  - iterated %u objects\n", ret);
-			STATS_BDR_STR(50, "");
 			return;
 		}
 	}
+}
 
-	STATS_BDR_STR(50, "");
+static void
+dump_regs(char *file_prefix)
+{
+#define MAX_FILE_NAME_SZ (MAX_LONG_OPT_SZ + 10)
+	char file_name[MAX_FILE_NAME_SZ];
+	struct rte_dev_reg_info reg_info;
+	struct rte_eth_dev_info dev_info;
+	unsigned char *buf_data;
+	size_t buf_size;
+	FILE *fp_regs;
+	uint16_t i;
+	int ret;
+
+	snprintf(bdr_str, MAX_STRING_LEN, " dump - Port REG");
+	STATS_BDR_STR(10, bdr_str);
+
+	RTE_ETH_FOREACH_DEV(i) {
+		/* Skip if port is not in mask */
+		if ((enabled_port_mask & (1ul << i)) == 0)
+			continue;
+
+		snprintf(bdr_str, MAX_STRING_LEN, " Port (%u)", i);
+		STATS_BDR_STR(5, bdr_str);
+
+		ret = rte_eth_dev_info_get(i, &dev_info);
+		if (ret) {
+			printf("Error getting device info: %d\n", ret);
+			continue;
+		}
+
+		memset(&reg_info, 0, sizeof(reg_info));
+		ret = rte_eth_dev_get_reg_info(i, &reg_info);
+		if (ret) {
+			printf("Error getting device reg info: %d\n", ret);
+			continue;
+		}
+
+		buf_size = reg_info.length * reg_info.width;
+		buf_data = malloc(buf_size);
+		if (buf_data == NULL) {
+			printf("Error allocating %zu bytes buffer\n", buf_size);
+			continue;
+		}
+
+		reg_info.data = buf_data;
+		reg_info.length = 0;
+		ret = rte_eth_dev_get_reg_info(i, &reg_info);
+		if (ret) {
+			printf("Error getting regs from device: %d\n", ret);
+			free(buf_data);
+			continue;
+		}
+
+		snprintf(file_name, MAX_FILE_NAME_SZ, "%s-port%u",
+				file_prefix, i);
+		fp_regs = fopen(file_name, "wb");
+		if (fp_regs == NULL) {
+			printf("Error during opening '%s' for writing: %s\n",
+					file_name, strerror(errno));
+		} else {
+			size_t nr_written;
+
+			nr_written = fwrite(buf_data, 1, buf_size, fp_regs);
+			if (nr_written != buf_size)
+				printf("Error during writing %s: %s\n",
+						file_prefix, strerror(errno));
+			else
+				printf("Device (%s) regs dumped successfully, "
+					"driver:%s version:0X%08X\n",
+					dev_info.device->name,
+					dev_info.driver_name, reg_info.version);
+
+			fclose(fp_regs);
+		}
+
+		free(buf_data);
+	}
 }
 
 int
@@ -1231,7 +1445,8 @@ main(int argc, char **argv)
 	char c_flag[] = "-c1";
 	char n_flag[] = "-n4";
 	char mp_flag[] = "--proc-type=secondary";
-	char *argp[argc + 3];
+	char log_flag[] = "--log-level=6";
+	char *argp[argc + 4];
 	uint16_t nb_ports;
 
 	/* preparse app arguments */
@@ -1245,18 +1460,19 @@ main(int argc, char **argv)
 	argp[1] = c_flag;
 	argp[2] = n_flag;
 	argp[3] = mp_flag;
+	argp[4] = log_flag;
 
 	for (i = 1; i < argc; i++)
-		argp[i + 3] = argv[i];
+		argp[i + 4] = argv[i];
 
-	argc += 3;
+	argc += 4;
 
 	ret = rte_eal_init(argc, argp);
 	if (ret < 0)
 		rte_panic("Cannot init EAL\n");
 
 	argc -= ret;
-	argv += (ret - 3);
+	argv += ret - 4;
 
 	if (!rte_eal_primary_proc_alive(NULL))
 		rte_exit(EXIT_FAILURE, "No primary DPDK process is running.\n");
@@ -1275,28 +1491,38 @@ main(int argc, char **argv)
 	if (nb_ports == 0)
 		rte_exit(EXIT_FAILURE, "No Ethernet ports - bye\n");
 
-	/* If no port mask was specified*/
-	if (enabled_port_mask == 0)
-		enabled_port_mask = 0xffff;
+	/* If no port mask was specified, then show non-owned ports */
+	if (enabled_port_mask == 0) {
+		RTE_ETH_FOREACH_DEV(i)
+			enabled_port_mask = 1ul << i;
+	}
 
-	RTE_ETH_FOREACH_DEV(i) {
-		if (enabled_port_mask & (1 << i)) {
-			if (enable_stats)
-				nic_stats_display(i);
-			else if (enable_xstats)
-				nic_xstats_display(i);
-			else if (reset_stats)
-				nic_stats_clear(i);
-			else if (reset_xstats)
-				nic_xstats_clear(i);
-			else if (enable_xstats_name)
-				nic_xstats_by_name_display(i, xstats_name);
-			else if (nb_xstats_ids > 0)
-				nic_xstats_by_ids_display(i, xstats_ids,
-						nb_xstats_ids);
-			else if (enable_metrics)
-				metrics_display(i);
-		}
+	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
+
+		/* Skip if port is not in mask */
+		if ((enabled_port_mask & (1ul << i)) == 0)
+			continue;
+
+		/* Skip if port is unused */
+		if (!rte_eth_dev_is_valid_port(i))
+			continue;
+
+		if (enable_stats)
+			nic_stats_display(i);
+		else if (enable_xstats)
+			nic_xstats_display(i);
+		else if (reset_stats)
+			nic_stats_clear(i);
+		else if (reset_xstats)
+			nic_xstats_clear(i);
+		else if (enable_xstats_name)
+			nic_xstats_by_name_display(i, xstats_name);
+		else if (nb_xstats_ids > 0)
+			nic_xstats_by_ids_display(i, xstats_ids,
+						  nb_xstats_ids);
+		else if (enable_metrics)
+			metrics_display(i);
+
 	}
 
 	/* print port independent stats */
@@ -1316,13 +1542,15 @@ main(int argc, char **argv)
 		show_mempool(mempool_name);
 	if (enable_iter_mempool)
 		iter_mempool(mempool_iter_name);
+	if (enable_dump_regs)
+		dump_regs(dump_regs_file_prefix);
+
+	RTE_ETH_FOREACH_DEV(i)
+		rte_eth_dev_close(i);
 
 	ret = rte_eal_cleanup();
 	if (ret)
 		printf("Error from rte_eal_cleanup(), %d\n", ret);
-
-	snprintf(bdr_str, MAX_STRING_LEN, " ");
-	STATS_BDR_STR(50, bdr_str);
 
 	return 0;
 }

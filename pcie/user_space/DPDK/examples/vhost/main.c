@@ -14,17 +14,18 @@
 #include <sys/param.h>
 #include <unistd.h>
 
-#include <rte_atomic.h>
 #include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_log.h>
 #include <rte_string_fns.h>
 #include <rte_malloc.h>
+#include <rte_net.h>
 #include <rte_vhost.h>
 #include <rte_ip.h>
 #include <rte_tcp.h>
 #include <rte_pause.h>
 
+#include "ioat.h"
 #include "main.h"
 
 #ifndef MAX_QUEUES
@@ -54,9 +55,6 @@
 #define RTE_TEST_TX_DESC_DEFAULT 512
 
 #define INVALID_PORT_ID 0xFF
-
-/* Maximum long option length for option parsing. */
-#define MAX_LONG_OPT_SZ 64
 
 /* mask of enabled ports */
 static uint32_t enabled_port_mask = 0;
@@ -92,9 +90,12 @@ static uint32_t enable_tx_csum;
 static uint32_t enable_tso;
 
 static int client_mode;
-static int dequeue_zero_copy;
 
 static int builtin_net_driver;
+
+static int async_vhost_driver;
+
+static char *dma_type;
 
 /* Specify timeout (in useconds) between retries on RX. */
 static uint32_t burst_rx_delay_time = BURST_RX_WAIT_US;
@@ -161,7 +162,7 @@ const uint16_t vlan_tags[] = {
 };
 
 /* ethernet addresses of ports */
-static struct ether_addr vmdq_ports_eth_addr[RTE_MAX_ETHPORTS];
+static struct rte_ether_addr vmdq_ports_eth_addr[RTE_MAX_ETHPORTS];
 
 static struct vhost_dev_tailq_list vhost_dev_list =
 	TAILQ_HEAD_INITIALIZER(vhost_dev_list);
@@ -175,12 +176,34 @@ struct mbuf_table {
 	struct rte_mbuf *m_table[MAX_PKT_BURST];
 };
 
+struct vhost_bufftable {
+	uint32_t len;
+	uint64_t pre_tsc;
+	struct rte_mbuf *m_table[MAX_PKT_BURST];
+};
+
 /* TX queue for each data core. */
 struct mbuf_table lcore_tx_queue[RTE_MAX_LCORE];
+
+/*
+ * Vhost TX buffer for each data core.
+ * Every data core maintains a TX buffer for every vhost device,
+ * which is used for batch pkts enqueue for higher performance.
+ */
+struct vhost_bufftable *vhost_txbuff[RTE_MAX_LCORE * MAX_VHOST_DEVICE];
 
 #define MBUF_TABLE_DRAIN_TSC	((rte_get_tsc_hz() + US_PER_S - 1) \
 				 / US_PER_S * BURST_TX_DRAIN_US)
 #define VLAN_HLEN       4
+
+static inline int
+open_dma(const char *value)
+{
+	if (dma_type != NULL && strncmp(dma_type, "ioat", 4) == 0)
+		return open_ioat(value);
+
+	return -1;
+}
 
 /*
  * Builds up the correct configuration for VMDQ VLAN pool map
@@ -228,7 +251,14 @@ port_init(uint16_t port)
 	uint16_t q;
 
 	/* The max pool number from dev_info will be used to validate the pool number specified in cmd line */
-	rte_eth_dev_info_get (port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		RTE_LOG(ERR, VHOST_PORT,
+			"Error during getting device (port %u) info: %s\n",
+			port, strerror(-retval));
+
+		return retval;
+	}
 
 	rxconf = &dev_info.default_rxconf;
 	txconf = &dev_info.default_txconf;
@@ -239,16 +269,6 @@ port_init(uint16_t port)
 
 	rx_ring_size = RTE_TEST_RX_DESC_DEFAULT;
 	tx_ring_size = RTE_TEST_TX_DESC_DEFAULT;
-
-	/*
-	 * When dequeue zero copy is enabled, guest Tx used vring will be
-	 * updated only when corresponding mbuf is freed. Thus, the nb_tx_desc
-	 * (tx_ring_size here) must be small enough so that the driver will
-	 * hit the free threshold easily and free mbufs timely. Otherwise,
-	 * guest Tx vring would be starved.
-	 */
-	if (dequeue_zero_copy)
-		tx_ring_size = 64;
 
 	tx_rings = (uint16_t)rte_lcore_count();
 
@@ -329,10 +349,24 @@ port_init(uint16_t port)
 		return retval;
 	}
 
-	if (promiscuous)
-		rte_eth_promiscuous_enable(port);
+	if (promiscuous) {
+		retval = rte_eth_promiscuous_enable(port);
+		if (retval != 0) {
+			RTE_LOG(ERR, VHOST_PORT,
+				"Failed to enable promiscuous mode on port %u: %s\n",
+				port, rte_strerror(-retval));
+			return retval;
+		}
+	}
 
-	rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
+	retval = rte_eth_macaddr_get(port, &vmdq_ports_eth_addr[port]);
+	if (retval < 0) {
+		RTE_LOG(ERR, VHOST_PORT,
+			"Failed to get MAC address on port %u: %s\n",
+			port, rte_strerror(-retval));
+		return retval;
+	}
+
 	RTE_LOG(INFO, VHOST_PORT, "Max virtio devices supported: %u\n", num_devices);
 	RTE_LOG(INFO, VHOST_PORT, "Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
 			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",
@@ -366,7 +400,7 @@ us_vhost_parse_socket_path(const char *q_arg)
 		return -1;
 	}
 
-	snprintf(socket_files + nb_sockets * PATH_MAX, PATH_MAX, "%s", q_arg);
+	strlcpy(socket_files + nb_sockets * PATH_MAX, q_arg, PATH_MAX);
 	nb_sockets++;
 
 	return 0;
@@ -386,10 +420,7 @@ parse_portmask(const char *portmask)
 	/* parse hexadecimal string */
 	pm = strtoul(portmask, &end, 16);
 	if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0') || (errno != 0))
-		return -1;
-
-	if (pm == 0)
-		return -1;
+		return 0;
 
 	return pm;
 
@@ -440,9 +471,39 @@ us_vhost_usage(const char *prgname)
 	"		--tx-csum [0|1] disable/enable TX checksum offload.\n"
 	"		--tso [0|1] disable/enable TCP segment offload.\n"
 	"		--client register a vhost-user socket as client mode.\n"
-	"		--dequeue-zero-copy enables dequeue zero copy\n",
+	"		--dma-type register dma type for your vhost async driver. For example \"ioat\" for now.\n"
+	"		--dmas register dma channel for specific vhost device.\n",
 	       prgname);
 }
+
+enum {
+#define OPT_VM2VM               "vm2vm"
+	OPT_VM2VM_NUM = 256,
+#define OPT_RX_RETRY            "rx-retry"
+	OPT_RX_RETRY_NUM,
+#define OPT_RX_RETRY_DELAY      "rx-retry-delay"
+	OPT_RX_RETRY_DELAY_NUM,
+#define OPT_RX_RETRY_NUMB       "rx-retry-num"
+	OPT_RX_RETRY_NUMB_NUM,
+#define OPT_MERGEABLE           "mergeable"
+	OPT_MERGEABLE_NUM,
+#define OPT_STATS               "stats"
+	OPT_STATS_NUM,
+#define OPT_SOCKET_FILE         "socket-file"
+	OPT_SOCKET_FILE_NUM,
+#define OPT_TX_CSUM             "tx-csum"
+	OPT_TX_CSUM_NUM,
+#define OPT_TSO                 "tso"
+	OPT_TSO_NUM,
+#define OPT_CLIENT              "client"
+	OPT_CLIENT_NUM,
+#define OPT_BUILTIN_NET_DRIVER  "builtin-net-driver"
+	OPT_BUILTIN_NET_DRIVER_NUM,
+#define OPT_DMA_TYPE            "dma-type"
+	OPT_DMA_TYPE_NUM,
+#define OPT_DMAS                "dmas"
+	OPT_DMAS_NUM,
+};
 
 /*
  * Parse the arguments given in the command line of the application.
@@ -455,18 +516,32 @@ us_vhost_parse_args(int argc, char **argv)
 	unsigned i;
 	const char *prgname = argv[0];
 	static struct option long_option[] = {
-		{"vm2vm", required_argument, NULL, 0},
-		{"rx-retry", required_argument, NULL, 0},
-		{"rx-retry-delay", required_argument, NULL, 0},
-		{"rx-retry-num", required_argument, NULL, 0},
-		{"mergeable", required_argument, NULL, 0},
-		{"stats", required_argument, NULL, 0},
-		{"socket-file", required_argument, NULL, 0},
-		{"tx-csum", required_argument, NULL, 0},
-		{"tso", required_argument, NULL, 0},
-		{"client", no_argument, &client_mode, 1},
-		{"dequeue-zero-copy", no_argument, &dequeue_zero_copy, 1},
-		{"builtin-net-driver", no_argument, &builtin_net_driver, 1},
+		{OPT_VM2VM, required_argument,
+				NULL, OPT_VM2VM_NUM},
+		{OPT_RX_RETRY, required_argument,
+				NULL, OPT_RX_RETRY_NUM},
+		{OPT_RX_RETRY_DELAY, required_argument,
+				NULL, OPT_RX_RETRY_DELAY_NUM},
+		{OPT_RX_RETRY_NUMB, required_argument,
+				NULL, OPT_RX_RETRY_NUMB_NUM},
+		{OPT_MERGEABLE, required_argument,
+				NULL, OPT_MERGEABLE_NUM},
+		{OPT_STATS, required_argument,
+				NULL, OPT_STATS_NUM},
+		{OPT_SOCKET_FILE, required_argument,
+				NULL, OPT_SOCKET_FILE_NUM},
+		{OPT_TX_CSUM, required_argument,
+				NULL, OPT_TX_CSUM_NUM},
+		{OPT_TSO, required_argument,
+				NULL, OPT_TSO_NUM},
+		{OPT_CLIENT, no_argument,
+				NULL, OPT_CLIENT_NUM},
+		{OPT_BUILTIN_NET_DRIVER, no_argument,
+				NULL, OPT_BUILTIN_NET_DRIVER_NUM},
+		{OPT_DMA_TYPE, required_argument,
+				NULL, OPT_DMA_TYPE_NUM},
+		{OPT_DMAS, required_argument,
+				NULL, OPT_DMAS_NUM},
 		{NULL, 0, 0, 0},
 	};
 
@@ -489,129 +564,131 @@ us_vhost_parse_args(int argc, char **argv)
 			vmdq_conf_default.rx_adv_conf.vmdq_rx_conf.rx_mode =
 				ETH_VMDQ_ACCEPT_BROADCAST |
 				ETH_VMDQ_ACCEPT_MULTICAST;
-
 			break;
 
-		case 0:
-			/* Enable/disable vm2vm comms. */
-			if (!strncmp(long_option[option_index].name, "vm2vm",
-				MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, (VM2VM_LAST - 1));
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG,
-						"Invalid argument for "
-						"vm2vm [0|1|2]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					vm2vm_mode = (vm2vm_type)ret;
-				}
+		case OPT_VM2VM_NUM:
+			ret = parse_num_opt(optarg, (VM2VM_LAST - 1));
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG,
+					"Invalid argument for "
+					"vm2vm [0|1|2]\n");
+				us_vhost_usage(prgname);
+				return -1;
 			}
-
-			/* Enable/disable retries on RX. */
-			if (!strncmp(long_option[option_index].name, "rx-retry", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, 1);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry [0|1]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					enable_retry = ret;
-				}
-			}
-
-			/* Enable/disable TX checksum offload. */
-			if (!strncmp(long_option[option_index].name, "tx-csum", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, 1);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for tx-csum [0|1]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else
-					enable_tx_csum = ret;
-			}
-
-			/* Enable/disable TSO offload. */
-			if (!strncmp(long_option[option_index].name, "tso", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, 1);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for tso [0|1]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else
-					enable_tso = ret;
-			}
-
-			/* Specify the retries delay time (in useconds) on RX. */
-			if (!strncmp(long_option[option_index].name, "rx-retry-delay", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, INT32_MAX);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry-delay [0-N]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					burst_rx_delay_time = ret;
-				}
-			}
-
-			/* Specify the retries number on RX. */
-			if (!strncmp(long_option[option_index].name, "rx-retry-num", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, INT32_MAX);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry-num [0-N]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					burst_rx_retry_num = ret;
-				}
-			}
-
-			/* Enable/disable RX mergeable buffers. */
-			if (!strncmp(long_option[option_index].name, "mergeable", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, 1);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for mergeable [0|1]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					mergeable = !!ret;
-					if (ret) {
-						vmdq_conf_default.rxmode.offloads |=
-							DEV_RX_OFFLOAD_JUMBO_FRAME;
-						vmdq_conf_default.rxmode.max_rx_pkt_len
-							= JUMBO_FRAME_MAX_SIZE;
-					}
-				}
-			}
-
-			/* Enable/disable stats. */
-			if (!strncmp(long_option[option_index].name, "stats", MAX_LONG_OPT_SZ)) {
-				ret = parse_num_opt(optarg, INT32_MAX);
-				if (ret == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG,
-						"Invalid argument for stats [0..N]\n");
-					us_vhost_usage(prgname);
-					return -1;
-				} else {
-					enable_stats = ret;
-				}
-			}
-
-			/* Set socket file path. */
-			if (!strncmp(long_option[option_index].name,
-						"socket-file", MAX_LONG_OPT_SZ)) {
-				if (us_vhost_parse_socket_path(optarg) == -1) {
-					RTE_LOG(INFO, VHOST_CONFIG,
-					"Invalid argument for socket name (Max %d characters)\n",
-					PATH_MAX);
-					us_vhost_usage(prgname);
-					return -1;
-				}
-			}
-
+			vm2vm_mode = (vm2vm_type)ret;
 			break;
 
-			/* Invalid option - print options. */
+		case OPT_RX_RETRY_NUM:
+			ret = parse_num_opt(optarg, 1);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry [0|1]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			enable_retry = ret;
+			break;
+
+		case OPT_TX_CSUM_NUM:
+			ret = parse_num_opt(optarg, 1);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for tx-csum [0|1]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			enable_tx_csum = ret;
+			break;
+
+		case OPT_TSO_NUM:
+			ret = parse_num_opt(optarg, 1);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for tso [0|1]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			enable_tso = ret;
+			break;
+
+		case OPT_RX_RETRY_DELAY_NUM:
+			ret = parse_num_opt(optarg, INT32_MAX);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry-delay [0-N]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			burst_rx_delay_time = ret;
+			break;
+
+		case OPT_RX_RETRY_NUMB_NUM:
+			ret = parse_num_opt(optarg, INT32_MAX);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for rx-retry-num [0-N]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			burst_rx_retry_num = ret;
+			break;
+
+		case OPT_MERGEABLE_NUM:
+			ret = parse_num_opt(optarg, 1);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG, "Invalid argument for mergeable [0|1]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			mergeable = !!ret;
+			if (ret) {
+				vmdq_conf_default.rxmode.offloads |=
+					DEV_RX_OFFLOAD_JUMBO_FRAME;
+				vmdq_conf_default.rxmode.max_rx_pkt_len
+					= JUMBO_FRAME_MAX_SIZE;
+			}
+			break;
+
+		case OPT_STATS_NUM:
+			ret = parse_num_opt(optarg, INT32_MAX);
+			if (ret == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG,
+					"Invalid argument for stats [0..N]\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			enable_stats = ret;
+			break;
+
+		/* Set socket file path. */
+		case OPT_SOCKET_FILE_NUM:
+			if (us_vhost_parse_socket_path(optarg) == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG,
+				"Invalid argument for socket name (Max %d characters)\n",
+				PATH_MAX);
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			break;
+
+		case OPT_DMA_TYPE_NUM:
+			dma_type = optarg;
+			break;
+
+		case OPT_DMAS_NUM:
+			if (open_dma(optarg) == -1) {
+				RTE_LOG(INFO, VHOST_CONFIG,
+					"Wrong DMA args\n");
+				us_vhost_usage(prgname);
+				return -1;
+			}
+			async_vhost_driver = 1;
+			break;
+
+		case OPT_CLIENT_NUM:
+			client_mode = 1;
+			break;
+
+		case OPT_BUILTIN_NET_DRIVER_NUM:
+			builtin_net_driver = 1;
+			break;
+
+		/* Invalid option - print options. */
 		default:
 			us_vhost_usage(prgname);
 			return -1;
@@ -660,13 +737,13 @@ static unsigned check_ports_num(unsigned nb_ports)
 }
 
 static __rte_always_inline struct vhost_dev *
-find_vhost_dev(struct ether_addr *mac)
+find_vhost_dev(struct rte_ether_addr *mac)
 {
 	struct vhost_dev *vdev;
 
 	TAILQ_FOREACH(vdev, &vhost_dev_list, global_vdev_entry) {
 		if (vdev->ready == DEVICE_RX &&
-		    is_same_ether_addr(mac, &vdev->mac_address))
+		    rte_is_same_ether_addr(mac, &vdev->mac_address))
 			return vdev;
 	}
 
@@ -680,11 +757,11 @@ find_vhost_dev(struct ether_addr *mac)
 static int
 link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 {
-	struct ether_hdr *pkt_hdr;
+	struct rte_ether_hdr *pkt_hdr;
 	int i, ret;
 
 	/* Learn MAC address of guest device from packet */
-	pkt_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+	pkt_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
 	if (find_vhost_dev(&pkt_hdr->s_addr)) {
 		RTE_LOG(ERR, VHOST_DATA,
@@ -693,7 +770,7 @@ link_vmdq(struct vhost_dev *vdev, struct rte_mbuf *m)
 		return -1;
 	}
 
-	for (i = 0; i < ETHER_ADDR_LEN; i++)
+	for (i = 0; i < RTE_ETHER_ADDR_LEN; i++)
 		vdev->mac_address.addr_bytes[i] = pkt_hdr->s_addr.addr_bytes[i];
 
 	/* vlan_tag currently uses the device_id. */
@@ -759,8 +836,30 @@ unlink_vmdq(struct vhost_dev *vdev)
 	}
 }
 
+static inline void
+free_pkts(struct rte_mbuf **pkts, uint16_t n)
+{
+	while (n--)
+		rte_pktmbuf_free(pkts[n]);
+}
+
 static __rte_always_inline void
-virtio_xmit(struct vhost_dev *dst_vdev, struct vhost_dev *src_vdev,
+complete_async_pkts(struct vhost_dev *vdev)
+{
+	struct rte_mbuf *p_cpl[MAX_PKT_BURST];
+	uint16_t complete_count;
+
+	complete_count = rte_vhost_poll_enqueue_completed(vdev->vid,
+					VIRTIO_RXQ, p_cpl, MAX_PKT_BURST);
+	if (complete_count) {
+		free_pkts(p_cpl, complete_count);
+		__atomic_sub_fetch(&vdev->pkts_inflight, complete_count, __ATOMIC_SEQ_CST);
+	}
+
+}
+
+static __rte_always_inline void
+sync_virtio_xmit(struct vhost_dev *dst_vdev, struct vhost_dev *src_vdev,
 	    struct rte_mbuf *m)
 {
 	uint16_t ret;
@@ -772,10 +871,79 @@ virtio_xmit(struct vhost_dev *dst_vdev, struct vhost_dev *src_vdev,
 	}
 
 	if (enable_stats) {
-		rte_atomic64_inc(&dst_vdev->stats.rx_total_atomic);
-		rte_atomic64_add(&dst_vdev->stats.rx_atomic, ret);
+		__atomic_add_fetch(&dst_vdev->stats.rx_total_atomic, 1,
+				__ATOMIC_SEQ_CST);
+		__atomic_add_fetch(&dst_vdev->stats.rx_atomic, ret,
+				__ATOMIC_SEQ_CST);
 		src_vdev->stats.tx_total++;
 		src_vdev->stats.tx += ret;
+	}
+}
+
+static __rte_always_inline void
+drain_vhost(struct vhost_dev *vdev)
+{
+	uint16_t ret;
+	uint32_t buff_idx = rte_lcore_id() * MAX_VHOST_DEVICE + vdev->vid;
+	uint16_t nr_xmit = vhost_txbuff[buff_idx]->len;
+	struct rte_mbuf **m = vhost_txbuff[buff_idx]->m_table;
+
+	if (builtin_net_driver) {
+		ret = vs_enqueue_pkts(vdev, VIRTIO_RXQ, m, nr_xmit);
+	} else if (async_vhost_driver) {
+		uint32_t cpu_cpl_nr = 0;
+		uint16_t enqueue_fail = 0;
+		struct rte_mbuf *m_cpu_cpl[nr_xmit];
+
+		complete_async_pkts(vdev);
+		ret = rte_vhost_submit_enqueue_burst(vdev->vid, VIRTIO_RXQ,
+					m, nr_xmit, m_cpu_cpl, &cpu_cpl_nr);
+		__atomic_add_fetch(&vdev->pkts_inflight, ret - cpu_cpl_nr, __ATOMIC_SEQ_CST);
+
+		if (cpu_cpl_nr)
+			free_pkts(m_cpu_cpl, cpu_cpl_nr);
+
+		enqueue_fail = nr_xmit - ret;
+		if (enqueue_fail)
+			free_pkts(&m[ret], nr_xmit - ret);
+	} else {
+		ret = rte_vhost_enqueue_burst(vdev->vid, VIRTIO_RXQ,
+						m, nr_xmit);
+	}
+
+	if (enable_stats) {
+		__atomic_add_fetch(&vdev->stats.rx_total_atomic, nr_xmit,
+				__ATOMIC_SEQ_CST);
+		__atomic_add_fetch(&vdev->stats.rx_atomic, ret,
+				__ATOMIC_SEQ_CST);
+	}
+
+	if (!async_vhost_driver)
+		free_pkts(m, nr_xmit);
+}
+
+static __rte_always_inline void
+drain_vhost_table(void)
+{
+	uint16_t lcore_id = rte_lcore_id();
+	struct vhost_bufftable *vhost_txq;
+	struct vhost_dev *vdev;
+	uint64_t cur_tsc;
+
+	TAILQ_FOREACH(vdev, &vhost_dev_list, global_vdev_entry) {
+		vhost_txq = vhost_txbuff[lcore_id * MAX_VHOST_DEVICE
+						+ vdev->vid];
+
+		cur_tsc = rte_rdtsc();
+		if (unlikely(cur_tsc - vhost_txq->pre_tsc
+				> MBUF_TABLE_DRAIN_TSC)) {
+			RTE_LOG_DP(DEBUG, VHOST_DATA,
+				"Vhost TX queue drained after timeout with burst size %u\n",
+				vhost_txq->len);
+			drain_vhost(vdev);
+			vhost_txq->len = 0;
+			vhost_txq->pre_tsc = cur_tsc;
+		}
 	}
 }
 
@@ -786,10 +954,11 @@ virtio_xmit(struct vhost_dev *dst_vdev, struct vhost_dev *src_vdev,
 static __rte_always_inline int
 virtio_tx_local(struct vhost_dev *vdev, struct rte_mbuf *m)
 {
-	struct ether_hdr *pkt_hdr;
+	struct rte_ether_hdr *pkt_hdr;
 	struct vhost_dev *dst_vdev;
-
-	pkt_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+	struct vhost_bufftable *vhost_txq;
+	uint16_t lcore_id = rte_lcore_id();
+	pkt_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
 	dst_vdev = find_vhost_dev(&pkt_hdr->d_addr);
 	if (!dst_vdev)
@@ -811,7 +980,19 @@ virtio_tx_local(struct vhost_dev *vdev, struct rte_mbuf *m)
 		return 0;
 	}
 
-	virtio_xmit(dst_vdev, vdev, m);
+	vhost_txq = vhost_txbuff[lcore_id * MAX_VHOST_DEVICE + dst_vdev->vid];
+	vhost_txq->m_table[vhost_txq->len++] = m;
+
+	if (enable_stats) {
+		vdev->stats.tx_total++;
+		vdev->stats.tx++;
+	}
+
+	if (unlikely(vhost_txq->len == MAX_PKT_BURST)) {
+		drain_vhost(dst_vdev);
+		vhost_txq->len = 0;
+		vhost_txq->pre_tsc = rte_rdtsc();
+	}
 	return 0;
 }
 
@@ -824,7 +1005,8 @@ find_local_dest(struct vhost_dev *vdev, struct rte_mbuf *m,
 	uint32_t *offset, uint16_t *vlan_tag)
 {
 	struct vhost_dev *dst_vdev;
-	struct ether_hdr *pkt_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+	struct rte_ether_hdr *pkt_hdr =
+		rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
 	dst_vdev = find_vhost_dev(&pkt_hdr->d_addr);
 	if (!dst_vdev)
@@ -852,39 +1034,34 @@ find_local_dest(struct vhost_dev *vdev, struct rte_mbuf *m,
 	return 0;
 }
 
-static uint16_t
-get_psd_sum(void *l3_hdr, uint64_t ol_flags)
-{
-	if (ol_flags & PKT_TX_IPV4)
-		return rte_ipv4_phdr_cksum(l3_hdr, ol_flags);
-	else /* assume ethertype == ETHER_TYPE_IPv6 */
-		return rte_ipv6_phdr_cksum(l3_hdr, ol_flags);
-}
-
 static void virtio_tx_offload(struct rte_mbuf *m)
 {
+	struct rte_net_hdr_lens hdr_lens;
+	struct rte_ipv4_hdr *ipv4_hdr;
+	struct rte_tcp_hdr *tcp_hdr;
+	uint32_t ptype;
 	void *l3_hdr;
-	struct ipv4_hdr *ipv4_hdr = NULL;
-	struct tcp_hdr *tcp_hdr = NULL;
-	struct ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
 
-	l3_hdr = (char *)eth_hdr + m->l2_len;
+	ptype = rte_net_get_ptype(m, &hdr_lens, RTE_PTYPE_ALL_MASK);
+	m->l2_len = hdr_lens.l2_len;
+	m->l3_len = hdr_lens.l3_len;
+	m->l4_len = hdr_lens.l4_len;
 
-	if (m->ol_flags & PKT_TX_IPV4) {
+	l3_hdr = rte_pktmbuf_mtod_offset(m, void *, m->l2_len);
+	tcp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_tcp_hdr *,
+		m->l2_len + m->l3_len);
+
+	m->ol_flags |= PKT_TX_TCP_SEG;
+	if ((ptype & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) {
+		m->ol_flags |= PKT_TX_IPV4;
+		m->ol_flags |= PKT_TX_IP_CKSUM;
 		ipv4_hdr = l3_hdr;
 		ipv4_hdr->hdr_checksum = 0;
-		m->ol_flags |= PKT_TX_IP_CKSUM;
+		tcp_hdr->cksum = rte_ipv4_phdr_cksum(l3_hdr, m->ol_flags);
+	} else { /* assume ethertype == RTE_ETHER_TYPE_IPV6 */
+		m->ol_flags |= PKT_TX_IPV6;
+		tcp_hdr->cksum = rte_ipv6_phdr_cksum(l3_hdr, m->ol_flags);
 	}
-
-	tcp_hdr = (struct tcp_hdr *)((char *)l3_hdr + m->l3_len);
-	tcp_hdr->cksum = get_psd_sum(l3_hdr, m->ol_flags);
-}
-
-static inline void
-free_pkts(struct rte_mbuf **pkts, uint16_t n)
-{
-	while (n--)
-		rte_pktmbuf_free(pkts[n]);
 }
 
 static __rte_always_inline void
@@ -910,25 +1087,23 @@ virtio_tx_route(struct vhost_dev *vdev, struct rte_mbuf *m, uint16_t vlan_tag)
 	struct mbuf_table *tx_q;
 	unsigned offset = 0;
 	const uint16_t lcore_id = rte_lcore_id();
-	struct ether_hdr *nh;
+	struct rte_ether_hdr *nh;
 
 
-	nh = rte_pktmbuf_mtod(m, struct ether_hdr *);
-	if (unlikely(is_broadcast_ether_addr(&nh->d_addr))) {
+	nh = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+	if (unlikely(rte_is_broadcast_ether_addr(&nh->d_addr))) {
 		struct vhost_dev *vdev2;
 
 		TAILQ_FOREACH(vdev2, &vhost_dev_list, global_vdev_entry) {
 			if (vdev2 != vdev)
-				virtio_xmit(vdev2, vdev, m);
+				sync_virtio_xmit(vdev2, vdev, m);
 		}
 		goto queue2nic;
 	}
 
 	/*check if destination is local VM*/
-	if ((vm2vm_mode == VM2VM_SOFTWARE) && (virtio_tx_local(vdev, m) == 0)) {
-		rte_pktmbuf_free(m);
+	if ((vm2vm_mode == VM2VM_SOFTWARE) && (virtio_tx_local(vdev, m) == 0))
 		return;
-	}
 
 	if (unlikely(vm2vm_mode == VM2VM_HARDWARE)) {
 		if (unlikely(find_local_dest(vdev, m, &offset,
@@ -946,10 +1121,10 @@ queue2nic:
 	/*Add packet to the port tx queue*/
 	tx_q = &lcore_tx_queue[lcore_id];
 
-	nh = rte_pktmbuf_mtod(m, struct ether_hdr *);
-	if (unlikely(nh->ether_type == rte_cpu_to_be_16(ETHER_TYPE_VLAN))) {
+	nh = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+	if (unlikely(nh->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN))) {
 		/* Guest has inserted the vlan tag. */
-		struct vlan_hdr *vh = (struct vlan_hdr *) (nh + 1);
+		struct rte_vlan_hdr *vh = (struct rte_vlan_hdr *) (nh + 1);
 		uint16_t vlan_tag_be = rte_cpu_to_be_16(vlan_tag);
 		if ((vm2vm_mode == VM2VM_HARDWARE) &&
 			(vh->vlan_tci != vlan_tag_be))
@@ -979,7 +1154,7 @@ queue2nic:
 		m->vlan_tci = vlan_tag;
 	}
 
-	if (m->ol_flags & PKT_TX_TCP_SEG)
+	if (m->ol_flags & PKT_RX_LRO)
 		virtio_tx_offload(m);
 
 	tx_q->m_table[tx_q->len++] = m;
@@ -1021,6 +1196,7 @@ drain_eth_rx(struct vhost_dev *vdev)
 
 	rx_count = rte_eth_rx_burst(ports[0], vdev->vmdq_rx_q,
 				    pkts, MAX_PKT_BURST);
+
 	if (!rx_count)
 		return;
 
@@ -1045,16 +1221,39 @@ drain_eth_rx(struct vhost_dev *vdev)
 	if (builtin_net_driver) {
 		enqueue_count = vs_enqueue_pkts(vdev, VIRTIO_RXQ,
 						pkts, rx_count);
+	} else if (async_vhost_driver) {
+		uint32_t cpu_cpl_nr = 0;
+		uint16_t enqueue_fail = 0;
+		struct rte_mbuf *m_cpu_cpl[MAX_PKT_BURST];
+
+		complete_async_pkts(vdev);
+		enqueue_count = rte_vhost_submit_enqueue_burst(vdev->vid,
+					VIRTIO_RXQ, pkts, rx_count,
+					m_cpu_cpl, &cpu_cpl_nr);
+		__atomic_add_fetch(&vdev->pkts_inflight, enqueue_count - cpu_cpl_nr,
+					__ATOMIC_SEQ_CST);
+
+		if (cpu_cpl_nr)
+			free_pkts(m_cpu_cpl, cpu_cpl_nr);
+
+		enqueue_fail = rx_count - enqueue_count;
+		if (enqueue_fail)
+			free_pkts(&pkts[enqueue_count], enqueue_fail);
+
 	} else {
 		enqueue_count = rte_vhost_enqueue_burst(vdev->vid, VIRTIO_RXQ,
 						pkts, rx_count);
 	}
+
 	if (enable_stats) {
-		rte_atomic64_add(&vdev->stats.rx_total_atomic, rx_count);
-		rte_atomic64_add(&vdev->stats.rx_atomic, enqueue_count);
+		__atomic_add_fetch(&vdev->stats.rx_total_atomic, rx_count,
+				__ATOMIC_SEQ_CST);
+		__atomic_add_fetch(&vdev->stats.rx_atomic, enqueue_count,
+				__ATOMIC_SEQ_CST);
 	}
 
-	free_pkts(pkts, rx_count);
+	if (!async_vhost_driver)
+		free_pkts(pkts, rx_count);
 }
 
 static __rte_always_inline void
@@ -1119,7 +1318,7 @@ switch_worker(void *arg __rte_unused)
 
 	while(1) {
 		drain_mbuf_table(tx_q);
-
+		drain_vhost_table();
 		/*
 		 * Inform the configuration core that we have exited the
 		 * linked list and that no devices are in use if requested.
@@ -1160,6 +1359,7 @@ destroy_device(int vid)
 {
 	struct vhost_dev *vdev = NULL;
 	int lcore;
+	uint16_t i;
 
 	TAILQ_FOREACH(vdev, &vhost_dev_list, global_vdev_entry) {
 		if (vdev->vid == vid)
@@ -1173,6 +1373,9 @@ destroy_device(int vid)
 		rte_pause();
 	}
 
+	for (i = 0; i < RTE_MAX_LCORE; i++)
+		rte_free(vhost_txbuff[i * MAX_VHOST_DEVICE + vid]);
+
 	if (builtin_net_driver)
 		vs_vhost_net_remove(vdev);
 
@@ -1182,7 +1385,7 @@ destroy_device(int vid)
 
 
 	/* Set the dev_removal_flag on each lcore. */
-	RTE_LCORE_FOREACH_SLAVE(lcore)
+	RTE_LCORE_FOREACH_WORKER(lcore)
 		lcore_info[lcore].dev_removal_flag = REQUEST_DEV_REMOVAL;
 
 	/*
@@ -1190,7 +1393,7 @@ destroy_device(int vid)
 	 * we can be sure that they can no longer access the device removed
 	 * from the linked lists and that the devices are no longer in use.
 	 */
-	RTE_LCORE_FOREACH_SLAVE(lcore) {
+	RTE_LCORE_FOREACH_WORKER(lcore) {
 		while (lcore_info[lcore].dev_removal_flag != ACK_DEV_REMOVAL)
 			rte_pause();
 	}
@@ -1200,6 +1403,20 @@ destroy_device(int vid)
 	RTE_LOG(INFO, VHOST_DATA,
 		"(%d) device has been removed from data core\n",
 		vdev->vid);
+
+	if (async_vhost_driver) {
+		uint16_t n_pkt = 0;
+		struct rte_mbuf *m_cpl[vdev->pkts_inflight];
+
+		while (vdev->pkts_inflight) {
+			n_pkt = rte_vhost_clear_queue_thread_unsafe(vid, VIRTIO_RXQ,
+						m_cpl, vdev->pkts_inflight);
+			free_pkts(m_cpl, n_pkt);
+			__atomic_sub_fetch(&vdev->pkts_inflight, n_pkt, __ATOMIC_SEQ_CST);
+		}
+
+		rte_vhost_async_channel_unregister(vid, VIRTIO_RXQ);
+	}
 
 	rte_free(vdev);
 }
@@ -1212,9 +1429,9 @@ static int
 new_device(int vid)
 {
 	int lcore, core_add = 0;
+	uint16_t i;
 	uint32_t device_num_min = num_devices;
 	struct vhost_dev *vdev;
-
 	vdev = rte_zmalloc("vhost device", sizeof(*vdev), RTE_CACHE_LINE_SIZE);
 	if (vdev == NULL) {
 		RTE_LOG(INFO, VHOST_DATA,
@@ -1223,6 +1440,19 @@ new_device(int vid)
 		return -1;
 	}
 	vdev->vid = vid;
+
+	for (i = 0; i < RTE_MAX_LCORE; i++) {
+		vhost_txbuff[i * MAX_VHOST_DEVICE + vid]
+			= rte_zmalloc("vhost bufftable",
+				sizeof(struct vhost_bufftable),
+				RTE_CACHE_LINE_SIZE);
+
+		if (vhost_txbuff[i * MAX_VHOST_DEVICE + vid] == NULL) {
+			RTE_LOG(INFO, VHOST_DATA,
+			  "(%d) couldn't allocate memory for vhost TX\n", vid);
+			return -1;
+		}
+	}
 
 	if (builtin_net_driver)
 		vs_vhost_net_setup(vdev);
@@ -1235,7 +1465,7 @@ new_device(int vid)
 	vdev->remove = 0;
 
 	/* Find a suitable lcore to add the device. */
-	RTE_LCORE_FOREACH_SLAVE(lcore) {
+	RTE_LCORE_FOREACH_WORKER(lcore) {
 		if (lcore_info[lcore].device_num < device_num_min) {
 			device_num_min = lcore_info[lcore].device_num;
 			core_add = lcore;
@@ -1255,6 +1485,55 @@ new_device(int vid)
 		"(%d) device has been added to data core %d\n",
 		vid, vdev->coreid);
 
+	if (async_vhost_driver) {
+		struct rte_vhost_async_config config = {0};
+		struct rte_vhost_async_channel_ops channel_ops;
+
+		if (dma_type != NULL && strncmp(dma_type, "ioat", 4) == 0) {
+			channel_ops.transfer_data = ioat_transfer_data_cb;
+			channel_ops.check_completed_copies =
+				ioat_check_completed_copies_cb;
+
+			config.features = RTE_VHOST_ASYNC_INORDER;
+			config.async_threshold = 256;
+
+			return rte_vhost_async_channel_register(vid, VIRTIO_RXQ,
+				config, &channel_ops);
+		}
+	}
+
+	return 0;
+}
+
+static int
+vring_state_changed(int vid, uint16_t queue_id, int enable)
+{
+	struct vhost_dev *vdev = NULL;
+
+	TAILQ_FOREACH(vdev, &vhost_dev_list, global_vdev_entry) {
+		if (vdev->vid == vid)
+			break;
+	}
+	if (!vdev)
+		return -1;
+
+	if (queue_id != VIRTIO_RXQ)
+		return 0;
+
+	if (async_vhost_driver) {
+		if (!enable) {
+			uint16_t n_pkt = 0;
+			struct rte_mbuf *m_cpl[vdev->pkts_inflight];
+
+			while (vdev->pkts_inflight) {
+				n_pkt = rte_vhost_clear_queue_thread_unsafe(vid, queue_id,
+							m_cpl, vdev->pkts_inflight);
+				free_pkts(m_cpl, n_pkt);
+				__atomic_sub_fetch(&vdev->pkts_inflight, n_pkt, __ATOMIC_SEQ_CST);
+			}
+		}
+	}
+
 	return 0;
 }
 
@@ -1266,6 +1545,7 @@ static const struct vhost_device_ops virtio_net_device_ops =
 {
 	.new_device =  new_device,
 	.destroy_device = destroy_device,
+	.vring_state_changed = vring_state_changed,
 };
 
 /*
@@ -1293,8 +1573,10 @@ print_stats(__rte_unused void *arg)
 			tx         = vdev->stats.tx;
 			tx_dropped = tx_total - tx;
 
-			rx_total   = rte_atomic64_read(&vdev->stats.rx_total_atomic);
-			rx         = rte_atomic64_read(&vdev->stats.rx_atomic);
+			rx_total = __atomic_load_n(&vdev->stats.rx_total_atomic,
+				__ATOMIC_SEQ_CST);
+			rx         = __atomic_load_n(&vdev->stats.rx_atomic,
+				__ATOMIC_SEQ_CST);
 			rx_dropped = rx_total - rx;
 
 			printf("Statistics for device %d\n"
@@ -1311,6 +1593,8 @@ print_stats(__rte_unused void *arg)
 		}
 
 		printf("===================================================\n");
+
+		fflush(stdout);
 	}
 
 	return NULL;
@@ -1402,7 +1686,7 @@ main(int argc, char *argv[])
 	int ret, i;
 	uint16_t portid;
 	static pthread_t tid;
-	uint64_t flags = 0;
+	uint64_t flags = RTE_VHOST_USER_NET_COMPLIANT_OL_FLAGS;
 
 	signal(SIGINT, sigint_handler);
 
@@ -1482,18 +1766,19 @@ main(int argc, char *argv[])
 	}
 
 	/* Launch all data cores. */
-	RTE_LCORE_FOREACH_SLAVE(lcore_id)
+	RTE_LCORE_FOREACH_WORKER(lcore_id)
 		rte_eal_remote_launch(switch_worker, NULL, lcore_id);
 
 	if (client_mode)
 		flags |= RTE_VHOST_USER_CLIENT;
 
-	if (dequeue_zero_copy)
-		flags |= RTE_VHOST_USER_DEQUEUE_ZERO_COPY;
-
 	/* Register vhost user driver to handle vhost messages. */
 	for (i = 0; i < nb_sockets; i++) {
 		char *file = socket_files + i * PATH_MAX;
+
+		if (async_vhost_driver)
+			flags = flags | RTE_VHOST_USER_ASYNC_COPY;
+
 		ret = rte_vhost_driver_register(file, flags);
 		if (ret != 0) {
 			unregister_drivers(i);
@@ -1543,9 +1828,11 @@ main(int argc, char *argv[])
 		}
 	}
 
-	RTE_LCORE_FOREACH_SLAVE(lcore_id)
+	RTE_LCORE_FOREACH_WORKER(lcore_id)
 		rte_eal_wait_lcore(lcore_id);
 
-	return 0;
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
+	return 0;
 }

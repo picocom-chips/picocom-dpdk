@@ -118,8 +118,8 @@ HPET timers do not work on the Osage customer reference platform
    On Osage boards, the implementation of the ``rte_delay_us()`` function must be changed to not use the HPET timer.
 
 **Resolution/Workaround**:
-   This can be addressed by building the system with the ``CONFIG_RTE_LIBEAL_USE_HPET=n``
-   configuration option or by using the ``--no-hpet`` EAL option.
+   This can be addressed by building the system with ``RTE_LIBEAL_USE_HPET`` unset
+   or by using the ``--no-hpet`` EAL option.
 
 **Affected Environment/Platform**:
    The Osage customer reference platform.
@@ -127,7 +127,7 @@ HPET timers do not work on the Osage customer reference platform
    work correctly, provided the BIOS supports HPET.
 
 **Driver/Module**:
-   ``lib/librte_eal/common/include/rte_cycles.h``
+   ``lib/eal/include/rte_cycles.h``
 
 
 Not all variants of supported NIC types have been used in testing
@@ -419,7 +419,7 @@ Binding PCI devices to igb_uio fails on Linux kernel 3.9 when more than one devi
 ------------------------------------------------------------------------------------------
 
 **Description**:
-   A known bug in the uio driver included in Linux kernel version 3.9 prevents more than one PCI device to be
+   A known bug in the UIO driver included in Linux kernel version 3.9 prevents more than one PCI device to be
    bound to the igb_uio driver.
 
 **Implication**:
@@ -614,7 +614,7 @@ I40e VF may not receive packets in the promiscuous mode
    Poll Mode Driver (PMD).
 
 
-uio pci generic module bind failed in X710/XL710/XXV710
+uio_pci_generic module bind failed in X710/XL710/XXV710
 -------------------------------------------------------
 
 **Description**:
@@ -671,12 +671,12 @@ virtio tx_burst() function cannot do TSO on shared packets
    Poll Mode Driver (PMD).
 
 
-igb uio legacy mode can not be used in X710/XL710/XXV710
+igb_uio legacy mode can not be used in X710/XL710/XXV710
 --------------------------------------------------------
 
 **Description**:
    X710/XL710/XXV710 NICs lack support for indicating INTx is asserted via the interrupt
-   bit in the PCI status register. Linux delected them from INTx support table. The related
+   bit in the PCI status register. Linux deleted them from INTx support table. The related
    `commit <https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/commit/drivers/pci/quirks.c?id=8bcf4525c5d43306c5fd07e132bc8650e3491aec>`_.
 
 **Implication**:
@@ -722,9 +722,9 @@ Linux kernel 4.10.0 iommu attribute read error
 **Description**:
    When VT-d is enabled (``iommu=pt intel_iommu=on``), reading IOMMU attributes from
    /sys/devices/virtual/iommu/dmarXXX/intel-iommu/cap on Linux kernel 4.10.0 error.
-   This bug is fixed in `Linux commmit a7fdb6e648fb
+   This bug is fixed in `Linux commit a7fdb6e648fb
    <https://patchwork.kernel.org/patch/9595727/>`_,
-   This bug is introduced in `Linux commmit 39ab9555c241
+   This bug is introduced in `Linux commit 39ab9555c241
    <https://patchwork.kernel.org/patch/9554403/>`_,
 
 **Implication**:
@@ -752,7 +752,7 @@ Netvsc driver and application restart
    handshake sequence with the host.
 
 **Resolution/Workaround**:
-   Either reboot the guest or remove and reinsert the hv_uio_generic module.
+   Either reboot the guest or remove and reinsert the uio_hv_generic module.
 
 **Affected Environment/Platform**:
    Linux Hyper-V.
@@ -816,7 +816,7 @@ Kernel crash when hot-unplug igb_uio device while DPDK application is running
 
 **Reason**:
    When device is hot-unplugged, igb_uio driver will be removed which will destroy UIO resources.
-   Later trying to access any uio resource will cause kernel crash.
+   Later trying to access any UIO resource will cause kernel crash.
 
 **Resolution/Workaround**:
    If using DPDK for PCI HW hot-unplug, prefer to bind device with VFIO instead of IGB_UIO.
@@ -833,16 +833,12 @@ AVX-512 support disabled
 
 **Description**:
    ``AVX-512`` support has been disabled on some conditions.
-   This shouldn't be confused with ``CONFIG_RTE_ENABLE_AVX512`` config option which is already
-   disabled by default. This config option defines if ``AVX-512`` specific implementations of
-   some file to be used or not. What has been disabled is compiler feature to produce ``AVX-512``
-   instructions from any source code.
 
    On DPDK v18.11 ``AVX-512`` is disabled for all ``GCC`` builds which reported to cause a performance
    drop.
 
    On DPDK v19.02 ``AVX-512`` disable scope is reduced to ``GCC`` and ``binutils version 2.30`` based
-   on information accured from the GCC community defect.
+   on information accrued from the GCC community defect.
 
 **Reason**:
    Generated ``AVX-512`` code cause crash:
@@ -861,3 +857,51 @@ AVX-512 support disabled
 
 **Driver/Module**:
     ALL.
+
+
+Unsuitable IOVA mode may be picked as the default
+-------------------------------------------------
+
+**Description**
+   Not all kernel drivers and not all devices support all IOVA modes. EAL will
+   attempt to pick a reasonable default based on a number of factors, but there
+   may be cases where the default may be unsuitable (for example, hotplugging
+   devices using `igb_uio` driver while having picked IOVA as VA mode on EAL
+   initialization).
+
+**Implication**
+   Some devices (hotplugged or otherwise) may not work due to incompatible IOVA
+   mode being automatically picked by EAL.
+
+**Resolution/Workaround**:
+   It is possible to force EAL to pick a particular IOVA mode by using the
+   `--iova-mode` command-line parameter. If conflicting requirements are present
+   (such as one device requiring IOVA as PA and one requiring IOVA as VA mode),
+   there is no workaround.
+
+**Affected Environment/Platform**:
+   Linux.
+
+**Driver/Module**:
+   ALL.
+
+Vhost multi-queue reconnection failed with QEMU version >= 4.2.0
+----------------------------------------------------------------
+
+**Description**
+   It's a QEMU regression bug (bad commit: c6beefd674ff). QEMU only saves
+   acked features for one vhost-net when vhost quits. When vhost reconnects
+   to virtio-net/virtio-pmd in multi-queue situations, the features been
+   set multiple times are not consistent.
+
+**Implication**
+   Vhost cannot reconnect back to virtio-net/virtio-pmd normally.
+
+**Resolution/Workaround**:
+   It is possible to filter the incorrect acked features at vhost-user side.
+
+**Affected Environment/Platform**:
+   ALL.
+
+**Driver/Module**:
+   Virtual Device Poll Mode Driver (PMD).

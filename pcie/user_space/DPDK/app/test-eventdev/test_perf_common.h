@@ -91,14 +91,19 @@ struct perf_elt {
 		printf("%s(): lcore %d dev_id %d port=%d\n", __func__,\
 				rte_lcore_id(), dev, port)
 
-static inline __attribute__((always_inline)) int
+static __rte_always_inline int
 perf_process_last_stage(struct rte_mempool *const pool,
 		struct rte_event *const ev, struct worker_data *const w,
 		void *bufs[], int const buf_sz, uint8_t count)
 {
 	bufs[count++] = ev->event_ptr;
+
+	/* release fence here ensures event_prt is
+	 * stored before updating the number of
+	 * processed packets for worker lcores
+	 */
+	rte_atomic_thread_fence(__ATOMIC_RELEASE);
 	w->processed_pkts++;
-	rte_smp_wmb();
 
 	if (unlikely(count == buf_sz)) {
 		count = 0;
@@ -107,7 +112,7 @@ perf_process_last_stage(struct rte_mempool *const pool,
 	return count;
 }
 
-static inline __attribute__((always_inline)) uint8_t
+static __rte_always_inline uint8_t
 perf_process_last_stage_latency(struct rte_mempool *const pool,
 		struct rte_event *const ev, struct worker_data *const w,
 		void *bufs[], int const buf_sz, uint8_t count)
@@ -116,6 +121,12 @@ perf_process_last_stage_latency(struct rte_mempool *const pool,
 	struct perf_elt *const m = ev->event_ptr;
 
 	bufs[count++] = ev->event_ptr;
+
+	/* release fence here ensures event_prt is
+	 * stored before updating the number of
+	 * processed packets for worker lcores
+	 */
+	rte_atomic_thread_fence(__ATOMIC_RELEASE);
 	w->processed_pkts++;
 
 	if (unlikely(count == buf_sz)) {
@@ -127,7 +138,6 @@ perf_process_last_stage_latency(struct rte_mempool *const pool,
 	}
 
 	w->latency += latency;
-	rte_smp_wmb();
 	return count;
 }
 

@@ -6,17 +6,13 @@
 #define __THUNDERX_NICVF_RXTX_H__
 
 #include <rte_byteorder.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 
 #define NICVF_RX_OFFLOAD_NONE           0x1
 #define NICVF_RX_OFFLOAD_CKSUM          0x2
 #define NICVF_RX_OFFLOAD_VLAN_STRIP     0x4
 
 #define NICVF_TX_OFFLOAD_MASK (PKT_TX_IP_CKSUM | PKT_TX_L4_MASK)
-
-#ifndef __hot
-#define __hot	__attribute__((hot))
-#endif
 
 #if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
 static inline uint16_t __attribute__((const))
@@ -25,7 +21,7 @@ nicvf_frag_num(uint16_t i)
 	return (i & ~3) + 3 - (i & 3);
 }
 
-static inline void __hot
+static inline void __rte_hot
 fill_sq_desc_gather(union sq_entry_t *entry, struct rte_mbuf *pkt)
 {
 	/* Local variable sqe to avoid read from sq desc memory*/
@@ -50,7 +46,7 @@ nicvf_frag_num(uint16_t i)
 	return i;
 }
 
-static inline void __hot
+static inline void __rte_hot
 fill_sq_desc_gather(union sq_entry_t *entry, struct rte_mbuf *pkt)
 {
 	entry->buff[0] = (uint64_t)SQ_DESC_TYPE_GATHER << 60 |

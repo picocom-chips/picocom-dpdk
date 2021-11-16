@@ -115,11 +115,6 @@
 extern int otx_logtype_timvf;
 static const uint16_t nb_chunk_slots = (TIM_CHUNK_SIZE / 16) - 1;
 
-struct timvf_info {
-	uint16_t domain; /* Domain id */
-	uint8_t total_timvfs; /* Total timvf available in domain */
-};
-
 enum timvf_clk_src {
 	TIM_CLK_SRC_SCLK = RTE_EVENT_TIMER_ADAPTER_CPU_CLK,
 	TIM_CLK_SRC_GPIO = RTE_EVENT_TIMER_ADAPTER_EXT_CLK0,
@@ -180,6 +175,7 @@ struct timvf_ring {
 	void *bkt_pos;
 	uint64_t max_tout;
 	uint64_t nb_chunks;
+	uint64_t nb_timers;
 	enum timvf_clk_src clk_src;
 	uint16_t tim_ring_id;
 } __rte_cache_aligned;
@@ -196,7 +192,8 @@ bkt_and(uint32_t rel_bkt, uint32_t nb_bkts)
 	return rel_bkt & (nb_bkts - 1);
 }
 
-int timvf_info(struct timvf_info *tinfo);
+uint8_t timvf_get_ring(void);
+void timvf_release_ring(uint8_t vfid);
 void *timvf_bar(uint8_t id, uint8_t bar);
 int timvf_timer_adapter_caps_get(const struct rte_eventdev *dev, uint64_t flags,
 		uint32_t *caps, const struct rte_event_timer_adapter_ops **ops,
@@ -221,5 +218,6 @@ uint16_t timvf_timer_arm_tmo_brst_stats(
 		struct rte_event_timer **tim, const uint64_t timeout_tick,
 		const uint16_t nb_timers);
 void timvf_set_chunk_refill(struct timvf_ring * const timr, uint8_t use_fpa);
+void timvf_set_eventdevice(struct rte_eventdev *dev);
 
 #endif /* __TIMVF_EVDEV_H__ */

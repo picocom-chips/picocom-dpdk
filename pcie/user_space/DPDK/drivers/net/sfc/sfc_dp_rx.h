@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright (c) 2017-2018 Solarflare Communications Inc.
- * All rights reserved.
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2017-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -11,7 +11,7 @@
 #define _SFC_DP_RX_H
 
 #include <rte_mempool.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 
 #include "sfc_dp.h"
 
@@ -26,6 +26,14 @@ extern "C" {
  */
 struct sfc_dp_rxq {
 	struct sfc_dp_queue	dpq;
+};
+
+/** Datapath receive queue descriptor number limitations */
+struct sfc_dp_rx_hw_limits {
+	unsigned int rxq_max_entries;
+	unsigned int rxq_min_entries;
+	unsigned int evq_max_entries;
+	unsigned int evq_min_entries;
 };
 
 /**
@@ -66,6 +74,8 @@ struct sfc_dp_rx_qcreate_info {
 	/** DMA-mapped Rx descriptors ring */
 	void			*rxq_hw_ring;
 
+	/** Event queue index in hardware */
+	unsigned int		evq_hw_index;
 	/** Associated event queue size */
 	unsigned int		evq_entries;
 	/** Hardware event ring */
@@ -78,6 +88,8 @@ struct sfc_dp_rx_qcreate_info {
 	 * doorbell
 	 */
 	volatile void		*mem_bar;
+	/** Function control window offset */
+	efsys_dma_addr_t	fcw_offset;
 	/** VI window size shift */
 	unsigned int		vi_window_shift;
 };
@@ -114,6 +126,7 @@ typedef int (sfc_dp_rx_pool_ops_supported_t)(const char *pool);
  * @return 0 or positive errno.
  */
 typedef int (sfc_dp_rx_qsize_up_rings_t)(uint16_t nb_rx_desc,
+					 struct sfc_dp_rx_hw_limits *limits,
 					 struct rte_mempool *mb_pool,
 					 unsigned int *rxq_entries,
 					 unsigned int *evq_entries,
@@ -148,7 +161,8 @@ typedef void (sfc_dp_rx_qdestroy_t)(struct sfc_dp_rxq *dp_rxq);
  * It handovers EvQ to the datapath.
  */
 typedef int (sfc_dp_rx_qstart_t)(struct sfc_dp_rxq *dp_rxq,
-				 unsigned int evq_read_ptr);
+				 unsigned int evq_read_ptr,
+				 const efx_rx_prefix_layout_t *pinfo);
 
 /**
  * Receive queue stop function called before flush.
@@ -184,18 +198,34 @@ typedef unsigned int (sfc_dp_rx_qdesc_npending_t)(struct sfc_dp_rxq *dp_rxq);
 /** Check Rx descriptor status */
 typedef int (sfc_dp_rx_qdesc_status_t)(struct sfc_dp_rxq *dp_rxq,
 				       uint16_t offset);
+/** Enable Rx interrupts */
+typedef int (sfc_dp_rx_intr_enable_t)(struct sfc_dp_rxq *dp_rxq);
+
+/** Disable Rx interrupts */
+typedef int (sfc_dp_rx_intr_disable_t)(struct sfc_dp_rxq *dp_rxq);
+
+/** Get number of pushed Rx buffers */
+typedef unsigned int (sfc_dp_rx_get_pushed_t)(struct sfc_dp_rxq *dp_rxq);
 
 /** Receive datapath definition */
 struct sfc_dp_rx {
 	struct sfc_dp				dp;
 
 	unsigned int				features;
-#define SFC_DP_RX_FEAT_SCATTER			0x1
-#define SFC_DP_RX_FEAT_MULTI_PROCESS		0x2
-#define SFC_DP_RX_FEAT_TUNNELS			0x4
-#define SFC_DP_RX_FEAT_FLOW_FLAG		0x8
-#define SFC_DP_RX_FEAT_FLOW_MARK		0x10
-#define SFC_DP_RX_FEAT_CHECKSUM			0x20
+#define SFC_DP_RX_FEAT_MULTI_PROCESS		0x1
+#define SFC_DP_RX_FEAT_FLOW_FLAG		0x2
+#define SFC_DP_RX_FEAT_FLOW_MARK		0x4
+#define SFC_DP_RX_FEAT_INTR			0x8
+	/**
+	 * Rx offload capabilities supported by the datapath on device
+	 * level only if HW/FW supports it.
+	 */
+	uint64_t				dev_offload_capa;
+	/**
+	 * Rx offload capabilities supported by the datapath per-queue
+	 * if HW/FW supports it.
+	 */
+	uint64_t				queue_offload_capa;
 	sfc_dp_rx_get_dev_info_t		*get_dev_info;
 	sfc_dp_rx_pool_ops_supported_t		*pool_ops_supported;
 	sfc_dp_rx_qsize_up_rings_t		*qsize_up_rings;
@@ -209,6 +239,9 @@ struct sfc_dp_rx {
 	sfc_dp_rx_supported_ptypes_get_t	*supported_ptypes_get;
 	sfc_dp_rx_qdesc_npending_t		*qdesc_npending;
 	sfc_dp_rx_qdesc_status_t		*qdesc_status;
+	sfc_dp_rx_intr_enable_t			*intr_enable;
+	sfc_dp_rx_intr_disable_t		*intr_disable;
+	sfc_dp_rx_get_pushed_t			*get_pushed;
 	eth_rx_burst_t				pkt_burst;
 };
 
@@ -228,9 +261,19 @@ sfc_dp_find_rx_by_caps(struct sfc_dp_list *head, unsigned int avail_caps)
 	return (p == NULL) ? NULL : container_of(p, struct sfc_dp_rx, dp);
 }
 
+static inline uint64_t
+sfc_dp_rx_offload_capa(const struct sfc_dp_rx *dp_rx)
+{
+	return dp_rx->dev_offload_capa | dp_rx->queue_offload_capa;
+}
+
+/** Get Rx datapath ops by the datapath RxQ handle */
+const struct sfc_dp_rx *sfc_dp_rx_by_dp_rxq(const struct sfc_dp_rxq *dp_rxq);
+
 extern struct sfc_dp_rx sfc_efx_rx;
 extern struct sfc_dp_rx sfc_ef10_rx;
 extern struct sfc_dp_rx sfc_ef10_essb_rx;
+extern struct sfc_dp_rx sfc_ef100_rx;
 
 #ifdef __cplusplus
 }

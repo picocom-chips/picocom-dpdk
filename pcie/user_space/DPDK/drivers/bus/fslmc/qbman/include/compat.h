@@ -8,16 +8,13 @@
 #ifndef HEADER_COMPAT_H
 #define HEADER_COMPAT_H
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <malloc.h>
 #include <unistd.h>
-#include <error.h>
 #include <linux/types.h>
 #include <rte_atomic.h>
 

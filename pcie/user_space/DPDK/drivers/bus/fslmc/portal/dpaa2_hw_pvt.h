@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2020 NXP
  *
  */
 
@@ -23,17 +23,13 @@
 #define lower_32_bits(x) ((uint32_t)(x))
 #define upper_32_bits(x) ((uint32_t)(((x) >> 16) >> 16))
 
-#define SVR_LS1080A             0x87030000
-#define SVR_LS2080A             0x87010000
-#define SVR_LS2088A             0x87090000
-#define SVR_LX2160A             0x87360000
-
 #ifndef VLAN_TAG_SIZE
 #define VLAN_TAG_SIZE   4 /** < Vlan Header Length */
 #endif
 
 /* Maximum number of slots available in TX ring */
 #define MAX_TX_RING_SLOTS			32
+#define MAX_EQ_RESP_ENTRIES			(MAX_TX_RING_SLOTS + 1)
 
 /* Maximum number of slots available in RX ring */
 #define DPAA2_EQCR_RING_SIZE		8
@@ -50,9 +46,20 @@
 /* EQCR shift to get EQCR size for LX2 (2 >> 5) = 32 for LX2 */
 #define DPAA2_LX2_EQCR_SHIFT		5
 
+/* Flag to determine an ordered queue mbuf */
+#define DPAA2_ENQUEUE_FLAG_ORP		(1ULL << 30)
+/* ORP ID shift and mask */
+#define DPAA2_EQCR_OPRID_SHIFT		16
+#define DPAA2_EQCR_OPRID_MASK		0x3FFF0000
+/* Sequence number shift and mask */
+#define DPAA2_EQCR_SEQNUM_SHIFT		0
+#define DPAA2_EQCR_SEQNUM_MASK		0x0000FFFF
+
 #define DPAA2_SWP_CENA_REGION		0
 #define DPAA2_SWP_CINH_REGION		1
 #define DPAA2_SWP_CENA_MEM_REGION	2
+
+#define DPAA2_MAX_TX_RETRY_COUNT	10000
 
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
@@ -67,15 +74,25 @@
 #define DPAA2_MBUF_HW_ANNOTATION	64
 #define DPAA2_FD_PTA_SIZE		0
 
-#if (DPAA2_MBUF_HW_ANNOTATION + DPAA2_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
-#error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
-#endif
-
 /* we will re-use the HEADROOM for annotation in RX */
 #define DPAA2_HW_BUF_RESERVE	0
 #define DPAA2_PACKET_LAYOUT_ALIGN	64 /*changing from 256 */
 
 #define DPAA2_DPCI_MAX_QUEUES 2
+
+struct dpaa2_queue;
+
+struct eqresp_metadata {
+	struct dpaa2_queue *dpaa2_q;
+	struct rte_mempool *mp;
+};
+
+#define DPAA2_PORTAL_DEQUEUE_DEPTH	32
+struct dpaa2_portal_dqrr {
+	struct rte_mbuf *mbuf[DPAA2_PORTAL_DEQUEUE_DEPTH];
+	uint64_t dqrr_held;
+	uint8_t dqrr_size;
+};
 
 struct dpaa2_dpio_dev {
 	TAILQ_ENTRY(dpaa2_dpio_dev) next;
@@ -83,6 +100,10 @@ struct dpaa2_dpio_dev {
 	uint16_t index; /**< Index of a instance in the list */
 	rte_atomic16_t ref_count;
 		/**< How many thread contexts are sharing this.*/
+	uint16_t eqresp_ci;
+	uint16_t eqresp_pi;
+	struct qbman_result *eqresp;
+	struct eqresp_metadata *eqresp_meta;
 	struct fsl_mc_io *dpio; /** handle to DPIO portal object */
 	uint16_t token;
 	struct qbman_swp *sw_portal; /** SW portal object */
@@ -98,6 +119,7 @@ struct dpaa2_dpio_dev {
 	struct rte_intr_handle intr_handle; /* Interrupt related info */
 	int32_t	epoll_fd; /**< File descriptor created for interrupt polling */
 	int32_t hw_id; /**< An unique ID of this DPIO device instance */
+	struct dpaa2_portal_dqrr dpaa2_held_bufs;
 };
 
 struct dpaa2_dpbp_dev {
@@ -125,16 +147,18 @@ typedef void (dpaa2_queue_cb_dqrr_t)(struct qbman_swp *swp,
 		struct dpaa2_queue *rxq,
 		struct rte_event *ev);
 
+typedef void (dpaa2_queue_cb_eqresp_free_t)(uint16_t eqresp_ci);
+
 struct dpaa2_queue {
 	struct rte_mempool *mb_pool; /**< mbuf pool to populate RX ring. */
 	union {
 		struct rte_eth_dev_data *eth_data;
-		void *dev;
+		struct rte_cryptodev_data *crypto_data;
 	};
-	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
+	uint8_t tc_index;	/*!< traffic class identifier */
+	uint8_t cgid;		/*! < Congestion Group id for this queue */
 	uint64_t rx_pkts;
 	uint64_t tx_pkts;
 	uint64_t err_pkts;
@@ -144,8 +168,15 @@ struct dpaa2_queue {
 	};
 	struct rte_event ev;
 	dpaa2_queue_cb_dqrr_t *cb;
+	dpaa2_queue_cb_eqresp_free_t *cb_eqresp_free;
 	struct dpaa2_bp_info *bp_array;
-};
+	/*to store tx_conf_queue corresponding to tx_queue*/
+	struct dpaa2_queue *tx_conf_queue;
+	int32_t eventfd;	/*!< Event Fd of this queue */
+	uint16_t nb_desc;
+	uint16_t resv;
+	uint64_t offloads;
+} __rte_cache_aligned;
 
 struct swp_active_dqs {
 	struct qbman_result *global_active_dqs;
@@ -167,16 +198,40 @@ struct dpaa2_dpci_dev {
 	struct dpaa2_queue tx_queue[DPAA2_DPCI_MAX_QUEUES];
 };
 
-/*! Global MCP list */
-extern void *(*rte_mcp_ptr_list);
+struct dpaa2_dpcon_dev {
+	TAILQ_ENTRY(dpaa2_dpcon_dev) next;
+	struct fsl_mc_io dpcon;
+	uint16_t token;
+	rte_atomic16_t in_use;
+	uint32_t dpcon_id;
+	uint16_t qbman_ch_id;
+	uint8_t num_priorities;
+	uint8_t channel_index;
+};
 
 /* Refer to Table 7-3 in SEC BG */
+#define QBMAN_FLE_WORD4_FMT_SBF 0x0    /* Single buffer frame */
+#define QBMAN_FLE_WORD4_FMT_SGE 0x2 /* Scatter gather frame */
+
+struct qbman_fle_word4 {
+	uint32_t bpid:14; /* Frame buffer pool ID */
+	uint32_t ivp:1; /* Invalid Pool ID. */
+	uint32_t bmt:1; /* Bypass Memory Translation */
+	uint32_t offset:12; /* Frame offset */
+	uint32_t fmt:2; /* Frame Format */
+	uint32_t sl:1; /* Short Length */
+	uint32_t f:1; /* Final bit */
+};
+
 struct qbman_fle {
 	uint32_t addr_lo;
 	uint32_t addr_hi;
 	uint32_t length;
 	/* FMT must be 00, MSB is final bit  */
-	uint32_t fin_bpid_offset;
+	union {
+		uint32_t fin_bpid_offset;
+		struct qbman_fle_word4 word4;
+	};
 	uint32_t frc;
 	uint32_t reserved[3]; /* Not used currently */
 };
@@ -210,6 +265,7 @@ enum qbman_fd_format {
 	((fd)->simple.frc = (0x80000000 | (len)))
 #define DPAA2_GET_FD_FRC_PARSE_SUM(fd)	\
 			((uint16_t)(((fd)->simple.frc & 0xffff0000) >> 16))
+#define DPAA2_RESET_FD_FRC(fd)		((fd)->simple.frc = 0)
 #define DPAA2_SET_FD_FRC(fd, _frc)	((fd)->simple.frc = _frc)
 #define DPAA2_RESET_FD_CTRL(fd)	 ((fd)->simple.ctrl = 0)
 
@@ -257,7 +313,8 @@ enum qbman_fd_format {
 #define DPAA2_GET_FD_FRC(fd)   ((fd)->simple.frc)
 #define DPAA2_GET_FD_FLC(fd) \
 	(((uint64_t)((fd)->simple.flc_hi) << 32) + (fd)->simple.flc_lo)
-#define DPAA2_GET_FD_ERR(fd)   ((fd)->simple.bpid_offset & 0x000000FF)
+#define DPAA2_GET_FD_ERR(fd)   ((fd)->simple.ctrl & 0x000000FF)
+#define DPAA2_GET_FD_FA_ERR(fd)   ((fd)->simple.ctrl & 0x00000040)
 #define DPAA2_GET_FLE_OFFSET(fle) (((fle)->fin_bpid_offset & 0x0FFF0000) >> 16)
 #define DPAA2_SET_FLE_SG_EXT(fle) ((fle)->fin_bpid_offset |= (uint64_t)1 << 29)
 #define DPAA2_IS_SET_FLE_SG_EXT(fle)	\
@@ -273,6 +330,11 @@ enum qbman_fd_format {
 		(fd)->simple.bpid_offset |= (uint32_t)format << 28;	\
 } while (0)
 #define DPAA2_FD_GET_FORMAT(fd)	(((fd)->simple.bpid_offset >> 28) & 0x3)
+
+#define DPAA2_SG_SET_FORMAT(sg, format)	do {				\
+		(sg)->fin_bpid_offset &= 0xCFFFFFFF;			\
+		(sg)->fin_bpid_offset |= (uint32_t)format << 28;	\
+} while (0)
 
 #define DPAA2_SG_SET_FINAL(sg, fin)	do {				\
 		(sg)->fin_bpid_offset &= 0x7FFFFFFF;			\
@@ -296,12 +358,9 @@ struct dpaa2_memseg {
 	size_t len;
 };
 
-TAILQ_HEAD(dpaa2_memseg_list, dpaa2_memseg);
-extern struct dpaa2_memseg_list rte_dpaa2_memsegs;
-
 #ifdef RTE_LIBRTE_DPAA2_USE_PHYS_IOVA
 extern uint8_t dpaa2_virt_mode;
-static void *dpaa2_mem_ptov(phys_addr_t paddr) __attribute__((unused));
+static void *dpaa2_mem_ptov(phys_addr_t paddr) __rte_unused;
 
 static void *dpaa2_mem_ptov(phys_addr_t paddr)
 {
@@ -320,7 +379,7 @@ static void *dpaa2_mem_ptov(phys_addr_t paddr)
 	return va;
 }
 
-static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr) __attribute__((unused));
+static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr) __rte_unused;
 
 static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 {
@@ -331,7 +390,7 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 
 	memseg = rte_mem_virt2memseg((void *)(uintptr_t)vaddr, NULL);
 	if (memseg)
-		return memseg->phys_addr + RTE_PTR_DIFF(vaddr, memseg->addr);
+		return memseg->iova + RTE_PTR_DIFF(vaddr, memseg->addr);
 	return (size_t)NULL;
 }
 
@@ -363,8 +422,8 @@ static phys_addr_t dpaa2_mem_vtop(uint64_t vaddr)
 #else	/* RTE_LIBRTE_DPAA2_USE_PHYS_IOVA */
 
 #define DPAA2_MBUF_VADDR_TO_IOVA(mbuf) ((mbuf)->buf_addr)
-#define DPAA2_VADDR_TO_IOVA(_vaddr) (_vaddr)
-#define DPAA2_IOVA_TO_VADDR(_iova) (_iova)
+#define DPAA2_VADDR_TO_IOVA(_vaddr) (phys_addr_t)(_vaddr)
+#define DPAA2_IOVA_TO_VADDR(_iova) (void *)(_iova)
 #define DPAA2_MODIFY_IOVA_TO_VADDR(_mem, _type)
 
 #endif /* RTE_LIBRTE_DPAA2_USE_PHYS_IOVA */
@@ -394,11 +453,24 @@ void set_swp_active_dqs(uint16_t dpio_index, struct qbman_result *dqs)
 {
 	rte_global_active_dqs_list[dpio_index].global_active_dqs = dqs;
 }
+
+__rte_internal
 struct dpaa2_dpbp_dev *dpaa2_alloc_dpbp_dev(void);
+
+__rte_internal
 void dpaa2_free_dpbp_dev(struct dpaa2_dpbp_dev *dpbp);
+
+__rte_internal
 int dpaa2_dpbp_supported(void);
 
+__rte_internal
 struct dpaa2_dpci_dev *rte_dpaa2_alloc_dpci_dev(void);
+
+__rte_internal
 void rte_dpaa2_free_dpci_dev(struct dpaa2_dpci_dev *dpci);
+
+/* Global MCP pointer */
+__rte_internal
+void *dpaa2_get_mcp_ptr(int portal_idx);
 
 #endif

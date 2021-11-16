@@ -17,6 +17,8 @@ enum xstats_type {
 	/* device instance specific */
 	no_iq_enq,
 	no_cq_enq,
+	sched_last_iter_bitmask,
+	sched_progress_last_iter,
 	/* port_specific */
 	rx_used,
 	rx_free,
@@ -57,6 +59,9 @@ get_dev_stat(const struct sw_evdev *sw, uint16_t obj_idx __rte_unused,
 	case calls: return sw->sched_called;
 	case no_iq_enq: return sw->sched_no_iq_enqueues;
 	case no_cq_enq: return sw->sched_no_cq_enqueues;
+	case sched_last_iter_bitmask: return sw->sched_last_iter_bitmask;
+	case sched_progress_last_iter: return sw->sched_progress_last_iter;
+
 	default: return -1;
 	}
 }
@@ -177,9 +182,11 @@ sw_xstats_init(struct sw_evdev *sw)
 	 */
 	static const char * const dev_stats[] = { "rx", "tx", "drop",
 			"sched_calls", "sched_no_iq_enq", "sched_no_cq_enq",
+			"sched_last_iter_bitmask", "sched_progress_last_iter",
 	};
 	static const enum xstats_type dev_types[] = { rx, tx, dropped,
-			calls, no_iq_enq, no_cq_enq,
+			calls, no_iq_enq, no_cq_enq, sched_last_iter_bitmask,
+			sched_progress_last_iter,
 	};
 	/* all device stats are allowed to be reset */
 
@@ -391,8 +398,6 @@ sw_xstats_get_names(const struct rte_eventdev *dev,
 	const struct sw_evdev *sw = sw_pmd_priv_const(dev);
 	unsigned int i;
 	unsigned int xidx = 0;
-	RTE_SET_USED(mode);
-	RTE_SET_USED(queue_port_id);
 
 	uint32_t xstats_mode_count = 0;
 	uint32_t start_offset = 0;
@@ -491,7 +496,7 @@ sw_xstats_update(struct sw_evdev *sw, enum rte_event_dev_xstats_mode mode,
 			values[xidx] = val;
 
 		if (xs->reset_allowed && reset)
-			xs->reset_value = val;
+			xs->reset_value += val;
 
 		xidx++;
 	}
@@ -544,8 +549,7 @@ sw_xstats_reset_range(struct sw_evdev *sw, uint32_t start, uint32_t num)
 		if (!xs->reset_allowed)
 			continue;
 
-		uint64_t val = xs->fn(sw, xs->obj_idx, xs->stat, xs->extra_arg)
-					- xs->reset_value;
+		uint64_t val = xs->fn(sw, xs->obj_idx, xs->stat, xs->extra_arg);
 		xs->reset_value = val;
 	}
 }

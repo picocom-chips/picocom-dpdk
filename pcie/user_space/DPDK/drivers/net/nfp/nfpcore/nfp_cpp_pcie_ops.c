@@ -16,7 +16,9 @@
 
 #include <assert.h>
 #include <stdio.h>
+#if defined(RTE_BACKTRACE)
 #include <execinfo.h>
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -31,7 +33,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 
-#include <rte_ethdev_pci.h>
+#include <ethdev_pci.h>
 #include <rte_string_fns.h>
 
 #include "nfp_cpp.h"
@@ -688,12 +690,16 @@ nfp_acquire_secondary_process_lock(struct nfp_pcie_user *desc)
 	lockfile = calloc(strlen(home_path) + strlen(lockname) + 1,
 			  sizeof(char));
 
+	if (!lockfile)
+		return -ENOMEM;
+
 	strcat(lockfile, home_path);
 	strcat(lockfile, "/.lock_nfp_secondary");
 	desc->secondary_lock = open(lockfile, O_RDWR | O_CREAT | O_NONBLOCK,
 				    0666);
 	if (desc->secondary_lock < 0) {
 		RTE_LOG(ERR, PMD, "NFP lock for secondary process failed\n");
+		free(lockfile);
 		return desc->secondary_lock;
 	}
 
@@ -705,6 +711,7 @@ nfp_acquire_secondary_process_lock(struct nfp_pcie_user *desc)
 		close(desc->secondary_lock);
 	}
 
+	free(lockfile);
 	return rc;
 }
 
@@ -739,59 +746,15 @@ nfp6000_set_interface(struct rte_pci_device *dev, struct nfp_cpp *cpp)
 	return 0;
 }
 
-#define PCI_CFG_SPACE_SIZE	256
-#define PCI_CFG_SPACE_EXP_SIZE	4096
-#define PCI_EXT_CAP_ID(header)		(int)(header & 0x0000ffff)
-#define PCI_EXT_CAP_NEXT(header)	((header >> 20) & 0xffc)
-#define PCI_EXT_CAP_ID_DSN	0x03
-static int
-nfp_pci_find_next_ext_capability(struct rte_pci_device *dev, int cap)
-{
-	uint32_t header;
-	int ttl;
-	int pos = PCI_CFG_SPACE_SIZE;
-
-	/* minimum 8 bytes per capability */
-	ttl = (PCI_CFG_SPACE_EXP_SIZE - PCI_CFG_SPACE_SIZE) / 8;
-
-	if (rte_pci_read_config(dev, &header, 4, pos) < 0) {
-		printf("nfp error reading extended capabilities\n");
-		return -1;
-	}
-
-	/*
-	 * If we have no capabilities, this is indicated by cap ID,
-	 * cap version and next pointer all being 0.
-	 */
-	if (header == 0)
-		return 0;
-
-	while (ttl-- > 0) {
-		if (PCI_EXT_CAP_ID(header) == cap)
-			return pos;
-
-		pos = PCI_EXT_CAP_NEXT(header);
-		if (pos < PCI_CFG_SPACE_SIZE)
-			break;
-
-		if (rte_pci_read_config(dev, &header, 4, pos) < 0) {
-			printf("nfp error reading extended capabilities\n");
-			return -1;
-		}
-	}
-
-	return 0;
-}
-
 static int
 nfp6000_set_serial(struct rte_pci_device *dev, struct nfp_cpp *cpp)
 {
 	uint16_t tmp;
 	uint8_t serial[6];
 	int serial_len = 6;
-	int pos;
+	off_t pos;
 
-	pos = nfp_pci_find_next_ext_capability(dev, PCI_EXT_CAP_ID_DSN);
+	pos = rte_pci_find_ext_capability(dev, RTE_PCI_EXT_CAP_ID_DSN);
 	if (pos <= 0) {
 		printf("PCI_EXT_CAP_ID_DSN not found. nfp set serial failed\n");
 		return -1;
@@ -863,24 +826,24 @@ nfp6000_init(struct nfp_cpp *cpp, struct rte_pci_device *dev)
 	    cpp->driver_lock_needed) {
 		ret = nfp_acquire_process_lock(desc);
 		if (ret)
-			return -1;
+			goto error;
 	}
 
 	/* Just support for one secondary process */
 	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
 		ret = nfp_acquire_secondary_process_lock(desc);
 		if (ret)
-			return -1;
+			goto error;
 	}
 
 	if (nfp6000_set_model(dev, cpp) < 0)
-		return -1;
+		goto error;
 	if (nfp6000_set_interface(dev, cpp) < 0)
-		return -1;
+		goto error;
 	if (nfp6000_set_serial(dev, cpp) < 0)
-		return -1;
+		goto error;
 	if (nfp6000_set_barsz(dev, desc) < 0)
-		return -1;
+		goto error;
 
 	desc->cfg = (char *)dev->mem_resource[0].addr;
 
@@ -888,7 +851,11 @@ nfp6000_init(struct nfp_cpp *cpp, struct rte_pci_device *dev)
 
 	nfp_cpp_priv_set(cpp, desc);
 
-	return ret;
+	return 0;
+
+error:
+	free(desc);
+	return -1;
 }
 
 static void

@@ -185,6 +185,20 @@ Supports receiving segmented mbufs.
 * **[related]    eth_dev_ops**: ``rx_pkt_burst``.
 
 
+.. _nic_features_buffer_split:
+
+Buffer Split on Rx
+------------------
+
+Scatters the packets being received on specified boundaries to segmented mbufs.
+
+* **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT``.
+* **[uses]       rte_eth_rxconf**: ``rx_conf.rx_seg, rx_conf.rx_nseg``.
+* **[implements] datapath**: ``Buffer Split functionality``.
+* **[provides]   rte_eth_dev_info**: ``rx_offload_capa:RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT``.
+* **[related] API**: ``rte_eth_rx_queue_setup()``.
+
+
 .. _nic_features_lro:
 
 LRO
@@ -193,10 +207,12 @@ LRO
 Supports Large Receive Offload.
 
 * **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_TCP_LRO``.
+  ``dev_conf.rxmode.max_lro_pkt_size``.
 * **[implements] datapath**: ``LRO functionality``.
 * **[implements] rte_eth_dev_data**: ``lro``.
 * **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_LRO``, ``mbuf.tso_segsz``.
 * **[provides]   rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_TCP_LRO``.
+* **[provides]   rte_eth_dev_info**: ``max_lro_pkt_size``.
 
 
 .. _nic_features_tso:
@@ -245,7 +261,7 @@ Supports enabling/disabling receiving multicast frames.
 Unicast MAC filter
 ------------------
 
-Supports adding MAC addresses to enable whitelist filtering to accept packets.
+Supports adding MAC addresses to enable incoming filtering of packets.
 
 * **[implements] eth_dev_ops**: ``mac_addr_set``, ``mac_addr_add``, ``mac_addr_remove``.
 * **[implements] rte_eth_dev_data**: ``mac_addrs``.
@@ -274,6 +290,7 @@ Supports RSS hashing on RX.
 
 * **[uses]     user config**: ``dev_conf.rxmode.mq_mode`` = ``ETH_MQ_RX_RSS_FLAG``.
 * **[uses]     user config**: ``dev_conf.rx_adv_conf.rss_conf``.
+* **[uses]     rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_RSS_HASH``.
 * **[provides] rte_eth_dev_info**: ``flow_type_rss_offloads``.
 * **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_RSS_HASH``, ``mbuf.rss``.
 
@@ -285,7 +302,8 @@ Inner RSS
 
 Supports RX RSS hashing on Inner headers.
 
-* **[users]    rte_flow_action_rss**: ``level``.
+* **[uses]    rte_flow_action_rss**: ``level``.
+* **[uses]    rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_RSS_HASH``.
 * **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_RSS_HASH``, ``mbuf.rss``.
 
 
@@ -366,84 +384,6 @@ Supports filtering of a VLAN Tag identifier.
 * **[related]    API**: ``rte_eth_dev_vlan_filter()``.
 
 
-.. _nic_features_ethertype_filter:
-
-Ethertype filter
-----------------
-
-Supports filtering on Ethernet type.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_ETHERTYPE``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-.. _nic_features_ntuple_filter:
-
-N-tuple filter
---------------
-
-Supports filtering on N-tuple values.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_NTUPLE``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
-.. _nic_features_syn_filter:
-
-SYN filter
-----------
-
-Supports TCP syn filtering.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_SYN``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
-.. _nic_features_tunnel_filter:
-
-Tunnel filter
--------------
-
-Supports tunnel filtering.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_TUNNEL``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
-.. _nic_features_flexible_filter:
-
-Flexible filter
----------------
-
-Supports a flexible (non-tuple or Ethertype) filter.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_FLEXIBLE``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
-.. _nic_features_hash_filter:
-
-Hash filter
------------
-
-Supports Hash filtering.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_HASH``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
-.. _nic_features_flow_director:
-
-Flow director
--------------
-
-Supports Flow Director style filtering to queues.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_FDIR``.
-* **[provides]   mbuf**: ``mbuf.ol_flags:`` ``PKT_RX_FDIR``, ``PKT_RX_FDIR_ID``,
-  ``PKT_RX_FDIR_FLX``.
-* **[related]    API**: ``rte_eth_dev_filter_ctrl()``, ``rte_eth_dev_filter_supported()``.
-
-
 .. _nic_features_flow_control:
 
 Flow control
@@ -455,17 +395,6 @@ Supports configuring link flow control.
   ``priority_flow_ctrl_set``.
 * **[related]    API**: ``rte_eth_dev_flow_ctrl_get()``, ``rte_eth_dev_flow_ctrl_set()``,
   ``rte_eth_dev_priority_flow_ctrl_set()``.
-
-
-.. _nic_features_flow_api:
-
-Flow API
---------
-
-Supports the DPDK Flow API for generic filtering.
-
-* **[implements] eth_dev_ops**: ``filter_ctrl:RTE_ETH_FILTER_GENERIC``.
-* **[implements] rte_flow_ops**: ``All``.
 
 
 .. _nic_features_rate_limitation:
@@ -495,7 +424,9 @@ Supports adding traffic mirroring rules.
 Inline crypto
 -------------
 
-Supports inline crypto processing (eg. inline IPsec). See Security library and PMD documentation for more details.
+Supports inline crypto processing defined by rte_security library to perform crypto
+operations of security protocol while packet is received in NIC. NIC is not aware
+of protocol operations. See Security library and PMD documentation for more details.
 
 * **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_SECURITY``,
 * **[uses]       rte_eth_txconf,rte_eth_txmode**: ``offloads:DEV_TX_OFFLOAD_SECURITY``.
@@ -505,6 +436,29 @@ Supports inline crypto processing (eg. inline IPsec). See Security library and P
   ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_SECURITY``.
 * **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD``,
   ``mbuf.ol_flags:PKT_TX_SEC_OFFLOAD``, ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD_FAILED``.
+* **[provides]   rte_security_ops, capabilities_get**:  ``action: RTE_SECURITY_ACTION_TYPE_INLINE_CRYPTO``
+
+
+.. _nic_features_inline_protocol_doc:
+
+Inline protocol
+---------------
+
+Supports inline protocol processing defined by rte_security library to perform
+protocol processing for the security protocol (e.g. IPsec, MACSEC) while the
+packet is received at NIC. The NIC is capable of understanding the security
+protocol operations. See security library and PMD documentation for more details.
+
+* **[uses]       rte_eth_rxconf,rte_eth_rxmode**: ``offloads:DEV_RX_OFFLOAD_SECURITY``,
+* **[uses]       rte_eth_txconf,rte_eth_txmode**: ``offloads:DEV_TX_OFFLOAD_SECURITY``.
+* **[implements] rte_security_ops**: ``session_create``, ``session_update``,
+  ``session_stats_get``, ``session_destroy``, ``set_pkt_metadata``, ``get_userdata``,
+  ``capabilities_get``.
+* **[provides] rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_SECURITY``,
+  ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_SECURITY``.
+* **[provides]   mbuf**: ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD``,
+  ``mbuf.ol_flags:PKT_TX_SEC_OFFLOAD``, ``mbuf.ol_flags:PKT_RX_SEC_OFFLOAD_FAILED``.
+* **[provides]   rte_security_ops, capabilities_get**:  ``action: RTE_SECURITY_ACTION_TYPE_INLINE_PROTOCOL``
 
 
 .. _nic_features_crc_offload:
@@ -551,6 +505,21 @@ Supports QinQ (queue in queue) offload.
   ``mbuf.vlan_tci``, ``mbuf.vlan_tci_outer``.
 * **[provides] rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_QINQ_STRIP``,
   ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_QINQ_INSERT``.
+
+
+.. _nic_features_fec:
+
+FEC
+---
+
+Supports Forward error correction. Forward error correction (FEC) is a bit error correction mode.
+It adds error correction information to data packets at the transmit end, and uses the error correction
+information to correct the bit errors generated during data packet transmission at the receive end. This
+improves signal quality but also brings a delay to signals. This function can be enabled or disabled as required.
+
+* **[implements] eth_dev_ops**: ``fec_get_capability``, ``fec_get``, ``fec_set``.
+* **[provides]   rte_eth_fec_capa**: ``speed:ETH_SPEED_NUM_*``, ``capa:RTE_ETH_FEC_MODE_TO_CAPA()``.
+* **[related]    API**: ``rte_eth_fec_get_capability()``, ``rte_eth_fec_get()``, ``rte_eth_fec_set()``.
 
 
 .. _nic_features_l3_checksum_offload:
@@ -602,6 +571,7 @@ Supports Timestamp.
 * **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_TIMESTAMP``.
 * **[provides] mbuf**: ``mbuf.timestamp``.
 * **[provides] rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa: DEV_RX_OFFLOAD_TIMESTAMP``.
+* **[related] eth_dev_ops**: ``read_clock``.
 
 .. _nic_features_macsec_offload:
 
@@ -631,7 +601,7 @@ Supports inner packet L3 checksum.
   ``mbuf.ol_flags:PKT_TX_OUTER_IP_CKSUM``,
   ``mbuf.ol_flags:PKT_TX_OUTER_IPV4`` | ``PKT_TX_OUTER_IPV6``.
 * **[uses]     mbuf**: ``mbuf.outer_l2_len``, ``mbuf.outer_l3_len``.
-* **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_EIP_CKSUM_BAD``.
+* **[provides] mbuf**: ``mbuf.ol_flags:PKT_RX_OUTER_IP_CKSUM_BAD``.
 * **[provides] rte_eth_dev_info**: ``rx_offload_capa,rx_queue_offload_capa:DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM``,
   ``tx_offload_capa,tx_queue_offload_capa:DEV_TX_OFFLOAD_OUTER_IPV4_CKSUM``.
 
@@ -660,9 +630,12 @@ Packet type parsing
 -------------------
 
 Supports packet type parsing and returns a list of supported types.
+Allows application to set ptypes it is interested in.
 
-* **[implements] eth_dev_ops**: ``dev_supported_ptypes_get``.
-* **[related]    API**: ``rte_eth_dev_get_supported_ptypes()``.
+* **[implements] eth_dev_ops**: ``dev_supported_ptypes_get``,
+* **[related]    API**: ``rte_eth_dev_get_supported_ptypes()``,
+  ``rte_eth_dev_set_ptypes()``, ``dev_ptypes_set``.
+* **[provides]   mbuf**: ``mbuf.packet_type``.
 
 
 .. _nic_features_timesync:
@@ -691,9 +664,9 @@ used, status can be "Available", "Done" or "Unavailable". When
 ``rx_descriptor_done`` is used, status can be "DD bit is set" or "DD bit is
 not set".
 
-* **[implements] eth_dev_ops**: ``rx_descriptor_status``.
+* **[implements] rte_eth_dev**: ``rx_descriptor_status``.
 * **[related]    API**: ``rte_eth_rx_descriptor_status()``.
-* **[implements] eth_dev_ops**: ``rx_descriptor_done``.
+* **[implements] rte_eth_dev**: ``rx_descriptor_done``.
 * **[related]    API**: ``rte_eth_rx_descriptor_done()``.
 
 
@@ -705,7 +678,7 @@ Tx descriptor status
 Supports checking the status of a Tx descriptor. Status can be "Full", "Done"
 or "Unavailable."
 
-* **[implements] eth_dev_ops**: ``tx_descriptor_status``.
+* **[implements] rte_eth_dev**: ``tx_descriptor_status``.
 * **[related]    API**: ``rte_eth_tx_descriptor_status()``.
 
 
@@ -816,38 +789,28 @@ Multiprocess aware
 Driver can be used for primary-secondary process model.
 
 
-.. _nic_features_bsd_nic_uio:
+.. _nic_features_freebsd:
 
-BSD nic_uio
------------
+FreeBSD
+-------
 
-BSD ``nic_uio`` module supported.
+Supports running on FreeBSD.
 
 
-.. _nic_features_linux_uio:
+.. _nic_features_linux:
 
-Linux UIO
----------
+Linux
+-----
 
-Works with ``igb_uio`` kernel module.
+Supports running on Linux.
 
-* **[provides] RTE_PMD_REGISTER_KMOD_DEP**: ``igb_uio``.
 
-.. _nic_features_linux_vfio:
+.. _nic_features_windows:
 
-Linux VFIO
-----------
+Windows
+-------
 
-Works with ``vfio-pci`` kernel module.
-
-* **[provides] RTE_PMD_REGISTER_KMOD_DEP**: ``vfio-pci``.
-
-.. _nic_features_other_kdrv:
-
-Other kdrv
-----------
-
-Kernel module other than above ones supported.
+Supports running on Windows.
 
 
 .. _nic_features_armv7:
@@ -857,8 +820,6 @@ ARMv7
 
 Support armv7 architecture.
 
-Use ``defconfig_arm-armv7a-*-*``.
-
 
 .. _nic_features_armv8:
 
@@ -866,8 +827,6 @@ ARMv8
 -----
 
 Support armv8a (64bit) architecture.
-
-Use ``defconfig_arm64-armv8a-*-*``
 
 
 .. _nic_features_power8:
@@ -877,7 +836,6 @@ Power8
 
 Support PowerPC architecture.
 
-Use ``defconfig_ppc_64-power8-*-*``
 
 .. _nic_features_x86-32:
 
@@ -886,8 +844,6 @@ x86-32
 
 Support 32bits x86 architecture.
 
-Use ``defconfig_x86_x32-native-*-*`` and ``defconfig_i686-native-*-*``.
-
 
 .. _nic_features_x86-64:
 
@@ -895,8 +851,6 @@ x86-64
 ------
 
 Support 64bits x86 architecture.
-
-Use ``defconfig_x86_64-native-*-*``.
 
 
 .. _nic_features_usage_doc:
@@ -948,6 +902,26 @@ Supports Tx queue setup after device started.
 * **[provides] rte_eth_dev_info**: ``dev_capa:RTE_ETH_DEV_CAPA_RUNTIME_TX_QUEUE_SETUP``.
 * **[related]  API**: ``rte_eth_dev_info_get()``.
 
+.. _nic_features_burst_mode_info:
+
+Burst mode info
+---------------
+
+Supports to get Rx/Tx packet burst mode information.
+
+* **[implements] eth_dev_ops**: ``rx_burst_mode_get``, ``tx_burst_mode_get``.
+* **[related] API**: ``rte_eth_rx_burst_mode_get()``, ``rte_eth_tx_burst_mode_get()``.
+
+.. _nic_features_get_monitor_addr:
+
+PMD power management using monitor addresses
+--------------------------------------------
+
+Supports getting a monitoring condition to use together with Ethernet PMD power
+management (see :doc:`../prog_guide/power_man` for more details).
+
+* **[implements] eth_dev_ops**: ``get_monitor_addr``
+
 .. _nic_features_other:
 
 Other dev ops not represented by a Feature
@@ -959,11 +933,8 @@ Other dev ops not represented by a Feature
 * ``vlan_strip_queue_set``
 * ``vlan_pvid_set``
 * ``rx_queue_count``
-* ``l2_tunnel_offload_set``
 * ``uc_hash_table_set``
 * ``uc_all_hash_table_set``
 * ``udp_tunnel_port_add``
 * ``udp_tunnel_port_del``
-* ``l2_tunnel_eth_type_conf``
-* ``l2_tunnel_offload_set``
 * ``tx_pkt_prepare``

@@ -22,11 +22,6 @@ defined in ``rte_flow.h``.
   queues, to virtual/physical device functions or ports, performing tunnel
   offloads, adding marks and so on.
 
-It is slightly higher-level than the legacy filtering framework which it
-encompasses and supersedes (including all functions and filter types) in
-order to expose a single interface with an unambiguous behavior that is
-common to all poll-mode drivers (PMDs).
-
 Flow rule
 ---------
 
@@ -238,29 +233,29 @@ Example of an item specification matching an Ethernet header:
 
 .. table:: Ethernet item
 
-   +----------+----------+--------------------+
-   | Field    | Subfield | Value              |
-   +==========+==========+====================+
-   | ``spec`` | ``src``  | ``00:01:02:03:04`` |
-   |          +----------+--------------------+
-   |          | ``dst``  | ``00:2a:66:00:01`` |
-   |          +----------+--------------------+
-   |          | ``type`` | ``0x22aa``         |
-   +----------+----------+--------------------+
-   | ``last`` | unspecified                   |
-   +----------+----------+--------------------+
-   | ``mask`` | ``src``  | ``00:ff:ff:ff:00`` |
-   |          +----------+--------------------+
-   |          | ``dst``  | ``00:00:00:00:ff`` |
-   |          +----------+--------------------+
-   |          | ``type`` | ``0x0000``         |
-   +----------+----------+--------------------+
+   +----------+----------+-----------------------+
+   | Field    | Subfield | Value                 |
+   +==========+==========+=======================+
+   | ``spec`` | ``src``  | ``00:00:01:02:03:04`` |
+   |          +----------+-----------------------+
+   |          | ``dst``  | ``00:00:2a:66:00:01`` |
+   |          +----------+-----------------------+
+   |          | ``type`` | ``0x22aa``            |
+   +----------+----------+-----------------------+
+   | ``last`` | unspecified                      |
+   +----------+----------+-----------------------+
+   | ``mask`` | ``src``  | ``00:00:ff:ff:ff:00`` |
+   |          +----------+-----------------------+
+   |          | ``dst``  | ``00:00:00:00:00:ff`` |
+   |          +----------+-----------------------+
+   |          | ``type`` | ``0x0000``            |
+   +----------+----------+-----------------------+
 
 Non-masked bits stand for any value (shown as ``?`` below), Ethernet headers
 with the following properties are thus matched:
 
-- ``src``: ``??:01:02:03:??``
-- ``dst``: ``??:??:??:??:01``
+- ``src``: ``??:??:01:02:03:??``
+- ``dst``: ``??:??:??:??:??:01``
 - ``type``: ``0x????``
 
 Matching pattern
@@ -658,15 +653,66 @@ the physical device, with virtual groups in the PMD or not at all.
    | ``mask`` | ``id``   | zeroed to match any value |
    +----------+----------+---------------------------+
 
+Item: ``TAG``
+^^^^^^^^^^^^^
+
+Matches tag item set by other flows. Multiple tags are supported by specifying
+``index``.
+
+- Default ``mask`` matches the specified tag value and index.
+
+.. _table_rte_flow_item_tag:
+
+.. table:: TAG
+
+   +----------+----------+----------------------------------------+
+   | Field    | Subfield  | Value                                 |
+   +==========+===========+=======================================+
+   | ``spec`` | ``data``  | 32 bit flow tag value                 |
+   |          +-----------+---------------------------------------+
+   |          | ``index`` | index of flow tag                     |
+   +----------+-----------+---------------------------------------+
+   | ``last`` | ``data``  | upper range value                     |
+   |          +-----------+---------------------------------------+
+   |          | ``index`` | field is ignored                      |
+   +----------+-----------+---------------------------------------+
+   | ``mask`` | ``data``  | bit-mask applies to "spec" and "last" |
+   |          +-----------+---------------------------------------+
+   |          | ``index`` | field is ignored                      |
+   +----------+-----------+---------------------------------------+
+
+Item: ``META``
+^^^^^^^^^^^^^^^^^
+
+Matches 32 bit metadata item set.
+
+On egress, metadata can be set either by mbuf metadata field with
+PKT_TX_DYNF_METADATA flag or ``SET_META`` action. On ingress, ``SET_META``
+action sets metadata for a packet and the metadata will be reported via
+``metadata`` dynamic field of ``rte_mbuf`` with PKT_RX_DYNF_METADATA flag.
+
+- Default ``mask`` matches the specified Rx metadata value.
+
+.. _table_rte_flow_item_meta:
+
+.. table:: META
+
+   +----------+----------+---------------------------------------+
+   | Field    | Subfield | Value                                 |
+   +==========+==========+=======================================+
+   | ``spec`` | ``data`` | 32 bit metadata value                 |
+   +----------+----------+---------------------------------------+
+   | ``last`` | ``data`` | upper range value                     |
+   +----------+----------+---------------------------------------+
+   | ``mask`` | ``data`` | bit-mask applies to "spec" and "last" |
+   +----------+----------+---------------------------------------+
+
 Data matching item types
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Most of these are basically protocol header definitions with associated
 bit-masks. They must be specified (stacked) from lowest to highest protocol
 layer to form a matching pattern.
-
-The following list is not exhaustive, new protocols will be added in the
-future.
 
 Item: ``ANY``
 ^^^^^^^^^^^^^
@@ -851,10 +897,17 @@ so-called layer 2.5 pattern items such as ``RTE_FLOW_ITEM_TYPE_VLAN``. In
 the latter case, ``type`` refers to that of the outer header, with the inner
 EtherType/TPID provided by the subsequent pattern item. This is the same
 order as on the wire.
+If the ``type`` field contains a TPID value, then only tagged packets with the
+specified TPID will match the pattern.
+The field ``has_vlan`` can be used to match any type of tagged packets,
+instead of using the ``type`` field.
+If the ``type`` and ``has_vlan`` fields are not specified, then both tagged
+and untagged packets will match the pattern.
 
 - ``dst``: destination MAC.
 - ``src``: source MAC.
 - ``type``: EtherType or TPID.
+- ``has_vlan``: packet header contains at least one VLAN.
 - Default ``mask`` matches destination and source addresses only.
 
 Item: ``VLAN``
@@ -863,11 +916,18 @@ Item: ``VLAN``
 Matches an 802.1Q/ad VLAN tag.
 
 The corresponding standard outer EtherType (TPID) values are
-``ETHER_TYPE_VLAN`` or ``ETHER_TYPE_QINQ``. It can be overridden by the
+``RTE_ETHER_TYPE_VLAN`` or ``RTE_ETHER_TYPE_QINQ``. It can be overridden by the
 preceding pattern item.
+If a ``VLAN`` item is present in the pattern, then only tagged packets will
+match the pattern.
+The field ``has_more_vlan`` can be used to match any type of tagged packets,
+instead of using the ``inner_type field``.
+If the ``inner_type`` and ``has_more_vlan`` fields are not specified,
+then any tagged packets will match the pattern.
 
 - ``tci``: tag control information.
 - ``inner_type``: inner EtherType or TPID.
+- ``has_more_vlan``: packet header contains at least one more VLAN, after this VLAN.
 - Default ``mask`` matches the VID part of TCI only (lower 12 bits).
 
 Item: ``IPV4``
@@ -885,11 +945,25 @@ Item: ``IPV6``
 
 Matches an IPv6 header.
 
-Note: IPv6 options are handled by dedicated pattern items, see `Item:
-IPV6_EXT`_.
+Dedicated flags indicate if header contains specific extension headers.
+To match on packets containing a specific extension header, an application
+should match on the dedicated flag set to 1.
+To match on packets not containing a specific extension header, an application
+should match on the dedicated flag clear to 0.
+In case application doesn't care about the existence of a specific extension
+header, it should not specify the dedicated flag for matching.
 
 - ``hdr``: IPv6 header definition (``rte_ip.h``).
-- Default ``mask`` matches source and destination addresses only.
+- ``has_hop_ext``: header contains Hop-by-Hop Options extension header.
+- ``has_route_ext``: header contains Routing extension header.
+- ``has_frag_ext``: header contains Fragment extension header.
+- ``has_auth_ext``: header contains Authentication extension header.
+- ``has_esp_ext``: header contains Encapsulation Security Payload extension header.
+- ``has_dest_ext``: header contains Destination Options extension header.
+- ``has_mobil_ext``: header contains Mobility extension header.
+- ``has_hip_ext``: header contains Host Identity Protocol extension header.
+- ``has_shim6_ext``: header contains Shim6 Protocol extension header.
+- Default ``mask`` matches ``hdr`` source and destination addresses only.
 
 Item: ``ICMP``
 ^^^^^^^^^^^^^^
@@ -940,7 +1014,7 @@ Item: ``E_TAG``
 Matches an IEEE 802.1BR E-Tag header.
 
 The corresponding standard outer EtherType (TPID) value is
-``ETHER_TYPE_ETAG``. It can be overridden by the preceding pattern item.
+``RTE_ETHER_TYPE_ETAG``. It can be overridden by the preceding pattern item.
 
 - ``epcp_edei_in_ecid_b``: E-Tag control information (E-TCI), E-PCP (3b),
   E-DEI (1b), ingress E-CID base (12b).
@@ -979,6 +1053,15 @@ Matches a GRE header.
 - ``c_rsvd0_ver``: checksum, reserved 0 and version.
 - ``protocol``: protocol type.
 - Default ``mask`` matches protocol only.
+
+Item: ``GRE_KEY``
+^^^^^^^^^^^^^^^^^
+
+Matches a GRE key field.
+This should be preceded by item ``GRE``.
+
+- Value to be matched is a big-endian 32 bit integer.
+- When this item present it implicitly match K bit in default mask as "1"
 
 Item: ``FUZZY``
 ^^^^^^^^^^^^^^^
@@ -1107,6 +1190,18 @@ Normally preceded by any of:
 - `Item: IPV6`_
 - `Item: IPV6_EXT`_
 
+Item: ``IPV6_FRAG_EXT``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Matches the presence of IPv6 fragment extension header.
+
+- ``hdr``: IPv6 fragment extension header definition (``rte_ip.h``).
+
+Normally preceded by any of:
+
+- `Item: IPV6`_
+- `Item: IPV6_EXT`_
+
 Item: ``ICMP6``
 ^^^^^^^^^^^^^^^
 
@@ -1196,25 +1291,146 @@ Matches an application specific 32 bit metadata item.
 
 - Default ``mask`` matches the specified metadata value.
 
-.. _table_rte_flow_item_meta:
+Item: ``GTP_PSC``
+^^^^^^^^^^^^^^^^^
 
-.. table:: META
+Matches a GTP PDU extension header with type 0x85.
 
-   +----------+----------+---------------------------------------+
-   | Field    | Subfield | Value                                 |
-   +==========+==========+=======================================+
-   | ``spec`` | ``data`` | 32 bit metadata value                 |
-   +----------+--------------------------------------------------+
-   | ``last`` | ``data`` | upper range value                     |
-   +----------+----------+---------------------------------------+
-   | ``mask`` | ``data`` | bit-mask applies to "spec" and "last" |
-   +----------+----------+---------------------------------------+
+- ``pdu_type``: PDU type.
+- ``qfi``: QoS flow identifier.
+- Default ``mask`` matches QFI only.
+
+Item: ``PPPOES``, ``PPPOED``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Matches a PPPoE header.
+
+- ``version_type``: version (4b), type (4b).
+- ``code``: message type.
+- ``session_id``: session identifier.
+- ``length``: payload length.
+
+Item: ``PPPOE_PROTO_ID``
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Matches a PPPoE session protocol identifier.
+
+- ``proto_id``: PPP protocol identifier.
+- Default ``mask`` matches proto_id only.
+
+Item: ``NSH``
+^^^^^^^^^^^^^
+
+Matches a network service header (RFC 8300).
+
+- ``version``: normally 0x0 (2 bits).
+- ``oam_pkt``: indicate oam packet (1 bit).
+- ``reserved``: reserved bit (1 bit).
+- ``ttl``: maximum SFF hopes (6 bits).
+- ``length``: total length in 4 bytes words (6 bits).
+- ``reserved1``: reserved1 bits (4 bits).
+- ``mdtype``: ndicates format of NSH header (4 bits).
+- ``next_proto``: indicates protocol type of encap data (8 bits).
+- ``spi``: service path identifier (3 bytes).
+- ``sindex``: service index (1 byte).
+- Default ``mask`` matches mdtype, next_proto, spi, sindex.
+
+
+Item: ``IGMP``
+^^^^^^^^^^^^^^
+
+Matches a Internet Group Management Protocol (RFC 2236).
+
+- ``type``: IGMP message type (Query/Report).
+- ``max_resp_time``: max time allowed before sending report.
+- ``checksum``: checksum, 1s complement of whole IGMP message.
+- ``group_addr``: group address, for Query value will be 0.
+- Default ``mask`` matches group_addr.
+
+
+Item: ``AH``
+^^^^^^^^^^^^
+
+Matches a IP Authentication Header (RFC 4302).
+
+- ``next_hdr``: next payload after AH.
+- ``payload_len``: total length of AH in 4B words.
+- ``reserved``: reserved bits.
+- ``spi``: security parameters index.
+- ``seq_num``: counter value increased by 1 on each packet sent.
+- Default ``mask`` matches spi.
+
+Item: ``HIGIG2``
+^^^^^^^^^^^^^^^^^
+
+Matches a HIGIG2 header field. It is layer 2.5 protocol and used in
+Broadcom switches.
+
+- Default ``mask`` matches classification and vlan.
+
+Item: ``L2TPV3OIP``
+^^^^^^^^^^^^^^^^^^^
+
+Matches a L2TPv3 over IP header.
+
+- ``session_id``: L2TPv3 over IP session identifier.
+- Default ``mask`` matches session_id only.
+
+Item: ``PFCP``
+^^^^^^^^^^^^^^
+
+Matches a PFCP Header.
+
+- ``s_field``: S field.
+- ``msg_type``: message type.
+- ``msg_len``: message length.
+- ``seid``: session endpoint identifier.
+- Default ``mask`` matches s_field and seid.
+
+Item: ``ECPRI``
+^^^^^^^^^^^^^^^
+
+Matches a eCPRI header.
+
+- ``hdr``: eCPRI header definition (``rte_ecpri.h``).
+- Default ``mask`` matches nothing, for all eCPRI messages.
+
+Item: ``PACKET_INTEGRITY_CHECKS``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Matches packet integrity.
+For some devices application needs to enable integration checks in HW
+before using this item.
+
+- ``level``: the encapsulation level that should be checked:
+   - ``level == 0`` means the default PMD mode (can be inner most / outermost).
+   - ``level == 1`` means outermost header.
+   - ``level > 1``  means inner header. See also RSS level.
+- ``packet_ok``: All HW packet integrity checks have passed based on the
+  topmost network layer. For example, for ICMP packet the topmost network
+  layer is L3 and for TCP or UDP packet the topmost network layer is L4.
+- ``l2_ok``: all layer 2 HW integrity checks passed.
+- ``l3_ok``: all layer 3 HW integrity checks passed.
+- ``l4_ok``: all layer 4 HW integrity checks passed.
+- ``l2_crc_ok``: layer 2 CRC check passed.
+- ``ipv4_csum_ok``: IPv4 checksum check passed.
+- ``l4_csum_ok``: layer 4 checksum check passed.
+- ``l3_len_ok``: the layer 3 length is smaller than the frame length.
+
+Item: ``CONNTRACK``
+^^^^^^^^^^^^^^^^^^^
+
+Matches a conntrack state after conntrack action.
+
+- ``flags``: conntrack packet state flags.
+- Default ``mask`` matches all state bits.
 
 Actions
 ~~~~~~~
 
-Each possible action is represented by a type. Some have associated
-configuration structures. Several actions combined in a list can be assigned
+Each possible action is represented by a type.
+An action can have an associated configuration object.
+Several actions combined in a list can be assigned
 to a flow rule and are performed in order.
 
 They fall in three categories:
@@ -1329,8 +1545,7 @@ that VOID is ignored.
 Action types
 ~~~~~~~~~~~~
 
-Common action types are described in this section. Like pattern item types,
-this list is not exhaustive as new actions will be added in the future.
+Common action types are described in this section.
 
 Action: ``END``
 ^^^^^^^^^^^^^^^
@@ -1522,7 +1737,7 @@ Counters can be retrieved and reset through ``rte_flow_query()``, see
 The shared flag indicates whether the counter is unique to the flow rule the
 action is specified with, or whether it is a shared counter.
 
-For a count action with the shared flag set, then then a global device
+For a count action with the shared flag set, then a global device
 namespace is assumed for the counter id, so that any matched flow rules using
 a count action with the same counter id on the same port will contribute to
 that counter.
@@ -1530,17 +1745,20 @@ that counter.
 For ports within the same switch domain then the counter id namespace extends
 to all ports within that switch domain.
 
+The shared flag is DEPRECATED and ``INDIRECT`` ``COUNT`` action should be used
+to make shared counters.
+
 .. _table_rte_flow_action_count:
 
 .. table:: COUNT
 
-   +------------+---------------------+
-   | Field      | Value               |
-   +============+=====================+
-   | ``shared`` | shared counter flag |
-   +------------+---------------------+
-   | ``id``     | counter id          |
-   +------------+---------------------+
+   +------------+---------------------------------+
+   | Field      | Value                           |
+   +============+=================================+
+   | ``shared`` | DEPRECATED, shared counter flag |
+   +------------+---------------------------------+
+   | ``id``     | counter id                      |
+   +------------+---------------------------------+
 
 Query structure to retrieve and reset flow rule counters:
 
@@ -1573,6 +1791,19 @@ field does not disable RSS in a flow rule. Doing so instead requests safe
 unspecified "best-effort" settings from the underlying PMD, which depending
 on the flow rule, may result in anything ranging from empty (single queue)
 to all-inclusive RSS.
+
+If non-applicable for matching packets RSS types are requested,
+these RSS types are simply ignored. For example, it happens if:
+
+- Hashing of both TCP and UDP ports is requested
+  (only one can be present in a packet).
+
+- Requested RSS types contradict to flow rule pattern
+  (e.g. pattern has UDP item, but RSS types contain TCP).
+
+If requested RSS hash types are not supported by the Ethernet device at all
+(not reported in ``dev_info.flow_type_rss_offloads``),
+the flow creation will fail.
 
 Note: RSS hash result is stored in the ``hash.rss`` mbuf field which
 overlaps ``hash.fdir.lo``. Since `Action: MARK`_ sets the ``hash.fdir.hi``
@@ -2129,7 +2360,7 @@ as defined in the ``rte_flow_action_raw_decap``
 
 This action modifies the payload of matched flows. The data supplied must
 be a valid header, either holding layer 2 data in case of removing layer 2
-before eincapsulation of layer 3 tunnel (for example MPLSoGRE) or complete
+before encapsulation of layer 3 tunnel (for example MPLSoGRE) or complete
 tunnel definition starting from layer 2 and moving to the tunnel item itself.
 When applied to the original packet the resulting packet must be a
 valid packet.
@@ -2279,7 +2510,7 @@ Action: ``DEC_TTL``
 Decrease TTL value.
 
 If there is no valid RTE_FLOW_ITEM_TYPE_IPV4 or RTE_FLOW_ITEM_TYPE_IPV6
-in pattern, Some PMDs will reject rule because behaviour will be undefined.
+in pattern, Some PMDs will reject rule because behavior will be undefined.
 
 .. _table_rte_flow_action_dec_ttl:
 
@@ -2297,7 +2528,7 @@ Action: ``SET_TTL``
 Assigns a new TTL value.
 
 If there is no valid RTE_FLOW_ITEM_TYPE_IPV4 or RTE_FLOW_ITEM_TYPE_IPV6
-in pattern, Some PMDs will reject rule because behaviour will be undefined.
+in pattern, Some PMDs will reject rule because behavior will be undefined.
 
 .. _table_rte_flow_action_set_ttl:
 
@@ -2345,6 +2576,429 @@ Otherwise, RTE_FLOW_ERROR_TYPE_ACTION error will be returned.
    | ``mac_addr`` | MAC address   |
    +--------------+---------------+
 
+Action: ``INC_TCP_SEQ``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Increase sequence number in the outermost TCP header.
+Value to increase TCP sequence number by is a big-endian 32 bit integer.
+
+Using this action on non-matching traffic will result in undefined behavior.
+
+Action: ``DEC_TCP_SEQ``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Decrease sequence number in the outermost TCP header.
+Value to decrease TCP sequence number by is a big-endian 32 bit integer.
+
+Using this action on non-matching traffic will result in undefined behavior.
+
+Action: ``INC_TCP_ACK``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Increase acknowledgment number in the outermost TCP header.
+Value to increase TCP acknowledgment number by is a big-endian 32 bit integer.
+
+Using this action on non-matching traffic will result in undefined behavior.
+
+Action: ``DEC_TCP_ACK``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Decrease acknowledgment number in the outermost TCP header.
+Value to decrease TCP acknowledgment number by is a big-endian 32 bit integer.
+
+Using this action on non-matching traffic will result in undefined behavior.
+
+Action: ``SET_TAG``
+^^^^^^^^^^^^^^^^^^^
+
+Set Tag.
+
+Tag is a transient data used during flow matching. This is not delivered to
+application. Multiple tags are supported by specifying index.
+
+.. _table_rte_flow_action_set_tag:
+
+.. table:: SET_TAG
+
+   +-----------+----------------------------+
+   | Field     | Value                      |
+   +===========+============================+
+   | ``data``  | 32 bit tag value           |
+   +-----------+----------------------------+
+   | ``mask``  | bit-mask applies to "data" |
+   +-----------+----------------------------+
+   | ``index`` | index of tag to set        |
+   +-----------+----------------------------+
+
+Action: ``SET_META``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Set metadata. Item ``META`` matches metadata.
+
+Metadata set by mbuf metadata field with PKT_TX_DYNF_METADATA flag on egress
+will be overridden by this action. On ingress, the metadata will be carried by
+``metadata`` dynamic field of ``rte_mbuf`` which can be accessed by
+``RTE_FLOW_DYNF_METADATA()``. PKT_RX_DYNF_METADATA flag will be set along
+with the data.
+
+The mbuf dynamic field must be registered by calling
+``rte_flow_dynf_metadata_register()`` prior to use ``SET_META`` action.
+
+Altering partial bits is supported with ``mask``. For bits which have never been
+set, unpredictable value will be seen depending on driver implementation. For
+loopback/hairpin packet, metadata set on Rx/Tx may or may not be propagated to
+the other path depending on HW capability.
+
+In hairpin case with Tx explicit flow mode, metadata could (not mandatory) be
+used to connect the Rx and Tx flows if it can be propagated from Rx to Tx path.
+
+.. _table_rte_flow_action_set_meta:
+
+.. table:: SET_META
+
+   +----------+----------------------------+
+   | Field    | Value                      |
+   +==========+============================+
+   | ``data`` | 32 bit metadata value      |
+   +----------+----------------------------+
+   | ``mask`` | bit-mask applies to "data" |
+   +----------+----------------------------+
+
+Action: ``SET_IPV4_DSCP``
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Set IPv4 DSCP.
+
+Modify DSCP in IPv4 header.
+
+It must be used with RTE_FLOW_ITEM_TYPE_IPV4 in pattern.
+Otherwise, RTE_FLOW_ERROR_TYPE_ACTION error will be returned.
+
+.. _table_rte_flow_action_set_ipv4_dscp:
+
+.. table:: SET_IPV4_DSCP
+
+   +-----------+---------------------------------+
+   | Field     | Value                           |
+   +===========+=================================+
+   | ``dscp``  | DSCP in low 6 bits, rest ignore |
+   +-----------+---------------------------------+
+
+Action: ``SET_IPV6_DSCP``
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Set IPv6 DSCP.
+
+Modify DSCP in IPv6 header.
+
+It must be used with RTE_FLOW_ITEM_TYPE_IPV6 in pattern.
+Otherwise, RTE_FLOW_ERROR_TYPE_ACTION error will be returned.
+
+.. _table_rte_flow_action_set_ipv6_dscp:
+
+.. table:: SET_IPV6_DSCP
+
+   +-----------+---------------------------------+
+   | Field     | Value                           |
+   +===========+=================================+
+   | ``dscp``  | DSCP in low 6 bits, rest ignore |
+   +-----------+---------------------------------+
+
+Action: ``AGE``
+^^^^^^^^^^^^^^^
+
+Set ageing timeout configuration to a flow.
+
+Event RTE_ETH_EVENT_FLOW_AGED will be reported if
+timeout passed without any matching on the flow.
+
+.. _table_rte_flow_action_age:
+
+.. table:: AGE
+
+   +--------------+---------------------------------+
+   | Field        | Value                           |
+   +==============+=================================+
+   | ``timeout``  | 24 bits timeout value           |
+   +--------------+---------------------------------+
+   | ``reserved`` | 8 bits reserved, must be zero   |
+   +--------------+---------------------------------+
+   | ``context``  | user input flow context         |
+   +--------------+---------------------------------+
+
+Query structure to retrieve ageing status information of a
+shared AGE action, or a flow rule using the AGE action:
+
+.. _table_rte_flow_query_age:
+
+.. table:: AGE query
+
+   +------------------------------+-----+----------------------------------------+
+   | Field                        | I/O | Value                                  |
+   +==============================+=====+========================================+
+   | ``aged``                     | out | Aging timeout expired                  |
+   +------------------------------+-----+----------------------------------------+
+   | ``sec_since_last_hit_valid`` | out | ``sec_since_last_hit`` value is valid  |
+   +------------------------------+-----+----------------------------------------+
+   | ``sec_since_last_hit``       | out | Seconds since last traffic hit         |
+   +------------------------------+-----+----------------------------------------+
+
+Action: ``SAMPLE``
+^^^^^^^^^^^^^^^^^^
+
+Adds a sample action to a matched flow.
+
+The matching packets will be duplicated with the specified ``ratio`` and
+applied with own set of actions with a fate action, the packets sampled
+equals is '1/ratio'. All the packets continue to the target destination.
+
+When the ``ratio`` is set to 1 then the packets will be 100% mirrored.
+``actions`` represent the different set of actions for the sampled or mirrored
+packets, and must have a fate action.
+
+.. _table_rte_flow_action_sample:
+
+.. table:: SAMPLE
+
+   +--------------+---------------------------------+
+   | Field        | Value                           |
+   +==============+=================================+
+   | ``ratio``    | 32 bits sample ratio value      |
+   +--------------+---------------------------------+
+   | ``actions``  | sub-action list for sampling    |
+   +--------------+---------------------------------+
+
+Action: ``INDIRECT``
+^^^^^^^^^^^^^^^^^^^^
+
+Flow utilize indirect action by handle as returned from
+``rte_flow_action_handle_create()``.
+
+The behaviour of the indirect action defined by ``action`` argument of type
+``struct rte_flow_action`` passed to ``rte_flow_action_handle_create()``.
+
+The indirect action can be used by a single flow or shared among multiple flows.
+The indirect action can be in-place updated by ``rte_flow_action_handle_update()``
+without destroying flow and creating flow again. The fields that could be
+updated depend on the type of the ``action`` and different for every type.
+
+The indirect action specified data (e.g. counter) can be queried by
+``rte_flow_action_handle_query()``.
+
+.. _table_rte_flow_action_handle:
+
+.. table:: INDIRECT
+
+   +---------------+
+   | Field         |
+   +===============+
+   | no properties |
+   +---------------+
+
+Action: ``MODIFY_FIELD``
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Modify ``dst`` field according to ``op`` selected (set, addition,
+subtraction) with ``width`` bits of data from ``src`` field.
+
+Any arbitrary header field (as well as mark, metadata or tag values)
+can be used as both source and destination fields as set by ``field``.
+The immediate value ``RTE_FLOW_FIELD_VALUE`` (or a pointer to it
+``RTE_FLOW_FIELD_POINTER``) is allowed as a source only.
+``RTE_FLOW_FIELD_START`` is used to point to the beginning of a packet.
+See ``enum rte_flow_field_id`` for the list of supported fields.
+
+``op`` selects the operation to perform on a destination field.
+- ``set`` copies the data from ``src`` field to ``dst`` field.
+- ``add`` adds together ``dst`` and ``src`` and stores the result into ``dst``.
+- ``sub`` subtracts ``src`` from ``dst`` and stores the result into ``dst``
+
+``width`` defines a number of bits to use from ``src`` field.
+
+``level`` is used to access any packet field on any encapsulation level
+as well as any tag element in the tag array.
+- ``0`` means the default behaviour. Depending on the packet type, it can
+mean outermost, innermost or anything in between.
+- ``1`` requests access to the outermost packet encapsulation level.
+- ``2`` and subsequent values requests access to the specified packet
+encapsulation level, from outermost to innermost (lower to higher values).
+For the tag array (in case of multiple tags are supported and present)
+``level`` translates directly into the array index.
+
+``offset`` specifies the number of bits to skip from a field's start.
+That allows performing a partial copy of the needed part or to divide a big
+packet field into multiple smaller fields. Alternatively, ``offset`` allows
+going past the specified packet field boundary to copy a field to an
+arbitrary place in a packet, essentially providing a way to copy any part of
+a packet to any other part of it.
+
+``value`` sets an immediate value to be used as a source or points to a
+location of the value in memory. It is used instead of ``level`` and ``offset``
+for ``RTE_FLOW_FIELD_VALUE`` and ``RTE_FLOW_FIELD_POINTER`` respectively.
+
+.. _table_rte_flow_action_modify_field:
+
+.. table:: MODIFY_FIELD
+
+   +---------------+-------------------------+
+   | Field         | Value                   |
+   +===============+=========================+
+   | ``op``        | operation to perform    |
+   +---------------+-------------------------+
+   | ``dst``       | destination field       |
+   +---------------+-------------------------+
+   | ``src``       | source field            |
+   +---------------+-------------------------+
+   | ``width``     | number of bits to use   |
+   +---------------+-------------------------+
+
+.. _table_rte_flow_action_modify_data:
+
+.. table:: destination/source field definition
+
+   +---------------+----------------------------------------------------------+
+   | Field         | Value                                                    |
+   +===============+==========================================================+
+   | ``field``     | ID: packet field, mark, meta, tag, immediate, pointer    |
+   +---------------+----------------------------------------------------------+
+   | ``level``     | encapsulation level of a packet field or tag array index |
+   +---------------+----------------------------------------------------------+
+   | ``offset``    | number of bits to skip at the beginning                  |
+   +---------------+----------------------------------------------------------+
+   | ``value``     | immediate value or a pointer to this value               |
+   +---------------+----------------------------------------------------------+
+
+Action: ``CONNTRACK``
+^^^^^^^^^^^^^^^^^^^^^
+
+Create a conntrack (connection tracking) context with the provided information.
+
+In stateful session like TCP, the conntrack action provides the ability to
+examine every packet of this connection and associate the state to every
+packet. It will help to realize the stateful offload of connections with little
+software participation. For example, the packets with invalid state may be
+handled by the software. The control packets could be handled in the hardware.
+The software just need to query the state of a connection when needed, and then
+decide how to handle the flow rules and conntrack context.
+
+A conntrack context should be created via ``rte_flow_action_handle_create()``
+before using. Then the handle with ``INDIRECT`` type is used for a flow rule
+creation. If a flow rule with an opposite direction needs to be created, the
+``rte_flow_action_handle_update()`` should be used to modify the direction.
+
+Not all the fields of the ``struct rte_flow_action_conntrack`` will be used
+for a conntrack context creating, depending on the HW, and they should be
+in host byte order. PMD should convert them into network byte order when
+needed by the HW.
+
+The ``struct rte_flow_modify_conntrack`` should be used for an updating.
+
+The current conntrack context information could be queried via the
+``rte_flow_action_handle_query()`` interface.
+
+.. _table_rte_flow_action_conntrack:
+
+.. table:: CONNTRACK
+
+   +--------------------------+-------------------------------------------------------------+
+   | Field                    | Value                                                       |
+   +==========================+=============================================================+
+   | ``peer_port``            | peer port number                                            |
+   +--------------------------+-------------------------------------------------------------+
+   | ``is_original_dir``      | direction of this connection for creating flow rule         |
+   +--------------------------+-------------------------------------------------------------+
+   | ``enable``               | enable the conntrack context                                |
+   +--------------------------+-------------------------------------------------------------+
+   | ``live_connection``      | one ack was seen for this connection                        |
+   +--------------------------+-------------------------------------------------------------+
+   | ``selective_ack``        | SACK enabled                                                |
+   +--------------------------+-------------------------------------------------------------+
+   | ``challenge_ack_passed`` | a challenge ack has passed                                  |
+   +--------------------------+-------------------------------------------------------------+
+   | ``last_direction``       | direction of the last passed packet                         |
+   +--------------------------+-------------------------------------------------------------+
+   | ``liberal_mode``         | only report state change                                    |
+   +--------------------------+-------------------------------------------------------------+
+   | ``state``                | current state                                               |
+   +--------------------------+-------------------------------------------------------------+
+   | ``max_ack_window``       | maximal window scaling factor                               |
+   +--------------------------+-------------------------------------------------------------+
+   | ``retransmission_limit`` | maximal retransmission times                                |
+   +--------------------------+-------------------------------------------------------------+
+   | ``original_dir``         | TCP parameters of the original direction                    |
+   +--------------------------+-------------------------------------------------------------+
+   | ``reply_dir``            | TCP parameters of the reply direction                       |
+   +--------------------------+-------------------------------------------------------------+
+   | ``last_window``          | window size of the last passed packet                       |
+   +--------------------------+-------------------------------------------------------------+
+   | ``last_seq``             | sequence number of the last passed packet                   |
+   +--------------------------+-------------------------------------------------------------+
+   | ``last_ack``             | acknowledgment number the last passed packet                |
+   +--------------------------+-------------------------------------------------------------+
+   | ``last_end``             | sum of ack number and length of the last passed packet      |
+   +--------------------------+-------------------------------------------------------------+
+
+.. _table_rte_flow_tcp_dir_param:
+
+.. table:: configuration parameters for each direction
+
+   +---------------------+---------------------------------------------------------+
+   | Field               | Value                                                   |
+   +=====================+=========================================================+
+   | ``scale``           | TCP window scaling factor                               |
+   +---------------------+---------------------------------------------------------+
+   | ``close_initiated`` | FIN sent from this direction                            |
+   +---------------------+---------------------------------------------------------+
+   | ``last_ack_seen``   | an ACK packet received                                  |
+   +---------------------+---------------------------------------------------------+
+   | ``data_unacked``    | unacknowledged data for packets from this direction     |
+   +---------------------+---------------------------------------------------------+
+   | ``sent_end``        | max{seq + len} seen in sent packets                     |
+   +---------------------+---------------------------------------------------------+
+   | ``reply_end``       | max{sack + max{win, 1}} seen in reply packets           |
+   +---------------------+---------------------------------------------------------+
+   | ``max_win``         | max{max{win, 1}} + {sack - ack} seen in sent packets    |
+   +---------------------+---------------------------------------------------------+
+   | ``max_ack``         | max{ack} + seen in sent packets                         |
+   +---------------------+---------------------------------------------------------+
+
+.. _table_rte_flow_modify_conntrack:
+
+.. table:: update a conntrack context
+
+   +----------------+-------------------------------------------------+
+   | Field          | Value                                           |
+   +================+=================================================+
+   | ``new_ct``     | new conntrack information                       |
+   +----------------+-------------------------------------------------+
+   | ``direction``  | direction will be updated                       |
+   +----------------+-------------------------------------------------+
+   | ``state``      | other fields except direction will be updated   |
+   +----------------+-------------------------------------------------+
+   | ``reserved``   | reserved bits                                   |
+   +----------------+-------------------------------------------------+
+
+Action: ``METER_COLOR``
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Color the packet to reflect the meter color result.
+
+The meter action must be configured before meter color action.
+Meter color action is set to a color to reflect the meter color result.
+Set the meter color in the mbuf to the selected color.
+The meter color action output color is the output color of the packet,
+which is set in the packet meta-data (i.e. struct ``rte_mbuf::sched::color``)
+
+.. _table_rte_flow_action_meter_color:
+
+.. table:: METER_COLOR
+
+   +-----------------+--------------+
+   | Field           | Value        |
+   +=================+==============+
+   | ``meter_color`` | Packet color |
+   +-----------------+--------------+
+
 Negative types
 ~~~~~~~~~~~~~~
 
@@ -2357,18 +3011,8 @@ identifiers they are not aware of.
 
 A method to generate them remains to be defined.
 
-Planned types
-~~~~~~~~~~~~~
-
-Pattern item types will be added as new protocols are implemented.
-
-Variable headers support through dedicated pattern items, for example in
-order to match specific IPv4 options and IPv6 extension headers would be
-stacked after IPv4/IPv6 items.
-
-Other action types are planned but are not defined yet. These include the
-ability to alter packet data in several ways, such as performing
-encapsulation/decapsulation of tunnel headers.
+Application may use PMD dynamic items or actions in flow rules. In that case
+size of configuration object in dynamic element must be a pointer size.
 
 Rules management
 ----------------
@@ -2607,7 +3251,6 @@ port and may return errors such as ``ENOTSUP`` ("not supported"):
 - Configuring MAC addresses.
 - Configuring multicast addresses.
 - Configuring VLAN filters.
-- Configuring Rx filters through the legacy API (e.g. FDIR).
 - Configuring global RSS settings.
 
 .. code-block:: c
@@ -2710,6 +3353,84 @@ operations include:
 - Duplication of a complete flow rule description.
 - Pattern item or action name retrieval.
 
+Tunneled traffic offload
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+rte_flow API provides the building blocks for vendor-agnostic flow
+classification offloads. The rte_flow "patterns" and "actions"
+primitives are fine-grained, thus enabling DPDK applications the
+flexibility to offload network stacks and complex pipelines.
+Applications wishing to offload tunneled traffic are required to use
+the rte_flow primitives, such as group, meta, mark, tag, and others to
+model their high-level objects.  The hardware model design for
+high-level software objects is not trivial.  Furthermore, an optimal
+design is often vendor-specific.
+
+When hardware offloads tunneled traffic in multi-group logic,
+partially offloaded packets may arrive to the application after they
+were modified in hardware. In this case, the application may need to
+restore the original packet headers. Consider the following sequence:
+The application decaps a packet in one group and jumps to a second
+group where it tries to match on a 5-tuple, that will miss and send
+the packet to the application. In this case, the application does not
+receive the original packet but a modified one. Also, in this case,
+the application cannot match on the outer header fields, such as VXLAN
+vni and 5-tuple.
+
+There are several possible ways to use rte_flow "patterns" and
+"actions" to resolve the issues above. For example:
+
+1 Mapping headers to a hardware registers using the
+rte_flow_action_mark/rte_flow_action_tag/rte_flow_set_meta objects.
+
+2 Apply the decap only at the last offload stage after all the
+"patterns" were matched and the packet will be fully offloaded.
+
+Every approach has its pros and cons and is highly dependent on the
+hardware vendor.  For example, some hardware may have a limited number
+of registers while other hardware could not support inner actions and
+must decap before accessing inner headers.
+
+The tunnel offload model resolves these issues. The model goals are:
+
+1 Provide a unified application API to offload tunneled traffic that
+is capable to match on outer headers after decap.
+
+2 Allow the application to restore the outer header of partially
+offloaded packets.
+
+The tunnel offload model does not introduce new elements to the
+existing RTE flow model and is implemented as a set of helper
+functions.
+
+For the application to work with the tunnel offload API it
+has to adjust flow rules in multi-table tunnel offload in the
+following way:
+
+1 Remove explicit call to decap action and replace it with PMD actions
+obtained from rte_flow_tunnel_decap_and_set() helper.
+
+2 Add PMD items obtained from rte_flow_tunnel_match() helper to all
+other rules in the tunnel offload sequence.
+
+The model requirements:
+
+Software application must initialize
+rte_tunnel object with tunnel parameters before calling
+rte_flow_tunnel_decap_set() & rte_flow_tunnel_match().
+
+PMD actions array obtained in rte_flow_tunnel_decap_set() must be
+released by application with rte_flow_action_release() call.
+
+PMD items array obtained with rte_flow_tunnel_match() must be released
+by application with rte_flow_item_release() call.  Application can
+release PMD items and actions after rule was created. However, if the
+application needs to create additional rule for the same tunnel it
+will need to obtain PMD items again.
+
+Application cannot destroy rte_tunnel object before it releases all
+PMD actions & PMD items referencing that tunnel.
+
 Caveats
 -------
 
@@ -2725,19 +3446,17 @@ Caveats
 - API operations are synchronous and blocking (``EAGAIN`` cannot be
   returned).
 
-- There is no provision for reentrancy/multi-thread safety, although nothing
-  should prevent different devices from being configured at the same
-  time. PMDs may protect their control path functions accordingly.
-
 - Stopping the data path (TX/RX) should not be necessary when managing flow
   rules. If this cannot be achieved naturally or with workarounds (such as
   temporarily replacing the burst function pointers), an appropriate error
   code must be returned (``EBUSY``).
 
-- PMDs, not applications, are responsible for maintaining flow rules
-  configuration when stopping and restarting a port or performing other
-  actions which may affect them. They can only be destroyed explicitly by
-  applications.
+- Applications, not PMDs, are responsible for maintaining flow rules
+  configuration when closing, stopping or restarting a port or performing other
+  actions which may affect them.
+  Applications must assume that after port close, stop or restart all flows
+  related to that port are not valid, hardware rules are destroyed and relevant
+  PMD resources are released.
 
 For devices exposing multiple ports sharing global settings affected by flow
 rules:
@@ -2758,13 +3477,7 @@ The PMD interface is defined in ``rte_flow_driver.h``. It is not subject to
 API/ABI versioning constraints as it is not exposed to applications and may
 evolve independently.
 
-It is currently implemented on top of the legacy filtering framework through
-filter type *RTE_ETH_FILTER_GENERIC* that accepts the single operation
-*RTE_ETH_FILTER_GET* to return PMD-specific *rte_flow* callbacks wrapped
-inside ``struct rte_flow_ops``.
-
-This overhead is temporarily necessary in order to keep compatibility with
-the legacy filtering framework, which should eventually disappear.
+The PMD interface is based on callbacks pointed by the ``struct rte_flow_ops``.
 
 - PMD callbacks implement exactly the interface described in `Rules
   management`_, except for the port ID argument which has already been
@@ -2780,7 +3493,13 @@ This interface additionally defines the following helper function:
 - ``rte_flow_ops_get()``: get generic flow operations structure from a
   port.
 
-More will be added over time.
+If PMD interfaces don't support re-entrancy/multi-thread safety,
+the rte_flow API functions will protect threads by mutex per port.
+The application can check whether ``RTE_ETH_DEV_FLOW_OPS_THREAD_SAFE``
+is set in ``dev_flags``, meaning the PMD is thread-safe regarding rte_flow,
+so the API level protection is disabled.
+Please note that this API-level mutex protects only rte_flow functions,
+other control path functions are not in scope.
 
 Device compatibility
 --------------------
@@ -2930,22 +3649,5 @@ PMDs.
 - In order to save priority levels, PMDs may evaluate whether rules are
   likely to collide and adjust their priority accordingly.
 
-Future evolutions
------------------
-
-- A device profile selection function which could be used to force a
-  permanent profile instead of relying on its automatic configuration based
-  on existing flow rules.
-
-- A method to optimize *rte_flow* rules with specific pattern items and
-  action types generated on the fly by PMDs. DPDK should assign negative
-  numbers to these in order to not collide with the existing types. See
-  `Negative types`_.
-
-- Adding specific egress pattern items and actions as described in
-  `Attribute: Traffic direction`_.
-
-- Optional software fallback when PMDs are unable to handle requested flow
-  rules so applications do not have to implement their own.
 
 .. _OpenFlow Switch Specification: https://www.opennetworking.org/software-defined-standards/specifications/

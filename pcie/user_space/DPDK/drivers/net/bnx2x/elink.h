@@ -86,7 +86,7 @@ extern void elink_cb_notify_link_changed(struct bnx2x_softc *sc);
 #define ELINK_EVENT_ID_SFP_UNQUALIFIED_MODULE 	1
 #define ELINK_EVENT_ID_SFP_POWER_FAULT 		2
 
-#define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
+#define ARRAY_SIZE(x) RTE_DIM(x)
 /* Debug prints */
 #ifdef ELINK_DEBUG
 
@@ -440,7 +440,7 @@ struct elink_params {
 #define ELINK_EEE_MODE_OUTPUT_TIME		(1 << 28)
 #define ELINK_EEE_MODE_OVERRIDE_NVRAM		(1 << 29)
 #define ELINK_EEE_MODE_ENABLE_LPI		(1 << 30)
-#define ELINK_EEE_MODE_ADV_LPI			(1 << 31)
+#define ELINK_EEE_MODE_ADV_LPI			(1U << 31)
 
 	uint16_t hw_led_mode; /* part of the hw_config read from the shmem */
 	uint32_t multi_phy_config;

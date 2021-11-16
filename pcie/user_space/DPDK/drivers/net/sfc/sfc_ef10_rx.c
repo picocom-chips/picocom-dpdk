@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright (c) 2016-2018 Solarflare Communications Inc.
- * All rights reserved.
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2016-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -21,6 +21,7 @@
 #include "efx_regs.h"
 #include "efx_regs_ef10.h"
 
+#include "sfc_debug.h"
 #include "sfc_tweak.h"
 #include "sfc_dp_rx.h"
 #include "sfc_kvargs.h"
@@ -31,6 +32,9 @@
 
 #define sfc_ef10_rx_err(dpq, ...) \
 	SFC_DP_LOG(SFC_KVARG_DATAPATH_EF10, ERR, dpq, __VA_ARGS__)
+
+#define sfc_ef10_rx_info(dpq, ...) \
+	SFC_DP_LOG(SFC_KVARG_DATAPATH_EF10, INFO, dpq, __VA_ARGS__)
 
 /**
  * Maximum number of descriptors/buffers in the Rx ring.
@@ -56,14 +60,17 @@ struct sfc_ef10_rxq {
 #define SFC_EF10_RXQ_NOT_RUNNING	0x2
 #define SFC_EF10_RXQ_EXCEPTION		0x4
 #define SFC_EF10_RXQ_RSS_HASH		0x8
+#define SFC_EF10_RXQ_FLAG_INTR_EN	0x10
 	unsigned int			ptr_mask;
 	unsigned int			pending;
 	unsigned int			completed;
 	unsigned int			evq_read_ptr;
+	unsigned int			evq_read_ptr_primed;
 	efx_qword_t			*evq_hw_ring;
 	struct sfc_ef10_rx_sw_desc	*sw_ring;
 	uint64_t			rearm_data;
 	struct rte_mbuf			*scatter_pkt;
+	volatile void			*evq_prime;
 	uint16_t			prefix_size;
 
 	/* Used on refill */
@@ -83,6 +90,13 @@ static inline struct sfc_ef10_rxq *
 sfc_ef10_rxq_by_dp_rxq(struct sfc_dp_rxq *dp_rxq)
 {
 	return container_of(dp_rxq, struct sfc_ef10_rxq, dp);
+}
+
+static void
+sfc_ef10_rx_qprime(struct sfc_ef10_rxq *rxq)
+{
+	sfc_ef10_ev_qprime(rxq->evq_prime, rxq->evq_read_ptr, rxq->ptr_mask);
+	rxq->evq_read_ptr_primed = rxq->evq_read_ptr;
 }
 
 static void
@@ -134,7 +148,7 @@ sfc_ef10_rx_qrefill(struct sfc_ef10_rxq *rxq)
 			struct sfc_ef10_rx_sw_desc *rxd;
 			rte_iova_t phys_addr;
 
-			MBUF_RAW_ALLOC_CHECK(m);
+			__rte_mbuf_raw_sanity_check(m);
 
 			SFC_ASSERT((id & ~ptr_mask) == 0);
 			rxd = &rxq->sw_ring[id];
@@ -157,7 +171,8 @@ sfc_ef10_rx_qrefill(struct sfc_ef10_rxq *rxq)
 
 	SFC_ASSERT(rxq->added != added);
 	rxq->added = added;
-	sfc_ef10_rx_qpush(rxq->doorbell, added, ptr_mask);
+	sfc_ef10_rx_qpush(rxq->doorbell, added, ptr_mask,
+			  &rxq->dp.dpq.rx_dbells);
 }
 
 static void
@@ -209,6 +224,18 @@ sfc_ef10_rx_pending(struct sfc_ef10_rxq *rxq, struct rte_mbuf **rx_pkts,
 	return rx_pkts;
 }
 
+/*
+ * Below Rx pseudo-header (aka Rx prefix) accessors rely on the
+ * following fields layout.
+ */
+static const efx_rx_prefix_layout_t sfc_ef10_rx_prefix_layout = {
+	.erpl_fields	= {
+		[EFX_RX_PREFIX_FIELD_RSS_HASH]	=
+		    { 0, sizeof(uint32_t) * CHAR_BIT, B_FALSE },
+		[EFX_RX_PREFIX_FIELD_LENGTH]	=
+		    { 8 * CHAR_BIT, sizeof(uint16_t) * CHAR_BIT, B_FALSE },
+	}
+};
 static uint16_t
 sfc_ef10_rx_pseudo_hdr_get_len(const uint8_t *pseudo_hdr)
 {
@@ -271,7 +298,7 @@ sfc_ef10_rx_process_event(struct sfc_ef10_rxq *rxq, efx_qword_t rx_ev,
 		rxd = &rxq->sw_ring[pending++ & ptr_mask];
 		m = rxd->mbuf;
 
-		MBUF_RAW_ALLOC_CHECK(m);
+		__rte_mbuf_raw_sanity_check(m);
 
 		m->data_off = RTE_PKTMBUF_HEADROOM;
 		rte_pktmbuf_data_len(m) = seg_len;
@@ -436,6 +463,10 @@ sfc_ef10_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts, uint16_t nb_pkts)
 	/* It is not a problem if we refill in the case of exception */
 	sfc_ef10_rx_qrefill(rxq);
 
+	if ((rxq->flags & SFC_EF10_RXQ_FLAG_INTR_EN) &&
+	    rxq->evq_read_ptr_primed != rxq->evq_read_ptr)
+		sfc_ef10_rx_qprime(rxq);
+
 done:
 	return nb_pkts - (rx_pkts_end - rx_pkts);
 }
@@ -566,6 +597,7 @@ sfc_ef10_rx_get_dev_info(struct rte_eth_dev_info *dev_info)
 static sfc_dp_rx_qsize_up_rings_t sfc_ef10_rx_qsize_up_rings;
 static int
 sfc_ef10_rx_qsize_up_rings(uint16_t nb_rx_desc,
+			   struct sfc_dp_rx_hw_limits *limits,
 			   __rte_unused struct rte_mempool *mb_pool,
 			   unsigned int *rxq_entries,
 			   unsigned int *evq_entries,
@@ -575,8 +607,8 @@ sfc_ef10_rx_qsize_up_rings(uint16_t nb_rx_desc,
 	 * rte_ethdev API guarantees that the number meets min, max and
 	 * alignment requirements.
 	 */
-	if (nb_rx_desc <= EFX_RXQ_MINNDESCS)
-		*rxq_entries = EFX_RXQ_MINNDESCS;
+	if (nb_rx_desc <= limits->rxq_min_entries)
+		*rxq_entries = limits->rxq_min_entries;
 	else
 		*rxq_entries = rte_align32pow2(nb_rx_desc);
 
@@ -652,6 +684,11 @@ sfc_ef10_rx_qcreate(uint16_t port_id, uint16_t queue_id,
 	rxq->doorbell = (volatile uint8_t *)info->mem_bar +
 			ER_DZ_RX_DESC_UPD_REG_OFST +
 			(info->hw_index << info->vi_window_shift);
+	rxq->evq_prime = (volatile uint8_t *)info->mem_bar +
+		      ER_DZ_EVQ_RPTR_REG_OFST +
+		      (info->evq_hw_index << info->vi_window_shift);
+
+	sfc_ef10_rx_info(&rxq->dp.dpq, "RxQ doorbell is %p", rxq->doorbell);
 
 	*dp_rxqp = &rxq->dp;
 	return 0;
@@ -676,7 +713,8 @@ sfc_ef10_rx_qdestroy(struct sfc_dp_rxq *dp_rxq)
 
 static sfc_dp_rx_qstart_t sfc_ef10_rx_qstart;
 static int
-sfc_ef10_rx_qstart(struct sfc_dp_rxq *dp_rxq, unsigned int evq_read_ptr)
+sfc_ef10_rx_qstart(struct sfc_dp_rxq *dp_rxq, unsigned int evq_read_ptr,
+		   const efx_rx_prefix_layout_t *pinfo)
 {
 	struct sfc_ef10_rxq *rxq = sfc_ef10_rxq_by_dp_rxq(dp_rxq);
 
@@ -684,12 +722,19 @@ sfc_ef10_rx_qstart(struct sfc_dp_rxq *dp_rxq, unsigned int evq_read_ptr)
 	SFC_ASSERT(rxq->pending == 0);
 	SFC_ASSERT(rxq->added == 0);
 
+	if (pinfo->erpl_length != rxq->prefix_size ||
+	    efx_rx_prefix_layout_check(pinfo, &sfc_ef10_rx_prefix_layout) != 0)
+		return ENOTSUP;
+
 	sfc_ef10_rx_qrefill(rxq);
 
 	rxq->evq_read_ptr = evq_read_ptr;
 
 	rxq->flags |= SFC_EF10_RXQ_STARTED;
 	rxq->flags &= ~(SFC_EF10_RXQ_NOT_RUNNING | SFC_EF10_RXQ_EXCEPTION);
+
+	if (rxq->flags & SFC_EF10_RXQ_FLAG_INTR_EN)
+		sfc_ef10_rx_qprime(rxq);
 
 	return 0;
 }
@@ -743,16 +788,41 @@ sfc_ef10_rx_qpurge(struct sfc_dp_rxq *dp_rxq)
 	rxq->flags &= ~SFC_EF10_RXQ_STARTED;
 }
 
+static sfc_dp_rx_intr_enable_t sfc_ef10_rx_intr_enable;
+static int
+sfc_ef10_rx_intr_enable(struct sfc_dp_rxq *dp_rxq)
+{
+	struct sfc_ef10_rxq *rxq = sfc_ef10_rxq_by_dp_rxq(dp_rxq);
+
+	rxq->flags |= SFC_EF10_RXQ_FLAG_INTR_EN;
+	if (rxq->flags & SFC_EF10_RXQ_STARTED)
+		sfc_ef10_rx_qprime(rxq);
+	return 0;
+}
+
+static sfc_dp_rx_intr_disable_t sfc_ef10_rx_intr_disable;
+static int
+sfc_ef10_rx_intr_disable(struct sfc_dp_rxq *dp_rxq)
+{
+	struct sfc_ef10_rxq *rxq = sfc_ef10_rxq_by_dp_rxq(dp_rxq);
+
+	/* Cannot disarm, just disable rearm */
+	rxq->flags &= ~SFC_EF10_RXQ_FLAG_INTR_EN;
+	return 0;
+}
+
 struct sfc_dp_rx sfc_ef10_rx = {
 	.dp = {
 		.name		= SFC_KVARG_DATAPATH_EF10,
 		.type		= SFC_DP_RX,
 		.hw_fw_caps	= SFC_DP_HW_FW_CAP_EF10,
 	},
-	.features		= SFC_DP_RX_FEAT_SCATTER |
-				  SFC_DP_RX_FEAT_MULTI_PROCESS |
-				  SFC_DP_RX_FEAT_TUNNELS |
-				  SFC_DP_RX_FEAT_CHECKSUM,
+	.features		= SFC_DP_RX_FEAT_MULTI_PROCESS |
+				  SFC_DP_RX_FEAT_INTR,
+	.dev_offload_capa	= DEV_RX_OFFLOAD_CHECKSUM |
+				  DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
+				  DEV_RX_OFFLOAD_RSS_HASH,
+	.queue_offload_capa	= DEV_RX_OFFLOAD_SCATTER,
 	.get_dev_info		= sfc_ef10_rx_get_dev_info,
 	.qsize_up_rings		= sfc_ef10_rx_qsize_up_rings,
 	.qcreate		= sfc_ef10_rx_qcreate,
@@ -764,5 +834,7 @@ struct sfc_dp_rx sfc_ef10_rx = {
 	.supported_ptypes_get	= sfc_ef10_supported_ptypes_get,
 	.qdesc_npending		= sfc_ef10_rx_qdesc_npending,
 	.qdesc_status		= sfc_ef10_rx_qdesc_status,
+	.intr_enable		= sfc_ef10_rx_intr_enable,
+	.intr_disable		= sfc_ef10_rx_intr_disable,
 	.pkt_burst		= sfc_ef10_recv_pkts,
 };

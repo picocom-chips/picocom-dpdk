@@ -17,11 +17,13 @@
 #define MBUF_CACHE_SIZE 250
 #define BURST_SIZE 32
 
+/* Configuration of ethernet ports. 8<  */
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {
-		.max_rx_pkt_len = ETHER_MAX_LEN,
+		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 	},
 };
+/* >8 End of configuration of ethernet ports. */
 
 /* basicfwd.c: Basic DPDK skeleton forwarding example. */
 
@@ -29,6 +31,8 @@ static const struct rte_eth_conf port_conf_default = {
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
  */
+
+/* Main functional part of port initialization. 8< */
 static inline int
 port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 {
@@ -44,7 +48,13 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 	if (!rte_eth_dev_is_valid_port(port))
 		return -1;
 
-	rte_eth_dev_info_get(port, &dev_info);
+	retval = rte_eth_dev_info_get(port, &dev_info);
+	if (retval != 0) {
+		printf("Error during getting device (port %u) info: %s\n",
+				port, strerror(-retval));
+		return retval;
+	}
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -76,14 +86,18 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			return retval;
 	}
 
-	/* Start the Ethernet port. */
+	/* Starting Ethernet port. 8< */
 	retval = rte_eth_dev_start(port);
+	/* >8 End of starting of ethernet port. */
 	if (retval < 0)
 		return retval;
 
 	/* Display the port MAC address. */
-	struct ether_addr addr;
-	rte_eth_macaddr_get(port, &addr);
+	struct rte_ether_addr addr;
+	retval = rte_eth_macaddr_get(port, &addr);
+	if (retval != 0)
+		return retval;
+
 	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
 			   " %02" PRIx8 " %02" PRIx8 " %02" PRIx8 "\n",
 			port,
@@ -92,16 +106,22 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
 	/* Enable RX in promiscuous mode for the Ethernet device. */
-	rte_eth_promiscuous_enable(port);
+	retval = rte_eth_promiscuous_enable(port);
+	/* End of setting RX port in promiscuous mode. */
+	if (retval != 0)
+		return retval;
 
 	return 0;
 }
+/* >8 End of main functional part of port initialization. */
 
 /*
  * The lcore main. This is the main thread that does the work, reading from
  * an input port and writing to an output port.
  */
-static __attribute__((noreturn)) void
+
+ /* Basic forwarding application lcore. 8< */
+static __rte_noreturn void
 lcore_main(void)
 {
 	uint16_t port;
@@ -111,7 +131,7 @@ lcore_main(void)
 	 * for best performance.
 	 */
 	RTE_ETH_FOREACH_DEV(port)
-		if (rte_eth_dev_socket_id(port) > 0 &&
+		if (rte_eth_dev_socket_id(port) >= 0 &&
 				rte_eth_dev_socket_id(port) !=
 						(int)rte_socket_id())
 			printf("WARNING, port %u is on remote NUMA node to "
@@ -121,7 +141,7 @@ lcore_main(void)
 	printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
 			rte_lcore_id());
 
-	/* Run until the application is quit or killed. */
+	/* Main work of application loop. 8< */
 	for (;;) {
 		/*
 		 * Receive packets on a port and forward them on the paired
@@ -149,7 +169,9 @@ lcore_main(void)
 			}
 		}
 	}
+	/* >8 End of loop. */
 }
+/* >8 End Basic forwarding application lcore. */
 
 /*
  * The main function, which does initialization and calls the per-lcore
@@ -162,10 +184,11 @@ main(int argc, char *argv[])
 	unsigned nb_ports;
 	uint16_t portid;
 
-	/* Initialize the Environment Abstraction Layer (EAL). */
+	/* Initializion the Environment Abstraction Layer (EAL). 8< */
 	int ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
+	/* >8 End of initializion the Environment Abstraction Layer (EAL). */
 
 	argc -= ret;
 	argv += ret;
@@ -176,23 +199,31 @@ main(int argc, char *argv[])
 		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
 
 	/* Creates a new mempool in memory to hold the mbufs. */
+
+	/* Allocates mempool to hold the mbufs. 8< */
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
 		MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+	/* >8 End of allocating mempool to hold mbuf. */
 
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
-	/* Initialize all ports. */
+	/* Initializing all ports. 8< */
 	RTE_ETH_FOREACH_DEV(portid)
 		if (port_init(portid, mbuf_pool) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu16 "\n",
 					portid);
+	/* >8 End of initializing all ports. */
 
 	if (rte_lcore_count() > 1)
 		printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
 
-	/* Call lcore_main on the master core only. */
+	/* Call lcore_main on the main core only. Called on single lcore. 8< */
 	lcore_main();
+	/* >8 End of called on single lcore. */
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
 
 	return 0;
 }

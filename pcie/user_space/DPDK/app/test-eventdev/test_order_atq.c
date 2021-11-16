@@ -9,7 +9,7 @@
 
 /* See http://doc.dpdk.org/guides/tools/testeventdev.html for test details */
 
-static inline __attribute__((always_inline)) void
+static __rte_always_inline void
 order_atq_process_stage_0(struct rte_event *const ev)
 {
 	ev->sub_event_type = 1; /* move to stage 1 (atomic) on the same queue */
@@ -19,7 +19,7 @@ order_atq_process_stage_0(struct rte_event *const ev)
 }
 
 static int
-order_atq_worker(void *arg)
+order_atq_worker(void *arg, const bool flow_id_cap)
 {
 	ORDER_WORKER_INIT;
 	struct rte_event ev;
@@ -33,6 +33,9 @@ order_atq_worker(void *arg)
 			rte_pause();
 			continue;
 		}
+
+		if (!flow_id_cap)
+			order_flow_id_copy_from_mbuf(t, &ev);
 
 		if (ev.sub_event_type == 0) { /* stage 0 from producer */
 			order_atq_process_stage_0(&ev);
@@ -50,7 +53,7 @@ order_atq_worker(void *arg)
 }
 
 static int
-order_atq_worker_burst(void *arg)
+order_atq_worker_burst(void *arg, const bool flow_id_cap)
 {
 	ORDER_WORKER_INIT;
 	struct rte_event ev[BURST_SIZE];
@@ -68,6 +71,9 @@ order_atq_worker_burst(void *arg)
 		}
 
 		for (i = 0; i < nb_rx; i++) {
+			if (!flow_id_cap)
+				order_flow_id_copy_from_mbuf(t, &ev[i]);
+
 			if (ev[i].sub_event_type == 0) { /*stage 0 */
 				order_atq_process_stage_0(&ev[i]);
 			} else if (ev[i].sub_event_type == 1) { /* stage 1 */
@@ -95,11 +101,19 @@ worker_wrapper(void *arg)
 {
 	struct worker_data *w  = arg;
 	const bool burst = evt_has_burst_mode(w->dev_id);
+	const bool flow_id_cap = evt_has_flow_id(w->dev_id);
 
-	if (burst)
-		return order_atq_worker_burst(arg);
-	else
-		return order_atq_worker(arg);
+	if (burst) {
+		if (flow_id_cap)
+			return order_atq_worker_burst(arg, true);
+		else
+			return order_atq_worker_burst(arg, false);
+	} else {
+		if (flow_id_cap)
+			return order_atq_worker(arg, true);
+		else
+			return order_atq_worker(arg, false);
+	}
 }
 
 static int
@@ -118,16 +132,7 @@ order_atq_eventdev_setup(struct evt_test *test, struct evt_options *opt)
 	/* number of active worker cores + 1 producer */
 	const uint8_t nb_ports = nb_workers + 1;
 
-	const struct rte_event_dev_config config = {
-			.nb_event_queues = NB_QUEUES,/* one all types queue */
-			.nb_event_ports = nb_ports,
-			.nb_events_limit  = 4096,
-			.nb_event_queue_flows = opt->nb_flows,
-			.nb_event_port_dequeue_depth = 128,
-			.nb_event_port_enqueue_depth = 128,
-	};
-
-	ret = rte_event_dev_configure(opt->dev_id, &config);
+	ret = evt_configure_eventdev(opt, NB_QUEUES, nb_ports);
 	if (ret) {
 		evt_err("failed to configure eventdev %d", opt->dev_id);
 		return ret;

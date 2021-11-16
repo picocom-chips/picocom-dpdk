@@ -10,17 +10,12 @@ extern "C" {
 #endif
 
 #include <linux/limits.h>
-#include <sys/un.h>
+#include <linux/un.h>
 #include <rte_atomic.h>
-
-/* Maximum number of CPUs */
-#define CHANNEL_CMDS_MAX_CPUS        256
+#include <stdbool.h>
 
 /* Maximum name length including '\0' terminator */
 #define CHANNEL_MGR_MAX_NAME_LEN    64
-
-/* Maximum number of channels to each Virtual Machine */
-#define CHANNEL_MGR_MAX_CHANNELS    256
 
 /* Hypervisor Path for libvirt(qemu/KVM) */
 #define CHANNEL_MGR_DEFAULT_HV_PATH "qemu:///system"
@@ -28,10 +23,8 @@ extern "C" {
 /* File socket directory */
 #define CHANNEL_MGR_SOCKET_PATH     "/tmp/powermonitor/"
 
-#ifndef UNIX_PATH_MAX
-struct sockaddr_un _sockaddr_un;
-#define UNIX_PATH_MAX sizeof(_sockaddr_un.sun_path)
-#endif
+/* FIFO file name template */
+#define CHANNEL_MGR_FIFO_PATTERN_NAME   "fifo"
 
 #define MAX_CLIENTS 64
 #define MAX_VCPUS 20
@@ -43,7 +36,7 @@ struct libvirt_vm_info {
 	uint8_t num_cpus;
 };
 
-struct libvirt_vm_info lvm_info[MAX_CLIENTS];
+extern struct libvirt_vm_info lvm_info[MAX_CLIENTS];
 /* Communication Channel Status */
 enum channel_status { CHANNEL_MGR_CHANNEL_DISCONNECTED = 0,
 	CHANNEL_MGR_CHANNEL_CONNECTED,
@@ -78,10 +71,11 @@ struct channel_info {
 struct vm_info {
 	char name[CHANNEL_MGR_MAX_NAME_LEN];          /**< VM name */
 	enum vm_status status;                        /**< libvirt status */
-	uint16_t pcpu_map[CHANNEL_CMDS_MAX_CPUS];     /**< pCPU map to vCPU */
+	uint16_t pcpu_map[RTE_MAX_LCORE];             /**< pCPU map to vCPU */
 	unsigned num_vcpus;                           /**< number of vCPUS */
-	struct channel_info channels[CHANNEL_MGR_MAX_CHANNELS]; /**< Array of channel_info */
+	struct channel_info channels[RTE_MAX_LCORE];  /**< channel_info array */
 	unsigned num_channels;                        /**< Number of channels */
+	int allow_query;                              /**< is query allowed */
 };
 
 /**
@@ -145,6 +139,22 @@ uint16_t get_pcpu(struct channel_info *chan_info, unsigned int vcpu);
  *  - Negative on error.
  */
 int set_pcpu(char *vm_name, unsigned int vcpu, unsigned int pcpu);
+
+/**
+ * Allow or disallow queries for specified VM.
+ * It is thread-safe.
+ *
+ * @param name
+ *  Virtual Machine name to lookup.
+ *
+ * @param allow_query
+ *  Query status to be set.
+ *
+ * @return
+ *  - 0 on success.
+ *  - Negative on error.
+ */
+int set_query_status(char *vm_name, bool allow_query);
 
 /**
  * Add a VM as specified by name to the Channel Manager. The name must
@@ -212,13 +222,13 @@ int add_channels(const char *vm_name, unsigned *channel_list,
 		unsigned num_channels);
 
 /**
- * Set up a fifo by which host applications can send command an policies
+ * Set up fifos by which host applications can send command an policies
  * through a fifo to the vm_power_manager
  *
  * @return
  *  - 0 for success
  */
-int add_host_channel(void);
+int add_host_channels(void);
 
 /**
  * Remove a channel definition from the channel manager. This must only be

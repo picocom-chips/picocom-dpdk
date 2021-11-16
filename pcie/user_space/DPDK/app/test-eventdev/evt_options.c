@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <getopt.h>
 
+#include <rte_string_fns.h>
 #include <rte_common.h>
 #include <rte_eventdev.h>
 #include <rte_lcore.h>
@@ -33,6 +34,9 @@ evt_options_default(struct evt_options *opt)
 	opt->max_tmo_nsec = 1E5;  /* 100000ns ~100us */
 	opt->expiry_nsec = 1E4;   /* 10000ns ~10us */
 	opt->prod_type = EVT_PROD_TYPE_SYNT;
+	opt->eth_queues = 1;
+	opt->vector_size = 64;
+	opt->vector_tmo_nsec = 100E3;
 }
 
 typedef int (*option_parser_t)(struct evt_options *opt,
@@ -85,6 +89,16 @@ evt_parse_queue_priority(struct evt_options *opt, const char *arg __rte_unused)
 }
 
 static int
+evt_parse_deq_tmo_nsec(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint32(&(opt->deq_tmo_nsec), arg);
+
+	return ret;
+}
+
+static int
 evt_parse_eth_prod_type(struct evt_options *opt, const char *arg __rte_unused)
 {
 	opt->prod_type = EVT_PROD_TYPE_ETH_RX_ADPTR;
@@ -110,7 +124,7 @@ evt_parse_timer_prod_type_burst(struct evt_options *opt,
 static int
 evt_parse_test_name(struct evt_options *opt, const char *arg)
 {
-	snprintf(opt->test_name, EVT_TEST_NAME_MAX_LEN, "%s", arg);
+	strlcpy(opt->test_name, arg, EVT_TEST_NAME_MAX_LEN);
 	return 0;
 }
 
@@ -186,6 +200,10 @@ evt_parse_nb_timer_adptrs(struct evt_options *opt, const char *arg)
 	int ret;
 
 	ret = parser_read_uint8(&(opt->nb_timer_adptrs), arg);
+	if (opt->nb_timer_adptrs <= 0) {
+		evt_err("Number of timer adapters cannot be <= 0");
+		return -EINVAL;
+	}
 
 	return ret;
 }
@@ -203,7 +221,7 @@ evt_parse_plcores(struct evt_options *opt, const char *corelist)
 {
 	int ret;
 
-	ret = parse_lcores_list(opt->plcores, corelist);
+	ret = parse_lcores_list(opt->plcores, RTE_MAX_LCORE, corelist);
 	if (ret == -E2BIG)
 		evt_err("duplicate lcores in plcores");
 
@@ -215,11 +233,75 @@ evt_parse_work_lcores(struct evt_options *opt, const char *corelist)
 {
 	int ret;
 
-	ret = parse_lcores_list(opt->wlcores, corelist);
+	ret = parse_lcores_list(opt->wlcores, RTE_MAX_LCORE, corelist);
 	if (ret == -E2BIG)
 		evt_err("duplicate lcores in wlcores");
 
 	return ret;
+}
+
+static int
+evt_parse_mbuf_sz(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint16(&(opt->mbuf_sz), arg);
+
+	return ret;
+}
+
+static int
+evt_parse_max_pkt_sz(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint32(&(opt->max_pkt_sz), arg);
+
+	return ret;
+}
+
+static int
+evt_parse_ena_vector(struct evt_options *opt, const char *arg __rte_unused)
+{
+	opt->ena_vector = 1;
+	return 0;
+}
+
+static int
+evt_parse_vector_size(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint16(&(opt->vector_size), arg);
+
+	return ret;
+}
+
+static int
+evt_parse_vector_tmo_ns(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint64(&(opt->vector_tmo_nsec), arg);
+
+	return ret;
+}
+
+static int
+evt_parse_eth_queues(struct evt_options *opt, const char *arg)
+{
+	int ret;
+
+	ret = parser_read_uint16(&(opt->eth_queues), arg);
+
+	return ret;
+}
+
+static int
+evt_parse_per_port_pool(struct evt_options *opt, const char *arg __rte_unused)
+{
+	opt->per_port_pool = 1;
+	return 0;
 }
 
 static void
@@ -240,6 +322,7 @@ usage(char *program)
 		"\t--worker_deq_depth : dequeue depth of the worker\n"
 		"\t--fwd_latency      : perform fwd_latency measurement\n"
 		"\t--queue_priority   : enable queue priority\n"
+		"\t--deq_tmo_nsec     : global dequeue timeout\n"
 		"\t--prod_type_ethdev : use ethernet device as producer.\n"
 		"\t--prod_type_timerdev : use event timer device as producer.\n"
 		"\t                     expity_nsec would be the timeout\n"
@@ -250,7 +333,14 @@ usage(char *program)
 		"\t--nb_timer_adptrs  : number of timer adapters to use.\n"
 		"\t--timer_tick_nsec  : timer tick interval in ns.\n"
 		"\t--max_tmo_nsec     : max timeout interval in ns.\n"
-		"\t--expiry_nsec        : event timer expiry ns.\n"
+		"\t--expiry_nsec      : event timer expiry ns.\n"
+		"\t--mbuf_sz          : packet mbuf size.\n"
+		"\t--max_pkt_sz       : max packet size.\n"
+		"\t--nb_eth_queues    : number of ethernet Rx queues.\n"
+		"\t--enable_vector    : enable event vectorization.\n"
+		"\t--vector_size      : Max vector size.\n"
+		"\t--vector_tmo_ns    : Max vector timeout in nanoseconds\n"
+		"\t--per_port_pool    : Configure unique pool per ethdev port\n"
 		);
 	printf("available tests:\n");
 	evt_test_dump_names();
@@ -311,6 +401,7 @@ static struct option lgopts[] = {
 	{ EVT_SCHED_TYPE_LIST,     1, 0, 0 },
 	{ EVT_FWD_LATENCY,         0, 0, 0 },
 	{ EVT_QUEUE_PRIORITY,      0, 0, 0 },
+	{ EVT_DEQ_TMO_NSEC,        1, 0, 0 },
 	{ EVT_PROD_ETHDEV,         0, 0, 0 },
 	{ EVT_PROD_TIMERDEV,       0, 0, 0 },
 	{ EVT_PROD_TIMERDEV_BURST, 0, 0, 0 },
@@ -319,6 +410,13 @@ static struct option lgopts[] = {
 	{ EVT_TIMER_TICK_NSEC,     1, 0, 0 },
 	{ EVT_MAX_TMO_NSEC,        1, 0, 0 },
 	{ EVT_EXPIRY_NSEC,         1, 0, 0 },
+	{ EVT_MBUF_SZ,             1, 0, 0 },
+	{ EVT_MAX_PKT_SZ,          1, 0, 0 },
+	{ EVT_NB_ETH_QUEUES,       1, 0, 0 },
+	{ EVT_ENA_VECTOR,          0, 0, 0 },
+	{ EVT_VECTOR_SZ,           1, 0, 0 },
+	{ EVT_VECTOR_TMO,          1, 0, 0 },
+	{ EVT_PER_PORT_POOL,       0, 0, 0 },
 	{ EVT_HELP,                0, 0, 0 },
 	{ NULL,                    0, 0, 0 }
 };
@@ -342,6 +440,7 @@ evt_opts_parse_long(int opt_idx, struct evt_options *opt)
 		{ EVT_SCHED_TYPE_LIST, evt_parse_sched_type_list},
 		{ EVT_FWD_LATENCY, evt_parse_fwd_latency},
 		{ EVT_QUEUE_PRIORITY, evt_parse_queue_priority},
+		{ EVT_DEQ_TMO_NSEC, evt_parse_deq_tmo_nsec},
 		{ EVT_PROD_ETHDEV, evt_parse_eth_prod_type},
 		{ EVT_PROD_TIMERDEV, evt_parse_timer_prod_type},
 		{ EVT_PROD_TIMERDEV_BURST, evt_parse_timer_prod_type_burst},
@@ -350,6 +449,13 @@ evt_opts_parse_long(int opt_idx, struct evt_options *opt)
 		{ EVT_TIMER_TICK_NSEC, evt_parse_timer_tick_nsec},
 		{ EVT_MAX_TMO_NSEC, evt_parse_max_tmo_nsec},
 		{ EVT_EXPIRY_NSEC, evt_parse_expiry_nsec},
+		{ EVT_MBUF_SZ, evt_parse_mbuf_sz},
+		{ EVT_MAX_PKT_SZ, evt_parse_max_pkt_sz},
+		{ EVT_NB_ETH_QUEUES, evt_parse_eth_queues},
+		{ EVT_ENA_VECTOR, evt_parse_ena_vector},
+		{ EVT_VECTOR_SZ, evt_parse_vector_size},
+		{ EVT_VECTOR_TMO, evt_parse_vector_tmo_ns},
+		{ EVT_PER_PORT_POOL, evt_parse_per_port_pool},
 	};
 
 	for (i = 0; i < RTE_DIM(parsermap); i++) {
@@ -398,7 +504,7 @@ evt_options_dump(struct evt_options *opt)
 	evt_dump("verbose_level", "%d", opt->verbose_level);
 	evt_dump("socket_id", "%d", opt->socket_id);
 	evt_dump("pool_sz", "%d", opt->pool_sz);
-	evt_dump("master lcore", "%d", rte_get_master_lcore());
+	evt_dump("main lcore", "%d", rte_get_main_lcore());
 	evt_dump("nb_pkts", "%"PRIu64, opt->nb_pkts);
 	evt_dump("nb_timers", "%"PRIu64, opt->nb_timers);
 	evt_dump_begin("available lcores");

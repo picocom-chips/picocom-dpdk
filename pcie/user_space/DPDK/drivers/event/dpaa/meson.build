@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2018 NXP
 
-if host_machine.system() != 'linux'
-	build = false
+if not is_linux
+    build = false
+    reason = 'only supported on Linux'
 endif
-deps += ['pmd_dpaa']
+deps += ['net_dpaa', 'crypto_dpaa_sec']
 sources = files('dpaa_eventdev.c')
 
-allow_experimental_apis = true
+includes += include_directories('../../crypto/dpaa_sec/')

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- *
- * Copyright (c) 2016-2018 Solarflare Communications Inc.
- * All rights reserved.
+*
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2016-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -14,14 +14,22 @@
 
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_kvargs.h>
 #include <rte_spinlock.h>
 #include <rte_atomic.h>
 
 #include "efx.h"
 
+#include "sfc_efx_mcdi.h"
+#include "sfc_efx.h"
+
+#include "sfc_debug.h"
+#include "sfc_log.h"
 #include "sfc_filter.h"
+#include "sfc_sriov.h"
+#include "sfc_mae.h"
+#include "sfc_dp.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -85,30 +93,15 @@ enum sfc_dev_filter_mode {
 	SFC_DEV_FILTER_NMODES
 };
 
-enum sfc_mcdi_state {
-	SFC_MCDI_UNINITIALIZED = 0,
-	SFC_MCDI_INITIALIZED,
-	SFC_MCDI_BUSY,
-	SFC_MCDI_COMPLETED,
-
-	SFC_MCDI_NSTATES
-};
-
-struct sfc_mcdi {
-	rte_spinlock_t			lock;
-	efsys_mem_t			mem;
-	enum sfc_mcdi_state		state;
-	efx_mcdi_transport_t		transport;
-	uint32_t			logtype;
-	uint32_t			proxy_handle;
-	efx_rc_t			proxy_result;
-};
-
 struct sfc_intr {
 	efx_intr_type_t			type;
 	rte_intr_callback_fn		handler;
 	boolean_t			lsc_intr;
+	boolean_t			rxq_intr;
 };
+
+struct sfc_rxq;
+struct sfc_txq;
 
 struct sfc_rxq_info;
 struct sfc_txq_info;
@@ -128,17 +121,15 @@ struct sfc_port {
 	 * Flow API isolated mode overrides promisc and allmulti settings;
 	 * they won't be applied if isolated mode is active
 	 */
-	boolean_t			isolated;
 	boolean_t			promisc;
 	boolean_t			allmulti;
 
-	struct ether_addr		default_mac_addr;
+	struct rte_ether_addr		default_mac_addr;
 
 	unsigned int			max_mcast_addrs;
 	unsigned int			nb_mcast_addrs;
 	uint8_t				*mcast_addrs;
 
-	rte_spinlock_t			mac_stats_lock;
 	uint64_t			*mac_stats_buf;
 	unsigned int			mac_stats_nb_supported;
 	efsys_mem_t			mac_stats_dma_mem;
@@ -149,6 +140,8 @@ struct sfc_port {
 	uint64_t			mac_stats_last_request_timestamp;
 
 	uint32_t		mac_stats_mask[EFX_MAC_STATS_MASK_NPAGES];
+
+	unsigned int			mac_stats_by_id[EFX_MAC_NSTATS];
 
 	uint64_t			ipackets;
 };
@@ -169,10 +162,78 @@ struct sfc_rss {
 	efx_rx_hash_type_t		hash_types;
 	unsigned int			tbl[EFX_RSS_TBL_SIZE];
 	uint8_t				key[EFX_RSS_KEY_SIZE];
+
+	uint32_t			dummy_rss_context;
+};
+
+/* Adapter private data shared by primary and secondary processes */
+struct sfc_adapter_shared {
+	unsigned int			rxq_count;
+	struct sfc_rxq_info		*rxq_info;
+	unsigned int			ethdev_rxq_count;
+
+	unsigned int			txq_count;
+	struct sfc_txq_info		*txq_info;
+	unsigned int			ethdev_txq_count;
+
+	struct sfc_rss			rss;
+
+	boolean_t			isolated;
+	uint32_t			tunnel_encaps;
+
+	char				log_prefix[SFC_LOG_PREFIX_MAX];
+	struct rte_pci_addr		pci_addr;
+	uint16_t			port_id;
+
+	char				*dp_rx_name;
+	char				*dp_tx_name;
+
+	bool				counters_rxq_allocated;
+};
+
+/* Adapter process private data */
+struct sfc_adapter_priv {
+	struct sfc_adapter_shared	*shared;
+	const struct sfc_dp_rx		*dp_rx;
+	const struct sfc_dp_tx		*dp_tx;
+	uint32_t			logtype_main;
+};
+
+static inline struct sfc_adapter_priv *
+sfc_adapter_priv_by_eth_dev(struct rte_eth_dev *eth_dev)
+{
+	struct sfc_adapter_priv *sap = eth_dev->process_private;
+
+	SFC_ASSERT(sap != NULL);
+	return sap;
+}
+
+/* RxQ dedicated for counters (counter only RxQ) data */
+struct sfc_counter_rxq {
+	unsigned int			state;
+#define SFC_COUNTER_RXQ_ATTACHED		0x1
+#define SFC_COUNTER_RXQ_INITIALIZED		0x2
+	sfc_sw_index_t			sw_index;
+	struct rte_mempool		*mp;
+};
+
+struct sfc_sw_xstats {
+	uint64_t			*reset_vals;
+
+	rte_spinlock_t			queues_bitmap_lock;
+	void				*queues_bitmap_mem;
+	struct rte_bitmap		*queues_bitmap;
 };
 
 /* Adapter private data */
 struct sfc_adapter {
+	/*
+	 * It must be the first field of the sfc_adapter structure since
+	 * sfc_adapter is the primary process private data (i.e.  process
+	 * private data plus additional primary process specific data).
+	 */
+	struct sfc_adapter_priv		priv;
+
 	/*
 	 * PMD setup and configuration is not thread safe. Since it is not
 	 * performance sensitive, it is better to guarantee thread-safety
@@ -181,27 +242,38 @@ struct sfc_adapter {
 	 */
 	rte_spinlock_t			lock;
 	enum sfc_adapter_state		state;
-	struct rte_pci_addr		pci_addr;
-	uint16_t			port_id;
 	struct rte_eth_dev		*eth_dev;
 	struct rte_kvargs		*kvargs;
-	uint32_t			logtype_main;
 	int				socket_id;
 	efsys_bar_t			mem_bar;
+	/* Function control window offset */
+	efsys_dma_addr_t		fcw_offset;
 	efx_family_t			family;
 	efx_nic_t			*nic;
 	rte_spinlock_t			nic_lock;
 	rte_atomic32_t			restart_required;
 
-	struct sfc_mcdi			mcdi;
+	struct sfc_efx_mcdi		mcdi;
+	struct sfc_sriov		sriov;
 	struct sfc_intr			intr;
 	struct sfc_port			port;
+	struct sfc_sw_xstats		sw_xstats;
 	struct sfc_filter		filter;
+	struct sfc_mae			mae;
+
+	struct sfc_flow_list		flow_list;
 
 	unsigned int			rxq_max;
 	unsigned int			txq_max;
 
+	unsigned int			rxq_max_entries;
+	unsigned int			rxq_min_entries;
+
 	unsigned int			txq_max_entries;
+	unsigned int			txq_min_entries;
+
+	unsigned int			evq_max_entries;
+	unsigned int			evq_min_entries;
 
 	uint32_t			evq_flags;
 	unsigned int			evq_count;
@@ -232,32 +304,40 @@ struct sfc_adapter {
 	bool				mgmt_evq_running;
 	struct sfc_evq			*mgmt_evq;
 
-	unsigned int			rxq_count;
-	struct sfc_rxq_info		*rxq_info;
+	struct sfc_counter_rxq		counter_rxq;
 
-	unsigned int			txq_count;
-	struct sfc_txq_info		*txq_info;
+	struct sfc_rxq			*rxq_ctrl;
+	struct sfc_txq			*txq_ctrl;
 
 	boolean_t			tso;
+	boolean_t			tso_encap;
 
 	uint32_t			rxd_wait_timeout_ns;
-
-	struct sfc_rss			rss;
-
-	/*
-	 * Shared memory copy of the Rx datapath name to be used by
-	 * the secondary process to find Rx datapath to be used.
-	 */
-	char				*dp_rx_name;
-	const struct sfc_dp_rx		*dp_rx;
-
-	/*
-	 * Shared memory copy of the Tx datapath name to be used by
-	 * the secondary process to find Tx datapath to be used.
-	 */
-	char				*dp_tx_name;
-	const struct sfc_dp_tx		*dp_tx;
 };
+
+static inline struct sfc_adapter_shared *
+sfc_adapter_shared_by_eth_dev(struct rte_eth_dev *eth_dev)
+{
+	struct sfc_adapter_shared *sas = eth_dev->data->dev_private;
+
+	return sas;
+}
+
+static inline struct sfc_adapter *
+sfc_adapter_by_eth_dev(struct rte_eth_dev *eth_dev)
+{
+	struct sfc_adapter_priv *sap = sfc_adapter_priv_by_eth_dev(eth_dev);
+
+	SFC_ASSERT(rte_eal_process_type() == RTE_PROC_PRIMARY);
+
+	return container_of(sap, struct sfc_adapter, priv);
+}
+
+static inline struct sfc_adapter_shared *
+sfc_sa2shared(struct sfc_adapter *sa)
+{
+	return sa->priv.shared;
+}
 
 /*
  * Add wrapper functions to acquire/release lock to be able to remove or
@@ -300,6 +380,12 @@ sfc_adapter_lock_fini(__rte_unused struct sfc_adapter *sa)
 	/* Just for symmetry of the API */
 }
 
+static inline unsigned int
+sfc_nb_counter_rxq(const struct sfc_adapter_shared *sas)
+{
+	return sas->counters_rxq_allocated ? 1 : 0;
+}
+
 /** Get the number of milliseconds since boot from the default timer */
 static inline uint64_t
 sfc_get_system_msecs(void)
@@ -311,7 +397,7 @@ int sfc_dma_alloc(const struct sfc_adapter *sa, const char *name, uint16_t id,
 		  size_t len, int socket_id, efsys_mem_t *esmp);
 void sfc_dma_free(const struct sfc_adapter *sa, efsys_mem_t *esmp);
 
-uint32_t sfc_register_logtype(struct sfc_adapter *sa,
+uint32_t sfc_register_logtype(const struct rte_pci_addr *pci_addr,
 			      const char *lt_prefix_str,
 			      uint32_t ll_default);
 
@@ -345,10 +431,23 @@ int sfc_port_start(struct sfc_adapter *sa);
 void sfc_port_stop(struct sfc_adapter *sa);
 void sfc_port_link_mode_to_info(efx_link_mode_t link_mode,
 				struct rte_eth_link *link_info);
-int sfc_port_update_mac_stats(struct sfc_adapter *sa);
+int sfc_port_update_mac_stats(struct sfc_adapter *sa, boolean_t manual_update);
+int sfc_port_get_mac_stats(struct sfc_adapter *sa, struct rte_eth_xstat *xstats,
+			   unsigned int xstats_count, unsigned int *nb_written);
+int sfc_port_get_mac_stats_by_id(struct sfc_adapter *sa, const uint64_t *ids,
+				 uint64_t *values, unsigned int n);
 int sfc_port_reset_mac_stats(struct sfc_adapter *sa);
 int sfc_set_rx_mode(struct sfc_adapter *sa);
+int sfc_set_rx_mode_unchecked(struct sfc_adapter *sa);
 
+struct sfc_hw_switch_id;
+
+int sfc_hw_switch_id_init(struct sfc_adapter *sa,
+			  struct sfc_hw_switch_id **idp);
+void sfc_hw_switch_id_fini(struct sfc_adapter *sa,
+			   struct sfc_hw_switch_id *idp);
+bool sfc_hw_switch_ids_equal(const struct sfc_hw_switch_id *left,
+			     const struct sfc_hw_switch_id *right);
 
 #ifdef __cplusplus
 }

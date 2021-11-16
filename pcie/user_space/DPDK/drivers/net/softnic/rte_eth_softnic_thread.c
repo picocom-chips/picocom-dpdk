@@ -18,14 +18,14 @@
 #include "rte_eth_softnic_internals.h"
 
 /**
- * Master thread: data plane thread init
+ * Main thread: data plane thread init
  */
 void
 softnic_thread_free(struct pmd_internals *softnic)
 {
 	uint32_t i;
 
-	RTE_LCORE_FOREACH_SLAVE(i) {
+	RTE_LCORE_FOREACH_WORKER(i) {
 		struct softnic_thread *t = &softnic->thread[i];
 
 		/* MSGQs */
@@ -78,7 +78,7 @@ softnic_thread_init(struct pmd_internals *softnic)
 			return -1;
 		}
 
-		/* Master thread records */
+		/* Main thread records */
 		t->msgq_req = msgq_req;
 		t->msgq_rsp = msgq_rsp;
 		t->service_id = UINT32_MAX;
@@ -99,17 +99,12 @@ softnic_thread_init(struct pmd_internals *softnic)
 static inline int
 thread_is_valid(struct pmd_internals *softnic, uint32_t thread_id)
 {
-	struct rte_config *cfg = rte_eal_get_configuration();
-	enum rte_lcore_role_t role;
-
-	if ((thread_id >= RTE_MAX_LCORE) ||
-		(thread_id == cfg->master_lcore))
+	if (thread_id == rte_get_main_lcore())
 		return 0; /* FALSE */
 
-	role = cfg->lcore_role[thread_id];
-
-	if ((softnic->params.sc && (role == ROLE_SERVICE)) ||
-		(!softnic->params.sc && (role == ROLE_RTE)))
+	if (softnic->params.sc && rte_lcore_has_role(thread_id, ROLE_SERVICE))
+		return 1; /* TRUE */
+	if (!softnic->params.sc && rte_lcore_has_role(thread_id, ROLE_RTE))
 		return 1; /* TRUE */
 
 	return 0; /* FALSE */
@@ -137,7 +132,10 @@ thread_sc_service_up(struct pmd_internals *softnic, uint32_t thread_id)
 	uint16_t port_id;
 
 	/* service params */
-	rte_eth_dev_get_port_by_name(softnic->params.name, &port_id);
+	status = rte_eth_dev_get_port_by_name(softnic->params.name, &port_id);
+	if (status)
+		return status;
+
 	dev = &rte_eth_devices[port_id];
 	snprintf(service_params.name, sizeof(service_params.name), "%s_%u",
 		softnic->params.name,
@@ -211,7 +209,7 @@ pipeline_is_running(struct pipeline *p)
 }
 
 /**
- * Master thread & data plane threads: message passing
+ * Main thread & data plane threads: message passing
  */
 enum thread_req_type {
 	THREAD_REQ_PIPELINE_ENABLE = 0,
@@ -245,7 +243,7 @@ struct thread_msg_rsp {
 };
 
 /**
- * Master thread
+ * Main thread
  */
 static struct thread_msg_req *
 thread_msg_alloc(void)
@@ -361,8 +359,6 @@ softnic_thread_pipeline_enable(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = thread_msg_send_recv(softnic, thread_id, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -446,8 +442,6 @@ softnic_thread_pipeline_disable(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = thread_msg_send_recv(softnic, thread_id, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -593,7 +587,7 @@ thread_msg_handle(struct softnic_thread_data *t)
 }
 
 /**
- * Master thread & data plane threads: message passing
+ * Main thread & data plane threads: message passing
  */
 enum pipeline_req_type {
 	/* Port IN */
@@ -759,7 +753,7 @@ struct pipeline_msg_rsp {
 };
 
 /**
- * Master thread
+ * Main thread
  */
 static struct pipeline_msg_req *
 pipeline_msg_alloc(void)
@@ -841,8 +835,6 @@ softnic_pipeline_port_in_stats_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -890,8 +882,6 @@ softnic_pipeline_port_in_enable(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -937,8 +927,6 @@ softnic_pipeline_port_in_disable(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -992,8 +980,6 @@ softnic_pipeline_port_out_stats_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1049,8 +1035,6 @@ softnic_pipeline_table_stats_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1329,8 +1313,6 @@ softnic_pipeline_table_rule_add(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1413,8 +1395,6 @@ softnic_pipeline_table_rule_add_default(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1571,8 +1551,6 @@ fail:
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1636,8 +1614,6 @@ softnic_pipeline_table_rule_delete(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1686,8 +1662,6 @@ softnic_pipeline_table_rule_delete_default(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1746,8 +1720,6 @@ softnic_pipeline_table_rule_stats_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1827,10 +1799,6 @@ softnic_pipeline_table_mtr_profile_add(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL) {
-		free(mp);
-		return -1;
-	}
 
 	/* Read response */
 	status = rsp->status;
@@ -1886,8 +1854,6 @@ softnic_pipeline_table_mtr_profile_delete(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -1949,8 +1915,6 @@ softnic_pipeline_table_rule_mtr_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -2014,8 +1978,6 @@ softnic_pipeline_table_dscp_table_update(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;
@@ -2079,8 +2041,6 @@ softnic_pipeline_table_rule_ttl_read(struct pmd_internals *softnic,
 
 	/* Send request and wait for response */
 	rsp = pipeline_msg_send_recv(p, req);
-	if (rsp == NULL)
-		return -1;
 
 	/* Read response */
 	status = rsp->status;

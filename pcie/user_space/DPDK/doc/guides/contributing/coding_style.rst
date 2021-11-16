@@ -54,8 +54,13 @@ To document a public API, a doxygen-like format must be used: refer to :ref:`dox
 License Header
 ~~~~~~~~~~~~~~
 
-Each file should begin with a special comment containing the appropriate copyright and license for the file.
-Generally this is the BSD License, except for code for Linux Kernel modules.
+Each file must begin with a special comment containing the
+`Software Package Data Exchange (SPDX) License Identifier <https://spdx.org/using-spdx-license-identifier>`_.
+
+Generally this is the BSD License, except for code granted special exceptions.
+The SPDX licences identifier is sufficient, a file should not contain
+an additional text version of the license (boilerplate).
+
 After any copyright header, a blank line should be left before any other contents, e.g. include statements in a C file.
 
 C Preprocessor Directives
@@ -278,6 +283,29 @@ Thus, the previous example would be better written:
 DPDK also provides an optimized way to store elements in lockless rings.
 This should be used in all data-path code, when there are several consumer and/or producers to avoid locking for concurrent access.
 
+Naming
+------
+
+For symbol names and documentation, new usage of
+'master / slave' (or 'slave' independent of 'master') and 'blacklist /
+whitelist' is not allowed.
+
+Recommended replacements for 'master / slave' are:
+    '{primary,main} / {secondary,replica,subordinate}'
+    '{initiator,requester} / {target,responder}'
+    '{controller,host} / {device,worker,proxy}'
+    'leader / follower'
+    'director / performer'
+
+Recommended replacements for 'blacklist/whitelist' are:
+    'denylist / allowlist'
+    'blocklist / passlist'
+
+Exceptions for introducing new usage is to maintain compatibility
+with an existing (as of 2020) hardware or protocol
+specification that mandates those terms.
+
+
 Typedefs
 ~~~~~~~~
 
@@ -334,7 +362,7 @@ For example:
 	typedef int (lcore_function_t)(void *);
 
 	/* launch a function of lcore_function_t type */
-	int rte_eal_remote_launch(lcore_function_t *f, void *arg, unsigned slave_id);
+	int rte_eal_remote_launch(lcore_function_t *f, void *arg, unsigned worker_id);
 
 
 C Indentation
@@ -631,10 +659,10 @@ In the DPDK environment, use the logging interface provided:
 
  /* log in debug level */
  rte_log_set_global_level(RTE_LOG_DEBUG);
- RTE_LOG(DEBUG, my_logtype1, "this is is a debug level message\n");
- RTE_LOG(INFO, my_logtype1, "this is is a info level message\n");
- RTE_LOG(WARNING, my_logtype1, "this is is a warning level message\n");
- RTE_LOG(WARNING, my_logtype2, "this is is a debug level message (not displayed)\n");
+ RTE_LOG(DEBUG, my_logtype1, "this is a debug level message\n");
+ RTE_LOG(INFO, my_logtype1, "this is a info level message\n");
+ RTE_LOG(WARNING, my_logtype1, "this is a warning level message\n");
+ RTE_LOG(WARNING, my_logtype2, "this is a debug level message (not displayed)\n");
 
  /* log in info level */
  rte_log_set_global_level(RTE_LOG_INFO);
@@ -731,7 +759,7 @@ Examples:
  * The virtio network PMD in ``drivers/net/virtio`` uses ``pmd.net.virtio``
  * The eventdev software poll mode driver in ``drivers/event/sw`` uses ``pmd.event.sw``
  * The octeontx mempool driver in ``drivers/mempool/octeontx`` uses ``pmd.mempool.octeontx``
- * The DPDK hash library in ``lib/librte_hash`` uses ``lib.hash``
+ * The DPDK hash library in ``lib/hash`` uses ``lib.hash``
 
 Specializations
 ~~~~~~~~~~~~~~~
@@ -760,7 +788,7 @@ specializations, run the ``app/test`` binary, and use the ``dump_log_types``
 Python Code
 -----------
 
-All Python code should work with Python 2.7+ and 3.2+ and be compliant with
+All Python code should be compliant with
 `PEP8 (Style Guide for Python Code) <https://www.python.org/dev/peps/pep-0008/>`_.
 
 The ``pep8`` tool can be used for testing compliance with the guidelines.
@@ -768,53 +796,20 @@ The ``pep8`` tool can be used for testing compliance with the guidelines.
 Integrating with the Build System
 ---------------------------------
 
-DPDK supports being built in two different ways:
+DPDK is built using the tools ``meson`` and ``ninja``.
 
-* using ``make`` - or more specifically "GNU make", i.e. ``gmake`` on FreeBSD
-* using the tools ``meson`` and ``ninja``
+.. note::
 
-Any new library or driver to be integrated into DPDK should support being
-built with both systems. While building using ``make`` is a legacy approach, and
-most build-system enhancements are being done using ``meson`` and ``ninja``
-there are no plans at this time to deprecate the legacy ``make`` build system.
+   In order to catch possible issues as soon as possible,
+   it is recommended that developers build DPDK in "developer mode" to enable additional checks.
+   By default, this mode is enabled if the build is being done from a git checkout,
+   but the mode can be manually enabled/disabled using the
+   ``developer_mode`` meson configuration option.
 
-Therefore all new component additions should include both a ``Makefile`` and a
-``meson.build`` file, and should be added to the component lists in both the
-``Makefile`` and ``meson.build`` files in the relevant top-level directory:
+Therefore all new component additions should include a ``meson.build`` file,
+and should be added to the component lists in the ``meson.build`` files in the
+relevant top-level directory:
 either ``lib`` directory or a ``driver`` subdirectory.
-
-Makefile Contents
-~~~~~~~~~~~~~~~~~
-
-The ``Makefile`` for the component should be of the following format, where
-``<name>`` corresponds to the name of the library in question, e.g. hash,
-lpm, etc. For drivers, the same format of Makefile is used.
-
-.. code-block:: none
-
-	# pull in basic DPDK definitions, including whether library is to be
-	# built or not
-	include $(RTE_SDK)/mk/rte.vars.mk
-
-	# library name
-	LIB = librte_<name>.a
-
-	# any library cflags needed. Generally add "-O3 $(WERROR_FLAGS)"
-	CFLAGS += -O3
-	CFLAGS += $(WERROR_FLAGS)
-
-	# the symbol version information for the library, and .so version
-	EXPORT_MAP := rte_<name>_version.map
-	LIBABIVER := 1
-
-	# all source filenames are stored in SRCS-y
-	SRCS-$(CONFIG_RTE_LIBRTE_<NAME>) += rte_<name>.c
-
-	# install includes
-	SYMLINK-$(CONFIG_RTE_LIBRTE_<NAME>)-include += rte_<name>.h
-
-	# pull in rules to build the library
-	include $(RTE_SDK)/mk/rte.lib.mk
 
 Meson Build File Contents - Libraries
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -825,10 +820,10 @@ format.
 .. code-block:: python
 
 	sources = files('file1.c', ...)
-	headers = files('file1.c', ...)
+	headers = files('file1.h', ...)
 
 
-The will build based on a number of conventions and assumptions within the DPDK
+This will build based on a number of conventions and assumptions within the DPDK
 itself, for example, that the library name is the same as the directory name in
 which the files are stored.
 
@@ -843,21 +838,18 @@ sources
 
 The optional fields are:
 
-allow_experimental_apis
-	**Default Value = false**
-	Used to allow the library to make use of APIs marked as experimental.
-	Set to ``true`` if the C files in the library call any functions
-	marked as experimental in any included header files.
-
 build
 	**Default Value = true**
 	Used to optionally compile a library, based on its dependencies or
-	environment. A simple example of use would be:
+	environment. When set to "false" the ``reason`` value, explained below, should
+	also be set to explain to the user why the component is not being built.
+	A simple example of use would be:
 
 .. code-block:: python
 
-	if host_machine.system() != 'linux'
+	if not is_linux
 	        build = false
+	        reason = 'only supported on Linux'
 	endif
 
 
@@ -907,6 +899,18 @@ headers
 	installed to $PREFIX/include when ``ninja install`` is run. As with
 	source files, these should be specified using the meson ``files()``
 	function.
+	When ``check_includes`` build option is set to ``true``, each header file
+	has additional checks performed on it, for example to ensure that it is
+	not missing any include statements for dependent headers.
+	For header files which are public, but only included indirectly in
+	applications, these checks can be skipped by using the ``indirect_headers``
+	variable rather than ``headers``.
+
+indirect_headers
+	**Default Value = []**.
+	As with ``headers`` option above, except that the files are not checked
+	for all needed include files as part of a DPDK build when
+	``check_includes`` is set to ``true``.
 
 includes:
 	**Default Value = []**.
@@ -922,7 +926,7 @@ name
 	If a library's .so or .a file differs from that given in the directory
 	name, the name should be specified using this variable. In practice,
 	since the convention is that for a library called ``librte_xyz.so``, the
-	sources are stored in a directory ``lib/librte_xyz``, this value should
+	sources are stored in a directory ``lib/xyz``, this value should
 	never be needed for new libraries.
 
 .. note::
@@ -938,19 +942,25 @@ objs
 	objects that were compiled up as part of another target given in the
 	included library ``meson.build`` file.
 
-version
-	**Default Value = 1**.
-	Specifies the ABI version of the library, and is used as the major
-	version number of the resulting ``.so`` library.
+reason
+	**Default Value = '<unknown reason>'**.
+	This variable should be used when a library is not to be built i.e. when
+	``build`` is set to "false", to specify the reason why a library will not be
+	built. For missing dependencies this should be of the form
+	``'missing dependency, "libname"'``.
+
+use_function_versioning
+	**Default Value = false**.
+	Specifies if the library in question has ABI versioned functions. If it
+	has, this value should be set to ensure that the C files are compiled
+	twice with suitable parameters for each of shared or static library
+	builds.
 
 Meson Build File Contents - Drivers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For drivers, the values are largely the same as for libraries. The variables
 supported are:
-
-allow_experimental_apis
-	As above.
 
 build
 	As above.
@@ -991,8 +1001,60 @@ pkgconfig_extra_libs
 	using static libraries. Anything added here will be appended to the end
 	of the ``pkgconfig --libs`` output.
 
+reason
+	As above.
+
 sources [mandatory]
+	As above
+
+headers
 	As above
 
 version
 	As above
+
+
+Meson Coding Style
+------------------
+
+The following guidelines apply to the build system code in meson.build files in DPDK.
+
+* Indentation should be using 4 spaces, no hard tabs.
+
+* Line continuations should be doubly-indented to ensure visible difference from normal indentation.
+  Any line continuations beyond the first may be singly indented to avoid large amounts of indentation.
+
+* Lists of files or components must be alphabetical unless doing so would cause errors.
+
+* Two formats are supported for lists of files or list of components:
+
+   * For a small number of list entries, generally 3 or fewer, all elements may be put on a single line.
+     In this case, the opening and closing braces of the list must be on the same line as the list items.
+     No trailing comma is put on the final list entry.
+   * For lists with more than 3 items,
+     it is recommended that the lists be put in the files with a *single* entry per line.
+     In this case, the opening brace, or ``files`` function call must be on a line on its own,
+     and the closing brace must similarly be on a line on its own at the end.
+     To help with readability of nested sublists, the closing brace should be dedented to appear
+     at the same level as the opening braced statement.
+     The final list entry must have a trailing comma,
+     so that adding a new entry to the list never modifies any other line in the list.
+
+Examples::
+
+    sources = files('file1.c', 'file2.c')
+
+    subdirs = ['dir1', 'dir2']
+
+    headers = files(
+            'header1.c',
+            'header2.c',
+            'header3.c',   # always include trailing comma
+    )                      # closing brace at indent level of opening brace
+
+    components = [
+            'comp1',
+            'comp2',
+            ...
+            'compN',
+    ]

@@ -102,7 +102,7 @@ opdl_port_link(struct rte_eventdev *dev,
 			     dev->data->dev_id,
 				queues[0],
 				p->id);
-		rte_errno = -EINVAL;
+		rte_errno = EINVAL;
 		return 0;
 	}
 
@@ -113,7 +113,7 @@ opdl_port_link(struct rte_eventdev *dev,
 			     dev->data->dev_id,
 				num,
 				p->id);
-		rte_errno = -EDQUOT;
+		rte_errno = EDQUOT;
 		return 0;
 	}
 
@@ -123,7 +123,7 @@ opdl_port_link(struct rte_eventdev *dev,
 			     dev->data->dev_id,
 				p->id,
 				queues[0]);
-		rte_errno = -EINVAL;
+		rte_errno = EINVAL;
 		return 0;
 	}
 
@@ -134,7 +134,7 @@ opdl_port_link(struct rte_eventdev *dev,
 				p->id,
 				p->external_qid,
 				queues[0]);
-		rte_errno = -EINVAL;
+		rte_errno = EINVAL;
 		return 0;
 	}
 
@@ -160,7 +160,7 @@ opdl_port_unlink(struct rte_eventdev *dev,
 			     dev->data->dev_id,
 			     queues[0],
 			     p->id);
-		rte_errno = -EINVAL;
+		rte_errno = EINVAL;
 		return 0;
 	}
 	RTE_SET_USED(nb_unlinks);
@@ -374,7 +374,8 @@ opdl_info_get(struct rte_eventdev *dev, struct rte_event_dev_info *info)
 		.max_event_port_dequeue_depth = MAX_OPDL_CONS_Q_DEPTH,
 		.max_event_port_enqueue_depth = MAX_OPDL_CONS_Q_DEPTH,
 		.max_num_events = OPDL_INFLIGHT_EVENTS_TOTAL,
-		.event_dev_cap = RTE_EVENT_DEV_CAP_BURST_MODE,
+		.event_dev_cap = RTE_EVENT_DEV_CAP_BURST_MODE |
+				 RTE_EVENT_DEV_CAP_CARRY_FLOW_ID,
 	};
 
 	*info = evdev_opdl_info;
@@ -422,16 +423,17 @@ opdl_dump(struct rte_eventdev *dev, FILE *f)
 			else
 				p_type = "????";
 
-			sprintf(queue_id, "%02u", port->external_qid);
+			snprintf(queue_id, sizeof(queue_id), "%02u",
+					port->external_qid);
 			if (port->p_type == OPDL_REGULAR_PORT ||
 					port->p_type == OPDL_ASYNC_PORT)
-				sprintf(total_cyc,
+				snprintf(total_cyc, sizeof(total_cyc),
 					" %'16"PRIu64"",
 					(cpg != 0 ?
 					 port->port_stat[total_cycles] / cpg
 					 : 0));
 			else
-				sprintf(total_cyc,
+				snprintf(total_cyc, sizeof(total_cyc),
 					"             ----");
 			fprintf(f,
 				"%4s %10u %8u %9s %'16"PRIu64" %'16"PRIu64" %s "
@@ -753,13 +755,7 @@ static struct rte_vdev_driver evdev_opdl_pmd_drv = {
 	.remove = opdl_remove
 };
 
-RTE_INIT(opdl_init_log)
-{
-	opdl_logtype_driver = rte_log_register("pmd.event.opdl.driver");
-	if (opdl_logtype_driver >= 0)
-		rte_log_set_level(opdl_logtype_driver, RTE_LOG_INFO);
-}
-
+RTE_LOG_REGISTER_SUFFIX(opdl_logtype_driver, driver, INFO);
 
 RTE_PMD_REGISTER_VDEV(EVENTDEV_NAME_OPDL_PMD, evdev_opdl_pmd_drv);
 RTE_PMD_REGISTER_PARAM_STRING(event_opdl, NUMA_NODE_ARG "=<int>"

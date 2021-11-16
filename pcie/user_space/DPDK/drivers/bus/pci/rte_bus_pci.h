@@ -8,8 +8,7 @@
 
 /**
  * @file
- *
- * RTE PCI Bus Interface
+ * PCI device & driver interface
  */
 
 #ifdef __cplusplus
@@ -51,6 +50,16 @@ TAILQ_HEAD(rte_pci_driver_list, rte_pci_driver);
 
 struct rte_devargs;
 
+enum rte_pci_kernel_driver {
+	RTE_PCI_KDRV_UNKNOWN = 0,  /* may be misc UIO or bifurcated driver */
+	RTE_PCI_KDRV_IGB_UIO,      /* igb_uio for Linux */
+	RTE_PCI_KDRV_VFIO,         /* VFIO for Linux */
+	RTE_PCI_KDRV_UIO_GENERIC,  /* uio_pci_generic for Linux */
+	RTE_PCI_KDRV_NIC_UIO,      /* nic_uio for FreeBSD */
+	RTE_PCI_KDRV_NONE,         /* no attached driver */
+	RTE_PCI_KDRV_NET_UIO,      /* NetUIO for Windows */
+};
+
 /**
  * A structure describing a PCI device.
  */
@@ -64,7 +73,7 @@ struct rte_pci_device {
 	struct rte_intr_handle intr_handle; /**< Interrupt handle */
 	struct rte_pci_driver *driver;      /**< PCI driver used in probing */
 	uint16_t max_vfs;                   /**< sriov enable if not zero */
-	enum rte_kernel_driver kdrv;        /**< Kernel driver passthrough */
+	enum rte_pci_kernel_driver kdrv;    /**< Kernel driver passthrough */
 	char name[PCI_PRI_STR_SIZE+1];      /**< PCI location (ASCII) */
 	struct rte_intr_handle vfio_req_intr_handle;
 				/**< Handler of VFIO request interrupt */
@@ -81,37 +90,71 @@ struct rte_pci_device {
 
 #define RTE_ETH_DEV_TO_PCI(eth_dev)	RTE_DEV_TO_PCI((eth_dev)->device)
 
-/** Any PCI device identifier (vendor, device, ...) */
-#define PCI_ANY_ID (0xffff)
-#define RTE_CLASS_ANY_ID (0xffffff)
-
 #ifdef __cplusplus
 /** C++ macro used to help building up tables of device IDs */
 #define RTE_PCI_DEVICE(vend, dev) \
 	RTE_CLASS_ANY_ID,         \
 	(vend),                   \
 	(dev),                    \
-	PCI_ANY_ID,               \
-	PCI_ANY_ID
+	RTE_PCI_ANY_ID,           \
+	RTE_PCI_ANY_ID
 #else
 /** Macro used to help building up tables of device IDs */
 #define RTE_PCI_DEVICE(vend, dev)          \
 	.class_id = RTE_CLASS_ANY_ID,      \
 	.vendor_id = (vend),               \
 	.device_id = (dev),                \
-	.subsystem_vendor_id = PCI_ANY_ID, \
-	.subsystem_device_id = PCI_ANY_ID
+	.subsystem_vendor_id = RTE_PCI_ANY_ID, \
+	.subsystem_device_id = RTE_PCI_ANY_ID
 #endif
 
 /**
  * Initialisation function for the driver called during PCI probing.
  */
-typedef int (pci_probe_t)(struct rte_pci_driver *, struct rte_pci_device *);
+typedef int (rte_pci_probe_t)(struct rte_pci_driver *, struct rte_pci_device *);
 
 /**
  * Uninitialisation function for the driver called during hotplugging.
  */
-typedef int (pci_remove_t)(struct rte_pci_device *);
+typedef int (rte_pci_remove_t)(struct rte_pci_device *);
+
+/**
+ * Driver-specific DMA mapping. After a successful call the device
+ * will be able to read/write from/to this segment.
+ *
+ * @param dev
+ *   Pointer to the PCI device.
+ * @param addr
+ *   Starting virtual address of memory to be mapped.
+ * @param iova
+ *   Starting IOVA address of memory to be mapped.
+ * @param len
+ *   Length of memory segment being mapped.
+ * @return
+ *   - 0 On success.
+ *   - Negative value and rte_errno is set otherwise.
+ */
+typedef int (pci_dma_map_t)(struct rte_pci_device *dev, void *addr,
+			    uint64_t iova, size_t len);
+
+/**
+ * Driver-specific DMA un-mapping. After a successful call the device
+ * will not be able to read/write from/to this segment.
+ *
+ * @param dev
+ *   Pointer to the PCI device.
+ * @param addr
+ *   Starting virtual address of memory to be unmapped.
+ * @param iova
+ *   Starting IOVA address of memory to be unmapped.
+ * @param len
+ *   Length of memory segment being unmapped.
+ * @return
+ *   - 0 On success.
+ *   - Negative value and rte_errno is set otherwise.
+ */
+typedef int (pci_dma_unmap_t)(struct rte_pci_device *dev, void *addr,
+			      uint64_t iova, size_t len);
 
 /**
  * A structure describing a PCI driver.
@@ -120,8 +163,10 @@ struct rte_pci_driver {
 	TAILQ_ENTRY(rte_pci_driver) next;  /**< Next in list. */
 	struct rte_driver driver;          /**< Inherit core driver. */
 	struct rte_pci_bus *bus;           /**< PCI bus reference. */
-	pci_probe_t *probe;                /**< Device Probe function. */
-	pci_remove_t *remove;              /**< Device Remove function. */
+	rte_pci_probe_t *probe;            /**< Device probe function. */
+	rte_pci_remove_t *remove;          /**< Device remove function. */
+	pci_dma_map_t *dma_map;		   /**< device dma map function. */
+	pci_dma_unmap_t *dma_unmap;	   /**< device dma unmap function. */
 	const struct rte_pci_id *id_table; /**< ID table, NULL terminated. */
 	uint32_t drv_flags;                /**< Flags RTE_PCI_DRV_*. */
 };
@@ -147,8 +192,8 @@ struct rte_pci_bus {
 #define RTE_PCI_DRV_INTR_RMV 0x0010
 /** Device driver needs to keep mapped resources if unsupported dev detected */
 #define RTE_PCI_DRV_KEEP_MAPPED_RES 0x0020
-/** Device driver supports IOVA as VA */
-#define RTE_PCI_DRV_IOVA_AS_VA 0X0040
+/** Device driver needs IOVA as VA and cannot work with IOVA as PA */
+#define RTE_PCI_DRV_NEED_IOVA_AS_VA 0x0040
 
 /**
  * Map the PCI device resources in user space virtual memory address
@@ -183,6 +228,39 @@ void rte_pci_unmap_device(struct rte_pci_device *dev);
  *   A pointer to a file for output
  */
 void rte_pci_dump(FILE *f);
+
+/**
+ * Find device's extended PCI capability.
+ *
+ *  @param dev
+ *    A pointer to rte_pci_device structure.
+ *
+ *  @param cap
+ *    Extended capability to be found, which can be any from
+ *    RTE_PCI_EXT_CAP_ID_*, defined in librte_pci.
+ *
+ *  @return
+ *  > 0: The offset of the next matching extended capability structure
+ *       within the device's PCI configuration space.
+ *  < 0: An error in PCI config space read.
+ *  = 0: Device does not support it.
+ */
+__rte_experimental
+off_t rte_pci_find_ext_capability(struct rte_pci_device *dev, uint32_t cap);
+
+/**
+ * Enables/Disables Bus Master for device's PCI command register.
+ *
+ *  @param dev
+ *    A pointer to rte_pci_device structure.
+ *  @param enable
+ *    Enable or disable Bus Master.
+ *
+ *  @return
+ *  0 on success, -1 on error in PCI config space read/write.
+ */
+__rte_experimental
+int rte_pci_set_bus_master(struct rte_pci_device *dev, bool enable);
 
 /**
  * Register a PCI driver.

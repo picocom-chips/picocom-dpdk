@@ -15,7 +15,7 @@
 #include <rte_malloc.h>
 #include <rte_mbuf.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_prefetch.h>
 #include <rte_string_fns.h>
 #include <rte_errno.h>
@@ -27,7 +27,7 @@
 #pragma GCC diagnostic ignored "-Wcast-qual"
 #endif
 
-int __attribute__((cold))
+int __rte_cold
 virtio_rxq_vec_setup(struct virtnet_rx *rxq)
 {
 	uintptr_t p;

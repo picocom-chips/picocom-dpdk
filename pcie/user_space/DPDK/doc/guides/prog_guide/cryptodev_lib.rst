@@ -1,5 +1,5 @@
 ..  SPDX-License-Identifier: BSD-3-Clause
-    Copyright(c) 2016-2017 Intel Corporation.
+    Copyright(c) 2016-2020 Intel Corporation.
 
 Cryptography Device Library
 ===========================
@@ -14,7 +14,7 @@ and AEAD symmetric and asymmetric Crypto operations.
 Design Principles
 -----------------
 
-The cryptodev library follows the same basic principles as those used in DPDKs
+The cryptodev library follows the same basic principles as those used in DPDK's
 Ethernet Device framework. The Crypto framework provides a generic Crypto device
 framework which supports both physical (hardware) and virtual (software) Crypto
 devices as well as a generic Crypto API which allows Crypto devices to be
@@ -32,7 +32,7 @@ Physical Crypto devices are discovered during the PCI probe/enumeration of the
 EAL function which is executed at DPDK initialization, based on
 their PCI device identifier, each unique PCI BDF (bus/bridge, device,
 function). Specific physical Crypto devices, like other physical devices in DPDK
-can be white-listed or black-listed using the EAL command line options.
+can be listed using the EAL command line options.
 
 Virtual devices can be created by two mechanisms, either using the EAL command
 line options or from within the application using an EAL API directly.
@@ -48,11 +48,11 @@ From the command line using the --vdev EAL option
    * If DPDK application requires multiple software crypto PMD devices then required
      number of ``--vdev`` with appropriate libraries are to be added.
 
-   * An Application with crypto PMD instaces sharing the same library requires unique ID.
+   * An Application with crypto PMD instances sharing the same library requires unique ID.
 
    Example: ``--vdev  'crypto_aesni_mb0' --vdev  'crypto_aesni_mb1'``
 
-Our using the rte_vdev_init API within the application code.
+Or using the rte_vdev_init API within the application code.
 
 .. code-block:: c
 
@@ -304,7 +304,7 @@ Crypto operations is usually completed during the enqueue call to the Crypto
 device. The dequeue burst API will retrieve any processed operations available
 from the queue pair on the Crypto device, from physical devices this is usually
 directly from the devices processed queue, and for virtual device's from a
-``rte_ring`` where processed operations are place after being processed on the
+``rte_ring`` where processed operations are placed after being processed on the
 enqueue call.
 
 
@@ -337,6 +337,50 @@ For session-less mode, the private user data information can be placed along wit
 start of private data information. The offset is counted from the start of the
 rte_crypto_op including other crypto information such as the IVs (since there can
 be an IV also for authentication).
+
+User callback APIs
+~~~~~~~~~~~~~~~~~~
+The add APIs configures a user callback function to be called for each burst of crypto
+ops received/sent on a given crypto device queue pair. The return value is a pointer
+that can be used later to remove the callback using remove API. Application is expected
+to register a callback function of type ``rte_cryptodev_callback_fn``. Multiple callback
+functions can be added for a given queue pair. API does not restrict on maximum number of
+callbacks.
+
+Callbacks registered by application would not survive ``rte_cryptodev_configure`` as it
+reinitializes the callback list. It is user responsibility to remove all installed
+callbacks before calling ``rte_cryptodev_configure`` to avoid possible memory leakage.
+
+So, the application is expected to add user callback after ``rte_cryptodev_configure``.
+The callbacks can also be added at the runtime. These callbacks get executed when
+``rte_cryptodev_enqueue_burst``/``rte_cryptodev_dequeue_burst`` is called.
+
+.. code-block:: c
+
+	struct rte_cryptodev_cb *
+		rte_cryptodev_add_enq_callback(uint8_t dev_id, uint16_t qp_id,
+					       rte_cryptodev_callback_fn cb_fn,
+					       void *cb_arg);
+
+	struct rte_cryptodev_cb *
+		rte_cryptodev_add_deq_callback(uint8_t dev_id, uint16_t qp_id,
+					       rte_cryptodev_callback_fn cb_fn,
+					       void *cb_arg);
+
+	uint16_t (* rte_cryptodev_callback_fn)(uint16_t dev_id, uint16_t qp_id,
+					       struct rte_crypto_op **ops,
+					       uint16_t nb_ops, void *user_param);
+
+The remove API removes a callback function added by
+``rte_cryptodev_add_enq_callback``/``rte_cryptodev_add_deq_callback``.
+
+.. code-block:: c
+
+	int rte_cryptodev_remove_enq_callback(uint8_t dev_id, uint16_t qp_id,
+					      struct rte_cryptodev_cb *cb);
+
+	int rte_cryptodev_remove_deq_callback(uint8_t dev_id, uint16_t qp_id,
+					      struct rte_cryptodev_cb *cb);
 
 
 Enqueue / Dequeue Burst APIs
@@ -396,7 +440,7 @@ Operation Management and Allocation
 
 The cryptodev library provides an API set for managing Crypto operations which
 utilize the Mempool Library to allocate operation buffers. Therefore, it ensures
-that the crytpo operation is interleaved optimally across the channels and
+that the crypto operation is interleaved optimally across the channels and
 ranks for optimal processing.
 A ``rte_crypto_op`` contains a field indicating the pool that it originated from.
 When calling ``rte_crypto_op_free(op)``, the operation returns to its original pool.
@@ -497,7 +541,10 @@ Symmetric Crypto transforms (``rte_crypto_sym_xform``) are the mechanism used
 to specify the details of the Crypto operation. For chaining of symmetric
 operations such as cipher encrypt and authentication generate, the next pointer
 allows transform to be chained together. Crypto devices which support chaining
-must publish the chaining of symmetric Crypto operations feature flag.
+must publish the chaining of symmetric Crypto operations feature flag. Allocation of the
+xform structure is in the application domain. To allow future API extensions in a
+backwardly compatible manner, e.g. addition of a new parameter, the application should
+zero the full xform struct before populating it.
 
 Currently there are three transforms types cipher, authentication and AEAD.
 Also it is important to note that the order in which the
@@ -597,12 +644,152 @@ chain.
         };
     };
 
+Synchronous mode
+----------------
+
+Some cryptodevs support synchronous mode alongside with a standard asynchronous
+mode. In that case operations are performed directly when calling
+``rte_cryptodev_sym_cpu_crypto_process`` method instead of enqueuing and
+dequeuing an operation before. This mode of operation allows cryptodevs which
+utilize CPU cryptographic acceleration to have significant performance boost
+comparing to standard asynchronous approach. Cryptodevs supporting synchronous
+mode have ``RTE_CRYPTODEV_FF_SYM_CPU_CRYPTO`` feature flag set.
+
+To perform a synchronous operation a call to
+``rte_cryptodev_sym_cpu_crypto_process`` has to be made with vectorized
+operation descriptor (``struct rte_crypto_sym_vec``) containing:
+
+- ``num`` - number of operations to perform,
+- pointer to an array of size ``num`` containing a scatter-gather list
+  descriptors of performed operations (``struct rte_crypto_sgl``). Each instance
+  of ``struct rte_crypto_sgl`` consists of a number of segments and a pointer to
+  an array of segment descriptors ``struct rte_crypto_vec``;
+- pointers to arrays of size ``num`` containing IV, AAD and digest information
+  in the ``cpu_crypto`` sub-structure,
+- pointer to an array of size ``num`` where status information will be stored
+  for each operation.
+
+Function returns a number of successfully completed operations and sets
+appropriate status number for each operation in the status array provided as
+a call argument. Status different than zero must be treated as error.
+
+For more details, e.g. how to convert an mbuf to an SGL, please refer to an
+example usage in the IPsec library implementation.
+
+Cryptodev Raw Data-path APIs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Crypto Raw data-path APIs are a set of APIs designed to enable external
+libraries/applications to leverage the cryptographic processing provided by
+DPDK crypto PMDs through the cryptodev API but in a manner that is not
+dependent on native DPDK data structures (eg. rte_mbuf, rte_crypto_op, ... etc)
+in their data-path implementation.
+
+The raw data-path APIs have the following advantages:
+
+- External data structure friendly design. The new APIs uses the operation
+  descriptor ``struct rte_crypto_sym_vec`` that supports raw data pointer and
+  IOVA addresses as input. Moreover, the APIs does not require the user to
+  allocate the descriptor from mempool, nor requiring mbufs to describe input
+  data's virtual and IOVA addresses. All these features made the translation
+  from user's own data structure into the descriptor easier and more efficient.
+
+- Flexible enqueue and dequeue operation. The raw data-path APIs gives the
+  user more control to the enqueue and dequeue operations, including the
+  capability of precious enqueue/dequeue count, abandoning enqueue or dequeue
+  at any time, and operation status translation and set on the fly.
+
+Cryptodev PMDs which support the raw data-path APIs will have
+``RTE_CRYPTODEV_FF_SYM_RAW_DP`` feature flag presented. To use this feature,
+the user shall create a local ``struct rte_crypto_raw_dp_ctx`` buffer and
+extend to at least the length returned by ``rte_cryptodev_get_raw_dp_ctx_size``
+function call. The created buffer is then initialized using
+``rte_cryptodev_configure_raw_dp_ctx`` function with the ``is_update``
+parameter as 0. The library and the crypto device driver will then set the
+buffer and attach either the cryptodev sym session, the rte_security session,
+or the cryptodev xform for session-less operation into the ctx buffer, and
+set the corresponding enqueue and dequeue function handlers based on the
+algorithm information stored in the session or xform. When the ``is_update``
+parameter passed into ``rte_cryptodev_configure_raw_dp_ctx`` is 1, the driver
+will not initialize the buffer but only update the session or xform and
+the function handlers accordingly.
+
+After the ``struct rte_crypto_raw_dp_ctx`` buffer is initialized, it is now
+ready for enqueue and dequeue operation. There are two different enqueue
+functions: ``rte_cryptodev_raw_enqueue`` to enqueue single raw data
+operation, and ``rte_cryptodev_raw_enqueue_burst`` to enqueue a descriptor
+with multiple operations. In case of the application uses similar approach to
+``struct rte_crypto_sym_vec`` to manage its data burst but with different
+data structure, using the ``rte_cryptodev_raw_enqueue_burst`` function may be
+less efficient as this is a situation where the application has to loop over
+all crypto operations to assemble the ``struct rte_crypto_sym_vec`` descriptor
+from its own data structure, and then the driver will loop over them again to
+translate every operation in the descriptor to the driver's specific queue data.
+The ``rte_cryptodev_raw_enqueue`` should be used to save one loop for each data
+burst instead.
+
+The ``rte_cryptodev_raw_enqueue`` and ``rte_cryptodev_raw_enqueue_burst``
+functions will return or set the enqueue status. ``rte_cryptodev_raw_enqueue``
+will return the status directly, ``rte_cryptodev_raw_enqueue_burst`` will
+return the number of operations enqueued or stored (explained as follows) and
+set the ``enqueue_status`` buffer provided by the user. The possible
+enqueue status values are:
+
+- ``1``: the operation(s) is/are enqueued successfully.
+- ``0``: the operation(s) is/are cached successfully in the crypto device queue
+  but is not actually enqueued. The user shall call
+  ``rte_cryptodev_raw_enqueue_done`` function after the expected operations
+  are stored. The crypto device will then start enqueuing all of them at
+  once.
+- The negative integer: error occurred during enqueue.
+
+Calling ``rte_cryptodev_configure_raw_dp_ctx`` with the parameter ``is_update``
+set as 0 twice without the enqueue function returning or setting enqueue status
+to 1 or ``rte_cryptodev_raw_enqueue_done`` function being called in between will
+invalidate any operation stored in the device queue but not enqueued. This
+feature is useful when the user wants to abandon partially enqueued operations
+for a failed enqueue burst operation and try enqueuing in a whole later.
+
+Similar as enqueue, there are two dequeue functions:
+``rte_cryptodev_raw_dequeue`` for dequeing single operation, and
+``rte_cryptodev_raw_dequeue_burst`` for dequeuing a burst of operations (e.g.
+all operations in a ``struct rte_crypto_sym_vec`` descriptor). The
+``rte_cryptodev_raw_dequeue_burst`` function allows the user to provide callback
+functions to retrieve dequeue count from the enqueued user data and write the
+expected status value to the user data on the fly. The dequeue functions also
+set the dequeue status:
+
+- ``1``: the operation(s) is/are dequeued successfully.
+- ``0``: the operation(s) is/are completed but is not actually dequeued (hence
+  still kept in the device queue). The user shall call the
+  ``rte_cryptodev_raw_dequeue_done`` function after the expected number of
+  operations (e.g. all operations in a descriptor) are dequeued. The crypto
+  device driver will then free them from the queue at once.
+- The negative integer: error occurred during dequeue.
+
+Calling ``rte_cryptodev_configure_raw_dp_ctx`` with the parameter ``is_update``
+set as 0 twice without the dequeue functions execution changed dequeue_status
+to 1 or ``rte_cryptodev_raw_dequeue_done`` function being called in between will
+revert the crypto device queue's dequeue effort to the moment when the
+``struct rte_crypto_raw_dp_ctx`` buffer is initialized. This feature is useful
+when the user wants to abandon partially dequeued data and try dequeuing again
+later in a whole.
+
+There are a few limitations to the raw data path APIs:
+
+* Only support in-place operations.
+* APIs are NOT thread-safe.
+* CANNOT mix the raw data-path API's enqueue with rte_cryptodev_enqueue_burst,
+  or vice versa.
+
+See *DPDK API Reference* for details on each API definitions.
+
 Sample code
 -----------
 
 There are various sample applications that show how to use the cryptodev library,
 such as the L2fwd with Crypto sample application (L2fwd-crypto) and
-the IPSec Security Gateway application (ipsec-secgw).
+the IPsec Security Gateway application (ipsec-secgw).
 
 While these applications demonstrate how an application can be created to perform
 generic crypto operation, the required complexity hides the basic steps of
@@ -807,7 +994,7 @@ using one of the crypto PMDs available in DPDK.
 
     /*
      * Dequeue the crypto operations until all the operations
-     * are proccessed in the crypto device.
+     * are processed in the crypto device.
      */
     uint16_t num_dequeued_ops, total_num_dequeued_ops = 0;
     do {
@@ -873,7 +1060,15 @@ private asymmetric session data. Once this is done, session should be freed usin
 
 Asymmetric Sessionless Support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Currently asymmetric crypto framework does not support sessionless.
+
+Asymmetric crypto framework supports session-less operations as well.
+
+Fields that should be set by user are:
+
+Member xform of struct rte_crypto_asym_op should point to the user created rte_crypto_asym_xform.
+Note that rte_crypto_asym_xform should be immutable for the lifetime of associated crypto_op.
+
+Member sess_type of rte_crypto_op should also be set to RTE_CRYPTO_OP_SESSIONLESS.
 
 Transforms and Transform Chaining
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -881,12 +1076,15 @@ Transforms and Transform Chaining
 Asymmetric Crypto transforms (``rte_crypto_asym_xform``) are the mechanism used
 to specify the details of the asymmetric Crypto operation. Next pointer within
 xform allows transform to be chained together. Also it is important to note that
-the order in which the transforms are passed indicates the order of the chaining.
+the order in which the transforms are passed indicates the order of the chaining. Allocation
+of the xform structure is in the application domain. To allow future API extensions in a
+backwardly compatible manner, e.g. addition of a new parameter, the application should
+zero the full xform struct before populating it.
 
 Not all asymmetric crypto xforms are supported for chaining. Currently supported
 asymmetric crypto chaining is Diffie-Hellman private key generation followed by
 public generation. Also, currently API does not support chaining of symmetric and
-asymmetric crypto xfroms.
+asymmetric crypto xforms.
 
 Each xform defines specific asymmetric crypto algo. Currently supported are:
 * RSA
@@ -1083,4 +1281,4 @@ Asymmetric Crypto Device API
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The cryptodev Library API is described in the
-`DPDK API Reference <http://doc.dpdk.org/api/>`_
+`DPDK API Reference <https://doc.dpdk.org/api/>`_

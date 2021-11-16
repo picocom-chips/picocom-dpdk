@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_vdev.h>
+#include <ethdev_driver.h>
+#include <ethdev_vdev.h>
 #include <rte_malloc.h>
 #include <rte_bus_vdev.h>
 #include <rte_kvargs.h>
@@ -28,6 +28,16 @@
 #define PMD_PARAM_TM_QSIZE1                                "tm_qsize1"
 #define PMD_PARAM_TM_QSIZE2                                "tm_qsize2"
 #define PMD_PARAM_TM_QSIZE3                                "tm_qsize3"
+#define PMD_PARAM_TM_QSIZE4                                "tm_qsize4"
+#define PMD_PARAM_TM_QSIZE5                                "tm_qsize5"
+#define PMD_PARAM_TM_QSIZE6                                "tm_qsize6"
+#define PMD_PARAM_TM_QSIZE7                                "tm_qsize7"
+#define PMD_PARAM_TM_QSIZE8                                "tm_qsize8"
+#define PMD_PARAM_TM_QSIZE9                                "tm_qsize9"
+#define PMD_PARAM_TM_QSIZE10                               "tm_qsize10"
+#define PMD_PARAM_TM_QSIZE11                               "tm_qsize11"
+#define PMD_PARAM_TM_QSIZE12                               "tm_qsize12"
+
 
 static const char * const pmd_valid_args[] = {
 	PMD_PARAM_FIRMWARE,
@@ -39,6 +49,15 @@ static const char * const pmd_valid_args[] = {
 	PMD_PARAM_TM_QSIZE1,
 	PMD_PARAM_TM_QSIZE2,
 	PMD_PARAM_TM_QSIZE3,
+	PMD_PARAM_TM_QSIZE4,
+	PMD_PARAM_TM_QSIZE5,
+	PMD_PARAM_TM_QSIZE6,
+	PMD_PARAM_TM_QSIZE7,
+	PMD_PARAM_TM_QSIZE8,
+	PMD_PARAM_TM_QSIZE9,
+	PMD_PARAM_TM_QSIZE10,
+	PMD_PARAM_TM_QSIZE11,
+	PMD_PARAM_TM_QSIZE12,
 	NULL
 };
 
@@ -61,19 +80,21 @@ static const struct softnic_conn_params conn_params_default = {
 	.msg_handle_arg = NULL,
 };
 
-static int pmd_softnic_logtype;
+RTE_LOG_REGISTER_DEFAULT(pmd_softnic_logtype, NOTICE);
 
 #define PMD_LOG(level, fmt, args...) \
 	rte_log(RTE_LOG_ ## level, pmd_softnic_logtype, \
 		"%s(): " fmt "\n", __func__, ##args)
 
-static void
+static int
 pmd_dev_infos_get(struct rte_eth_dev *dev __rte_unused,
 	struct rte_eth_dev_info *dev_info)
 {
 	dev_info->max_rx_pktlen = UINT32_MAX;
 	dev_info->max_rx_queues = UINT16_MAX;
 	dev_info->max_tx_queues = UINT16_MAX;
+
+	return 0;
 }
 
 static int
@@ -157,7 +178,7 @@ pmd_dev_start(struct rte_eth_dev *dev)
 	return 0;
 }
 
-static void
+static int
 pmd_dev_stop(struct rte_eth_dev *dev)
 {
 	struct pmd_internals *p = dev->data->dev_private;
@@ -178,12 +199,45 @@ pmd_dev_stop(struct rte_eth_dev *dev)
 
 	tm_hierarchy_free(p);
 	softnic_mtr_free(p);
+
+	return 0;
 }
 
 static void
-pmd_dev_close(struct rte_eth_dev *dev __rte_unused)
+pmd_free(struct pmd_internals *p)
 {
-	return;
+	if (p == NULL)
+		return;
+
+	if (p->params.conn_port)
+		softnic_conn_free(p->conn);
+
+	softnic_thread_free(p);
+	softnic_pipeline_free(p);
+	softnic_table_action_profile_free(p);
+	softnic_port_in_action_profile_free(p);
+	softnic_tap_free(p);
+	softnic_tmgr_free(p);
+	softnic_link_free(p);
+	softnic_swq_free(p);
+	softnic_mempool_free(p);
+
+	tm_hierarchy_free(p);
+	softnic_mtr_free(p);
+
+	rte_free(p);
+}
+
+static int
+pmd_dev_close(struct rte_eth_dev *dev)
+{
+	if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+		return 0;
+
+	pmd_free(dev->data->dev_private);
+	dev->data->dev_private = NULL; /* already freed */
+	dev->data->mac_addrs = NULL; /* statically allocated */
+	return 0;
 }
 
 static int
@@ -194,18 +248,11 @@ pmd_link_update(struct rte_eth_dev *dev __rte_unused,
 }
 
 static int
-pmd_filter_ctrl(struct rte_eth_dev *dev __rte_unused,
-		enum rte_filter_type filter_type,
-		enum rte_filter_op filter_op,
-		void *arg)
+pmd_flow_ops_get(struct rte_eth_dev *dev __rte_unused,
+		 const struct rte_flow_ops **ops)
 {
-	if (filter_type == RTE_ETH_FILTER_GENERIC &&
-			filter_op == RTE_ETH_FILTER_GET) {
-		*(const void **)arg = &pmd_flow_ops;
-		return 0;
-	}
-
-	return -ENOTSUP;
+	*ops = &pmd_flow_ops;
+	return 0;
 }
 
 static int
@@ -233,7 +280,7 @@ static const struct eth_dev_ops pmd_ops = {
 	.dev_infos_get = pmd_dev_infos_get,
 	.rx_queue_setup = pmd_rx_queue_setup,
 	.tx_queue_setup = pmd_tx_queue_setup,
-	.filter_ctrl = pmd_filter_ctrl,
+	.flow_ops_get = pmd_flow_ops_get,
 	.tm_ops_get = pmd_tm_ops_get,
 	.mtr_ops_get = pmd_mtr_ops_get,
 };
@@ -314,32 +361,7 @@ pmd_init(struct pmd_params *params)
 	return p;
 }
 
-static void
-pmd_free(struct pmd_internals *p)
-{
-	if (p == NULL)
-		return;
-
-	if (p->params.conn_port)
-		softnic_conn_free(p->conn);
-
-	softnic_thread_free(p);
-	softnic_pipeline_free(p);
-	softnic_table_action_profile_free(p);
-	softnic_port_in_action_profile_free(p);
-	softnic_tap_free(p);
-	softnic_tmgr_free(p);
-	softnic_link_free(p);
-	softnic_swq_free(p);
-	softnic_mempool_free(p);
-
-	tm_hierarchy_free(p);
-	softnic_mtr_free(p);
-
-	rte_free(p);
-}
-
-static struct ether_addr eth_addr = {
+static struct rte_ether_addr eth_addr = {
 	.addr_bytes = {0},
 };
 
@@ -370,7 +392,6 @@ pmd_ethdev_register(struct rte_vdev_device *vdev,
 	dev->data->dev_link.link_status = ETH_LINK_DOWN;
 	dev->data->mac_addrs = &eth_addr;
 	dev->data->promiscuous = 1;
-	dev->data->kdrv = RTE_KDRV_NONE;
 	dev->data->numa_node = params->cpu_id;
 
 	rte_eth_dev_probing_finish(dev);
@@ -419,6 +440,7 @@ pmd_parse_args(struct pmd_params *p, const char *params)
 {
 	struct rte_kvargs *kvlist;
 	int ret = 0;
+	char *firmware = NULL;
 
 	kvlist = rte_kvargs_parse(params, pmd_valid_args);
 	if (kvlist == NULL)
@@ -426,7 +448,14 @@ pmd_parse_args(struct pmd_params *p, const char *params)
 
 	/* Set default values */
 	memset(p, 0, sizeof(*p));
-	p->firmware = SOFTNIC_FIRMWARE;
+	if (rte_strscpy(p->firmware, SOFTNIC_FIRMWARE,
+			sizeof(p->firmware)) < 0) {
+		PMD_LOG(WARNING,
+			"\"%s\": firmware path should be shorter than %zu",
+			SOFTNIC_FIRMWARE, sizeof(p->firmware));
+		ret = -EINVAL;
+		goto out_free;
+	}
 	p->cpu_id = SOFTNIC_CPU_ID;
 	p->sc = SOFTNIC_SC;
 	p->tm.n_queues = SOFTNIC_TM_N_QUEUES;
@@ -434,15 +463,35 @@ pmd_parse_args(struct pmd_params *p, const char *params)
 	p->tm.qsize[1] = SOFTNIC_TM_QUEUE_SIZE;
 	p->tm.qsize[2] = SOFTNIC_TM_QUEUE_SIZE;
 	p->tm.qsize[3] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[4] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[5] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[6] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[7] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[8] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[9] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[10] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[11] = SOFTNIC_TM_QUEUE_SIZE;
+	p->tm.qsize[12] = SOFTNIC_TM_QUEUE_SIZE;
 
 	/* Firmware script (optional) */
 	if (rte_kvargs_count(kvlist, PMD_PARAM_FIRMWARE) == 1) {
 		ret = rte_kvargs_process(kvlist, PMD_PARAM_FIRMWARE,
-			&get_string, &p->firmware);
+			&get_string, &firmware);
 		if (ret < 0)
 			goto out_free;
-	}
 
+		if (rte_strscpy(p->firmware, firmware,
+				sizeof(p->firmware)) < 0) {
+			PMD_LOG(WARNING,
+				"\"%s\": "
+				"firmware path should be shorter than %zu",
+				firmware, sizeof(p->firmware));
+			free(firmware);
+			ret = -EINVAL;
+			goto out_free;
+		}
+		free(firmware);
+	}
 	/* Connection listening port (optional) */
 	if (rte_kvargs_count(kvlist, PMD_PARAM_CONN_PORT) == 1) {
 		ret = rte_kvargs_process(kvlist, PMD_PARAM_CONN_PORT,
@@ -504,6 +553,67 @@ pmd_parse_args(struct pmd_params *p, const char *params)
 			goto out_free;
 	}
 
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE4) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE4,
+			&get_uint32, &p->tm.qsize[4]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE5) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE5,
+			&get_uint32, &p->tm.qsize[5]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE6) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE6,
+			&get_uint32, &p->tm.qsize[6]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE7) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE7,
+			&get_uint32, &p->tm.qsize[7]);
+		if (ret < 0)
+			goto out_free;
+	}
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE8) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE8,
+			&get_uint32, &p->tm.qsize[8]);
+		if (ret < 0)
+			goto out_free;
+	}
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE9) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE9,
+			&get_uint32, &p->tm.qsize[9]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE10) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE10,
+			&get_uint32, &p->tm.qsize[10]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE11) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE11,
+			&get_uint32, &p->tm.qsize[11]);
+		if (ret < 0)
+			goto out_free;
+	}
+
+	if (rte_kvargs_count(kvlist, PMD_PARAM_TM_QSIZE12) == 1) {
+		ret = rte_kvargs_process(kvlist, PMD_PARAM_TM_QSIZE12,
+			&get_uint32, &p->tm.qsize[12]);
+		if (ret < 0)
+			goto out_free;
+	}
+
 out_free:
 	rte_kvargs_free(kvlist);
 	return ret;
@@ -530,7 +640,12 @@ pmd_probe(struct rte_vdev_device *vdev)
 	if (status)
 		return status;
 
-	p.name = name;
+	if (rte_strscpy(p.name, name, sizeof(p.name)) < 0) {
+		PMD_LOG(WARNING,
+			"\"%s\": device name should be shorter than %zu",
+			name, sizeof(p.name));
+		return -EINVAL;
+	}
 
 	/* Allocate and initialize soft ethdev private data */
 	dev_private = pmd_init(&p);
@@ -562,12 +677,9 @@ pmd_remove(struct rte_vdev_device *vdev)
 	/* Find the ethdev entry */
 	dev = rte_eth_dev_allocated(rte_vdev_device_name(vdev));
 	if (dev == NULL)
-		return -ENODEV;
+		return 0; /* port already released */
 
-	/* Free device data structures*/
-	pmd_free(dev->data->dev_private);
-	dev->data->dev_private = NULL; /* already freed */
-	dev->data->mac_addrs = NULL; /* statically allocated */
+	pmd_dev_close(dev);
 	rte_eth_dev_release_port(dev);
 
 	return 0;
@@ -588,15 +700,16 @@ RTE_PMD_REGISTER_PARAM_STRING(net_softnic,
 	PMD_PARAM_TM_QSIZE1 "=<uint32> "
 	PMD_PARAM_TM_QSIZE2 "=<uint32> "
 	PMD_PARAM_TM_QSIZE3 "=<uint32>"
+	PMD_PARAM_TM_QSIZE4 "=<uint32> "
+	PMD_PARAM_TM_QSIZE5 "=<uint32> "
+	PMD_PARAM_TM_QSIZE6 "=<uint32> "
+	PMD_PARAM_TM_QSIZE7 "=<uint32> "
+	PMD_PARAM_TM_QSIZE8 "=<uint32> "
+	PMD_PARAM_TM_QSIZE9 "=<uint32> "
+	PMD_PARAM_TM_QSIZE10 "=<uint32> "
+	PMD_PARAM_TM_QSIZE11 "=<uint32>"
+	PMD_PARAM_TM_QSIZE12 "=<uint32>"
 );
-
-
-RTE_INIT(pmd_softnic_init_log)
-{
-	pmd_softnic_logtype = rte_log_register("pmd.net.softnic");
-	if (pmd_softnic_logtype >= 0)
-		rte_log_set_level(pmd_softnic_logtype, RTE_LOG_NOTICE);
-}
 
 int
 rte_pmd_softnic_manage(uint16_t port_id)

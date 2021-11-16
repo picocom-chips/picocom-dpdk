@@ -12,12 +12,14 @@ Network Interface Controller Drivers
     features
     build_and_test
     af_packet
+    af_xdp
     ark
     atlantic
     avp
     axgbe
     bnx2x
     bnxt
+    cnxk
     cxgbe
     dpaa
     dpaa2
@@ -26,27 +28,39 @@ Network Interface Controller Drivers
     enetc
     enic
     fm10k
+    hinic
+    hns3
     i40e
     ice
-    ifc
     igb
+    igc
+    ionic
+    ipn3ke
     ixgbe
     intel_vf
     kni
     liquidio
+    memif
     mlx4
     mlx5
     mvneta
     mvpp2
     netvsc
+    nfb
     nfp
+    ngbe
+    null
     octeontx
+    octeontx2
+    octeontx_ep
+    pfe
     qede
     sfc_efx
     softnic
     szedata2
     tap
     thunderx
+    txgbe
     vdev_netvsc
     virtio
     vhost

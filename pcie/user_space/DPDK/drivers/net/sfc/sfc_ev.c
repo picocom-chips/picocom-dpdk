@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright (c) 2016-2018 Solarflare Communications Inc.
- * All rights reserved.
+ * Copyright(c) 2019-2021 Xilinx, Inc.
+ * Copyright(c) 2016-2019 Solarflare Communications Inc.
  *
  * This software was jointly developed between OKTET Labs (under contract
  * for Solarflare) and Solarflare Communications, Inc.
@@ -158,8 +158,34 @@ sfc_ev_dp_rx(void *arg, __rte_unused uint32_t label, uint32_t id,
 	dp_rxq = evq->dp_rxq;
 	SFC_ASSERT(dp_rxq != NULL);
 
-	SFC_ASSERT(evq->sa->dp_rx->qrx_ev != NULL);
-	return evq->sa->dp_rx->qrx_ev(dp_rxq, id);
+	SFC_ASSERT(evq->sa->priv.dp_rx->qrx_ev != NULL);
+	return evq->sa->priv.dp_rx->qrx_ev(dp_rxq, id);
+}
+
+static boolean_t
+sfc_ev_nop_rx_packets(void *arg, uint32_t label, unsigned int num_packets,
+		      uint32_t flags)
+{
+	struct sfc_evq *evq = arg;
+
+	sfc_err(evq->sa,
+		"EVQ %u unexpected Rx packets event label=%u num=%u flags=%#x",
+		evq->evq_index, label, num_packets, flags);
+	return B_TRUE;
+}
+
+static boolean_t
+sfc_ev_dp_rx_packets(void *arg, __rte_unused uint32_t label,
+		     unsigned int num_packets, __rte_unused uint32_t flags)
+{
+	struct sfc_evq *evq = arg;
+	struct sfc_dp_rxq *dp_rxq;
+
+	dp_rxq = evq->dp_rxq;
+	SFC_ASSERT(dp_rxq != NULL);
+
+	SFC_ASSERT(evq->sa->priv.dp_rx->qrx_ev != NULL);
+	return evq->sa->priv.dp_rx->qrx_ev(dp_rxq, num_packets);
 }
 
 static boolean_t
@@ -185,8 +211,8 @@ sfc_ev_dp_rx_ps(void *arg, __rte_unused uint32_t label, uint32_t id,
 	dp_rxq = evq->dp_rxq;
 	SFC_ASSERT(dp_rxq != NULL);
 
-	if (evq->sa->dp_rx->qrx_ps_ev != NULL)
-		return evq->sa->dp_rx->qrx_ps_ev(dp_rxq, id);
+	if (evq->sa->priv.dp_rx->qrx_ps_ev != NULL)
+		return evq->sa->priv.dp_rx->qrx_ps_ev(dp_rxq, id);
 	else
 		return B_FALSE;
 }
@@ -239,8 +265,32 @@ sfc_ev_dp_tx(void *arg, __rte_unused uint32_t label, uint32_t id)
 	dp_txq = evq->dp_txq;
 	SFC_ASSERT(dp_txq != NULL);
 
-	SFC_ASSERT(evq->sa->dp_tx->qtx_ev != NULL);
-	return evq->sa->dp_tx->qtx_ev(dp_txq, id);
+	SFC_ASSERT(evq->sa->priv.dp_tx->qtx_ev != NULL);
+	return evq->sa->priv.dp_tx->qtx_ev(dp_txq, id);
+}
+
+static boolean_t
+sfc_ev_nop_tx_ndescs(void *arg, uint32_t label, unsigned int ndescs)
+{
+	struct sfc_evq *evq = arg;
+
+	sfc_err(evq->sa, "EVQ %u unexpected Tx event label=%u ndescs=%#x",
+		evq->evq_index, label, ndescs);
+	return B_TRUE;
+}
+
+static boolean_t
+sfc_ev_dp_tx_ndescs(void *arg, __rte_unused uint32_t label,
+		      unsigned int ndescs)
+{
+	struct sfc_evq *evq = arg;
+	struct sfc_dp_txq *dp_txq;
+
+	dp_txq = evq->dp_txq;
+	SFC_ASSERT(dp_txq != NULL);
+
+	SFC_ASSERT(evq->sa->priv.dp_tx->qtx_ev != NULL);
+	return evq->sa->priv.dp_tx->qtx_ev(dp_txq, ndescs);
 }
 
 static boolean_t
@@ -293,7 +343,9 @@ sfc_ev_rxq_flush_done(void *arg, __rte_unused uint32_t rxq_hw_index)
 	SFC_ASSERT(rxq != NULL);
 	SFC_ASSERT(rxq->hw_index == rxq_hw_index);
 	SFC_ASSERT(rxq->evq == evq);
-	sfc_rx_qflush_done(rxq);
+	RTE_SET_USED(rxq);
+
+	sfc_rx_qflush_done(sfc_rxq_info_by_dp_rxq(dp_rxq));
 
 	return B_FALSE;
 }
@@ -322,7 +374,9 @@ sfc_ev_rxq_flush_failed(void *arg, __rte_unused uint32_t rxq_hw_index)
 	SFC_ASSERT(rxq != NULL);
 	SFC_ASSERT(rxq->hw_index == rxq_hw_index);
 	SFC_ASSERT(rxq->evq == evq);
-	sfc_rx_qflush_failed(rxq);
+	RTE_SET_USED(rxq);
+
+	sfc_rx_qflush_failed(sfc_rxq_info_by_dp_rxq(dp_rxq));
 
 	return B_FALSE;
 }
@@ -351,7 +405,9 @@ sfc_ev_txq_flush_done(void *arg, __rte_unused uint32_t txq_hw_index)
 	SFC_ASSERT(txq != NULL);
 	SFC_ASSERT(txq->hw_index == txq_hw_index);
 	SFC_ASSERT(txq->evq == evq);
-	sfc_tx_qflush_done(txq);
+	RTE_SET_USED(txq);
+
+	sfc_tx_qflush_done(sfc_txq_info_by_dp_txq(dp_txq));
 
 	return B_FALSE;
 }
@@ -414,7 +470,7 @@ sfc_ev_link_change(void *arg, efx_link_mode_t link_mode)
 	struct rte_eth_link new_link;
 
 	sfc_port_link_mode_to_info(link_mode, &new_link);
-	if (rte_eth_linkstatus_set(sa->eth_dev, &new_link))
+	if (rte_eth_linkstatus_set(sa->eth_dev, &new_link) == 0)
 		evq->sa->port.lsc_seq++;
 
 	return B_FALSE;
@@ -423,8 +479,10 @@ sfc_ev_link_change(void *arg, efx_link_mode_t link_mode)
 static const efx_ev_callbacks_t sfc_ev_callbacks = {
 	.eec_initialized	= sfc_ev_initialized,
 	.eec_rx			= sfc_ev_nop_rx,
+	.eec_rx_packets		= sfc_ev_nop_rx_packets,
 	.eec_rx_ps		= sfc_ev_nop_rx_ps,
 	.eec_tx			= sfc_ev_nop_tx,
+	.eec_tx_ndescs		= sfc_ev_nop_tx_ndescs,
 	.eec_exception		= sfc_ev_exception,
 	.eec_rxq_flush_done	= sfc_ev_nop_rxq_flush_done,
 	.eec_rxq_flush_failed	= sfc_ev_nop_rxq_flush_failed,
@@ -439,8 +497,10 @@ static const efx_ev_callbacks_t sfc_ev_callbacks = {
 static const efx_ev_callbacks_t sfc_ev_callbacks_efx_rx = {
 	.eec_initialized	= sfc_ev_initialized,
 	.eec_rx			= sfc_ev_efx_rx,
+	.eec_rx_packets		= sfc_ev_nop_rx_packets,
 	.eec_rx_ps		= sfc_ev_nop_rx_ps,
 	.eec_tx			= sfc_ev_nop_tx,
+	.eec_tx_ndescs		= sfc_ev_nop_tx_ndescs,
 	.eec_exception		= sfc_ev_exception,
 	.eec_rxq_flush_done	= sfc_ev_rxq_flush_done,
 	.eec_rxq_flush_failed	= sfc_ev_rxq_flush_failed,
@@ -455,8 +515,10 @@ static const efx_ev_callbacks_t sfc_ev_callbacks_efx_rx = {
 static const efx_ev_callbacks_t sfc_ev_callbacks_dp_rx = {
 	.eec_initialized	= sfc_ev_initialized,
 	.eec_rx			= sfc_ev_dp_rx,
+	.eec_rx_packets		= sfc_ev_dp_rx_packets,
 	.eec_rx_ps		= sfc_ev_dp_rx_ps,
 	.eec_tx			= sfc_ev_nop_tx,
+	.eec_tx_ndescs		= sfc_ev_nop_tx_ndescs,
 	.eec_exception		= sfc_ev_exception,
 	.eec_rxq_flush_done	= sfc_ev_rxq_flush_done,
 	.eec_rxq_flush_failed	= sfc_ev_rxq_flush_failed,
@@ -471,8 +533,10 @@ static const efx_ev_callbacks_t sfc_ev_callbacks_dp_rx = {
 static const efx_ev_callbacks_t sfc_ev_callbacks_efx_tx = {
 	.eec_initialized	= sfc_ev_initialized,
 	.eec_rx			= sfc_ev_nop_rx,
+	.eec_rx_packets		= sfc_ev_nop_rx_packets,
 	.eec_rx_ps		= sfc_ev_nop_rx_ps,
 	.eec_tx			= sfc_ev_tx,
+	.eec_tx_ndescs		= sfc_ev_nop_tx_ndescs,
 	.eec_exception		= sfc_ev_exception,
 	.eec_rxq_flush_done	= sfc_ev_nop_rxq_flush_done,
 	.eec_rxq_flush_failed	= sfc_ev_nop_rxq_flush_failed,
@@ -487,8 +551,10 @@ static const efx_ev_callbacks_t sfc_ev_callbacks_efx_tx = {
 static const efx_ev_callbacks_t sfc_ev_callbacks_dp_tx = {
 	.eec_initialized	= sfc_ev_initialized,
 	.eec_rx			= sfc_ev_nop_rx,
+	.eec_rx_packets		= sfc_ev_nop_rx_packets,
 	.eec_rx_ps		= sfc_ev_nop_rx_ps,
 	.eec_tx			= sfc_ev_dp_tx,
+	.eec_tx_ndescs		= sfc_ev_dp_tx_ndescs,
 	.eec_exception		= sfc_ev_exception,
 	.eec_rxq_flush_done	= sfc_ev_nop_rxq_flush_done,
 	.eec_rxq_flush_failed	= sfc_ev_nop_rxq_flush_failed,
@@ -516,7 +582,7 @@ sfc_ev_qpoll(struct sfc_evq *evq)
 		int rc;
 
 		if (evq->dp_rxq != NULL) {
-			unsigned int rxq_sw_index;
+			sfc_sw_index_t rxq_sw_index;
 
 			rxq_sw_index = evq->dp_rxq->dpq.queue_id;
 
@@ -532,7 +598,7 @@ sfc_ev_qpoll(struct sfc_evq *evq)
 		}
 
 		if (evq->dp_txq != NULL) {
-			unsigned int txq_sw_index;
+			sfc_sw_index_t txq_sw_index;
 
 			txq_sw_index = evq->dp_txq->dpq.queue_id;
 
@@ -582,6 +648,7 @@ sfc_ev_qstart(struct sfc_evq *evq, unsigned int hw_index)
 	struct sfc_adapter *sa = evq->sa;
 	efsys_mem_t *esmp;
 	uint32_t evq_flags = sa->evq_flags;
+	uint32_t irq = 0;
 	unsigned int total_delay_us;
 	unsigned int delay_us;
 	int rc;
@@ -593,28 +660,51 @@ sfc_ev_qstart(struct sfc_evq *evq, unsigned int hw_index)
 	evq->evq_index = hw_index;
 
 	/* Clear all events */
-	(void)memset((void *)esmp->esm_base, 0xff, EFX_EVQ_SIZE(evq->entries));
+	(void)memset((void *)esmp->esm_base, 0xff,
+		     efx_evq_size(sa->nic, evq->entries, evq_flags));
 
-	if (sa->intr.lsc_intr && hw_index == sa->mgmt_evq_index)
+	if (sa->intr.lsc_intr && hw_index == sa->mgmt_evq_index) {
 		evq_flags |= EFX_EVQ_FLAGS_NOTIFY_INTERRUPT;
-	else
+		irq = 0;
+	} else if (sa->intr.rxq_intr && evq->dp_rxq != NULL) {
+		sfc_ethdev_qid_t ethdev_qid;
+
+		ethdev_qid =
+			sfc_ethdev_rx_qid_by_rxq_sw_index(sfc_sa2shared(sa),
+				evq->dp_rxq->dpq.queue_id);
+		if (ethdev_qid != SFC_ETHDEV_QID_INVALID) {
+			evq_flags |= EFX_EVQ_FLAGS_NOTIFY_INTERRUPT;
+			/*
+			 * The first interrupt is used for management EvQ
+			 * (LSC etc). RxQ interrupts follow it.
+			 */
+			irq = 1 + ethdev_qid;
+		} else {
+			evq_flags |= EFX_EVQ_FLAGS_NOTIFY_DISABLED;
+		}
+	} else {
 		evq_flags |= EFX_EVQ_FLAGS_NOTIFY_DISABLED;
+	}
+
+	evq->init_state = SFC_EVQ_STARTING;
 
 	/* Create the common code event queue */
-	rc = efx_ev_qcreate(sa->nic, hw_index, esmp, evq->entries,
-			    0 /* unused on EF10 */, 0, evq_flags,
-			    &evq->common);
+	rc = efx_ev_qcreate_irq(sa->nic, hw_index, esmp, evq->entries,
+				0 /* unused on EF10 */, 0, evq_flags,
+				irq, &evq->common);
 	if (rc != 0)
 		goto fail_ev_qcreate;
 
 	SFC_ASSERT(evq->dp_rxq == NULL || evq->dp_txq == NULL);
 	if (evq->dp_rxq != 0) {
-		if (strcmp(sa->dp_rx->dp.name, SFC_KVARG_DATAPATH_EFX) == 0)
+		if (strcmp(sa->priv.dp_rx->dp.name,
+			   SFC_KVARG_DATAPATH_EFX) == 0)
 			evq->callbacks = &sfc_ev_callbacks_efx_rx;
 		else
 			evq->callbacks = &sfc_ev_callbacks_dp_rx;
 	} else if (evq->dp_txq != 0) {
-		if (strcmp(sa->dp_tx->dp.name, SFC_KVARG_DATAPATH_EFX) == 0)
+		if (strcmp(sa->priv.dp_tx->dp.name,
+			   SFC_KVARG_DATAPATH_EFX) == 0)
 			evq->callbacks = &sfc_ev_callbacks_efx_tx;
 		else
 			evq->callbacks = &sfc_ev_callbacks_dp_tx;
@@ -622,7 +712,13 @@ sfc_ev_qstart(struct sfc_evq *evq, unsigned int hw_index)
 		evq->callbacks = &sfc_ev_callbacks;
 	}
 
-	evq->init_state = SFC_EVQ_STARTING;
+	/*
+	 * Poll once to ensure that eec_initialized callback is invoked in
+	 * case if the hardware does not support INIT_DONE events. If the
+	 * hardware supports INIT_DONE events, this will do nothing, and the
+	 * corresponding event will be processed by sfc_ev_qpoll() below.
+	 */
+	efx_ev_qcreate_check_init_done(evq->common, evq->callbacks, evq);
 
 	/* Wait for the initialization event */
 	total_delay_us = 0;
@@ -655,10 +751,10 @@ done:
 	return 0;
 
 fail_timedout:
-	evq->init_state = SFC_EVQ_INITIALIZED;
 	efx_ev_qdestroy(evq->common);
 
 fail_ev_qcreate:
+	evq->init_state = SFC_EVQ_INITIALIZED;
 	sfc_log_init(sa, "failed %d", rc);
 	return rc;
 }
@@ -815,7 +911,8 @@ sfc_ev_qinit(struct sfc_adapter *sa,
 
 	/* Allocate DMA space */
 	rc = sfc_dma_alloc(sa, sfc_evq_type2str(type), type_index,
-			   EFX_EVQ_SIZE(evq->entries), socket_id, &evq->mem);
+			   efx_evq_size(sa->nic, evq->entries, sa->evq_flags),
+			   socket_id, &evq->mem);
 	if (rc != 0)
 		goto fail_dma_alloc;
 
@@ -886,10 +983,10 @@ sfc_ev_attach(struct sfc_adapter *sa)
 		goto fail_kvarg_perf_profile;
 	}
 
-	sa->mgmt_evq_index = 0;
+	sa->mgmt_evq_index = sfc_mgmt_evq_sw_index(sfc_sa2shared(sa));
 	rte_spinlock_init(&sa->mgmt_evq_lock);
 
-	rc = sfc_ev_qinit(sa, SFC_EVQ_TYPE_MGMT, 0, SFC_MGMT_EVQ_ENTRIES,
+	rc = sfc_ev_qinit(sa, SFC_EVQ_TYPE_MGMT, 0, sa->evq_min_entries,
 			  sa->socket_id, &sa->mgmt_evq);
 	if (rc != 0)
 		goto fail_mgmt_evq_init;

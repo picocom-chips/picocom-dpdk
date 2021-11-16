@@ -1,5 +1,4 @@
-/*-
- * SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2018 Marvell International Ltd.
  * Copyright(c) 2018 Semihalf.
  * All rights reserved.
@@ -88,6 +87,12 @@ mrvl_meter_profile_add(struct rte_eth_dev *dev, uint32_t meter_profile_id,
 					  RTE_MTR_ERROR_TYPE_UNSPECIFIED,
 					  NULL,
 					  "Only srTCM RFC 2697 is supported\n");
+
+	if (profile->packet_mode)
+		return -rte_mtr_error_set(error, EINVAL,
+				RTE_MTR_ERROR_TYPE_METER_PROFILE_PACKET_MODE,
+				NULL,
+				"Packet mode is not supported\n");
 
 	prof = mrvl_mtr_profile_from_id(priv, meter_profile_id);
 	if (prof)
@@ -330,6 +335,12 @@ mrvl_create(struct rte_eth_dev *dev, uint32_t mtr_id,
 	struct mrvl_mtr_profile *profile;
 	struct mrvl_mtr *mtr;
 
+	profile = mrvl_mtr_profile_from_id(priv, params->meter_profile_id);
+	if (!profile)
+		return -rte_mtr_error_set(error, EINVAL,
+					  RTE_MTR_ERROR_TYPE_METER_PROFILE_ID,
+					  NULL, "Profile id does not exist\n");
+
 	mtr = mrvl_mtr_from_id(priv, mtr_id);
 	if (mtr)
 		return -rte_mtr_error_set(error, EEXIST,
@@ -341,12 +352,6 @@ mrvl_create(struct rte_eth_dev *dev, uint32_t mtr_id,
 		return -rte_mtr_error_set(error, ENOMEM,
 					  RTE_MTR_ERROR_TYPE_UNSPECIFIED,
 					  NULL, NULL);
-
-	profile = mrvl_mtr_profile_from_id(priv, params->meter_profile_id);
-	if (!profile)
-		return -rte_mtr_error_set(error, EINVAL,
-					  RTE_MTR_ERROR_TYPE_METER_PROFILE_ID,
-					  NULL, "Profile id does not exist\n");
 
 	mtr->shared = shared;
 	mtr->mtr_id = mtr_id;

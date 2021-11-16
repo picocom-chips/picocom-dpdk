@@ -111,7 +111,10 @@ init_port(uint16_t port_num)
 	printf("Port %u init ... ", port_num);
 	fflush(stdout);
 
-	rte_eth_dev_info_get(port_num, &dev_info);
+	retval = rte_eth_dev_info_get(port_num, &dev_info);
+	if (retval != 0)
+		return retval;
+
 	if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 		port_conf.txmode.offloads |=
 			DEV_TX_OFFLOAD_MBUF_FAST_FREE;
@@ -147,7 +150,9 @@ init_port(uint16_t port_num)
 			return retval;
 	}
 
-	rte_eth_promiscuous_enable(port_num);
+	retval = rte_eth_promiscuous_enable(port_num);
+	if (retval != 0)
+		return retval;
 
 	retval = rte_eth_dev_start(port_num);
 	if (retval < 0)
@@ -195,6 +200,8 @@ init_shm_rings(void)
  * Create EFD table which will contain all the flows
  * that will be distributed among the nodes
  */
+
+/* Create EFD table. 8< */
 static void
 create_efd_table(void)
 {
@@ -231,6 +238,7 @@ populate_efd_table(void)
 
 	printf("EFD table: Adding 0x%x keys\n", num_flows);
 }
+/* >8 End of creation EFD table. */
 
 /* Check the link status of all ports in up to 9s, and print them finally */
 static void
@@ -241,6 +249,8 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 	uint8_t count, all_ports_up, print_flag = 0;
 	uint16_t portid;
 	struct rte_eth_link link;
+	int ret;
+	char link_status_text[RTE_ETH_LINK_MAX_STR_LEN];
 
 	printf("\nChecking link status");
 	fflush(stdout);
@@ -250,19 +260,20 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 			if ((port_mask & (1 << info->id[portid])) == 0)
 				continue;
 			memset(&link, 0, sizeof(link));
-			rte_eth_link_get_nowait(info->id[portid], &link);
+			ret = rte_eth_link_get_nowait(info->id[portid], &link);
+			if (ret < 0) {
+				all_ports_up = 0;
+				if (print_flag == 1)
+					printf("Port %u link get failed: %s\n",
+						portid, rte_strerror(-ret));
+				continue;
+			}
 			/* print link status if flag set */
 			if (print_flag == 1) {
-				if (link.link_status)
-					printf(
-					"Port%d Link Up. Speed %u Mbps - %s\n",
-						info->id[portid],
-						link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex\n"));
-				else
-					printf("Port %d Link Down\n",
-						info->id[portid]);
+				rte_eth_link_to_str(link_status_text,
+					sizeof(link_status_text), &link);
+				printf("Port %d %s\n", info->id[portid],
+				       link_status_text);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */

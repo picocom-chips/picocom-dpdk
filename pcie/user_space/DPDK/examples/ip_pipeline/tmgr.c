@@ -4,11 +4,12 @@
 
 #include <stdlib.h>
 
+#include <rte_common.h>
 #include <rte_string_fns.h>
 
 #include "tmgr.h"
 
-static struct rte_sched_subport_params
+static struct rte_sched_subport_profile_params
 	subport_profile[TMGR_SUBPORT_PROFILE_MAX];
 
 static uint32_t n_subport_profiles;
@@ -17,6 +18,82 @@ static struct rte_sched_pipe_params
 	pipe_profile[TMGR_PIPE_PROFILE_MAX];
 
 static uint32_t n_pipe_profiles;
+
+static const struct rte_sched_subport_params subport_params_default = {
+	.n_pipes_per_subport_enabled = 0, /* filled at runtime */
+	.qsize = {64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64},
+	.pipe_profiles = pipe_profile,
+	.n_pipe_profiles = 0, /* filled at run time */
+	.n_max_pipe_profiles = RTE_DIM(pipe_profile),
+#ifdef RTE_SCHED_RED
+.red_params = {
+	/* Traffic Class 0 Colors Green / Yellow / Red */
+	[0][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[0][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[0][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 1 - Colors Green / Yellow / Red */
+	[1][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[1][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[1][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 2 - Colors Green / Yellow / Red */
+	[2][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[2][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[2][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 3 - Colors Green / Yellow / Red */
+	[3][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[3][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[3][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 4 - Colors Green / Yellow / Red */
+	[4][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[4][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[4][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 5 - Colors Green / Yellow / Red */
+	[5][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[5][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[5][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 6 - Colors Green / Yellow / Red */
+	[6][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[6][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[6][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 7 - Colors Green / Yellow / Red */
+	[7][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[7][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[7][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 8 - Colors Green / Yellow / Red */
+	[8][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[8][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[8][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 9 - Colors Green / Yellow / Red */
+	[9][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[9][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[9][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 10 - Colors Green / Yellow / Red */
+	[10][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[10][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[10][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 11 - Colors Green / Yellow / Red */
+	[11][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[11][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[11][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+
+	/* Traffic Class 12 - Colors Green / Yellow / Red */
+	[12][0] = {.min_th = 48, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[12][1] = {.min_th = 40, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	[12][2] = {.min_th = 32, .max_th = 64, .maxp_inv = 10, .wq_log2 = 9},
+	},
+#endif /* RTE_SCHED_RED */
+};
 
 static struct tmgr_port_list tmgr_port_list;
 
@@ -44,16 +121,16 @@ tmgr_port_find(const char *name)
 }
 
 int
-tmgr_subport_profile_add(struct rte_sched_subport_params *p)
+tmgr_subport_profile_add(struct rte_sched_subport_profile_params *params)
 {
 	/* Check input params */
-	if (p == NULL)
+	if (params == NULL)
 		return -1;
 
 	/* Save profile */
 	memcpy(&subport_profile[n_subport_profiles],
-		p,
-		sizeof(*p));
+		params,
+		sizeof(*params));
 
 	n_subport_profiles++;
 
@@ -80,6 +157,7 @@ tmgr_pipe_profile_add(struct rte_sched_pipe_params *p)
 struct tmgr_port *
 tmgr_port_create(const char *name, struct tmgr_port_params *params)
 {
+	struct rte_sched_subport_params subport_params;
 	struct rte_sched_port_params p;
 	struct tmgr_port *tmgr_port;
 	struct rte_sched_port *s;
@@ -103,17 +181,22 @@ tmgr_port_create(const char *name, struct tmgr_port_params *params)
 	p.mtu = params->mtu;
 	p.frame_overhead = params->frame_overhead;
 	p.n_subports_per_port = params->n_subports_per_port;
+	p.n_subport_profiles = n_subport_profiles;
+	p.subport_profiles = subport_profile;
+	p.n_max_subport_profiles = TMGR_SUBPORT_PROFILE_MAX;
 	p.n_pipes_per_subport = params->n_pipes_per_subport;
 
-	for (i = 0; i < RTE_SCHED_TRAFFIC_CLASSES_PER_PIPE; i++)
-		p.qsize[i] = params->qsize[i];
-
-	p.pipe_profiles = pipe_profile;
-	p.n_pipe_profiles = n_pipe_profiles;
 
 	s = rte_sched_port_config(&p);
 	if (s == NULL)
 		return NULL;
+
+	memcpy(&subport_params, &subport_params_default,
+		sizeof(subport_params_default));
+
+	subport_params.n_pipe_profiles = n_pipe_profiles;
+	subport_params.n_pipes_per_subport_enabled =
+						params->n_pipes_per_subport;
 
 	for (i = 0; i < params->n_subports_per_port; i++) {
 		int status;
@@ -121,7 +204,8 @@ tmgr_port_create(const char *name, struct tmgr_port_params *params)
 		status = rte_sched_subport_config(
 			s,
 			i,
-			&subport_profile[0]);
+			&subport_params,
+			0);
 
 		if (status) {
 			rte_sched_port_free(s);
@@ -129,6 +213,7 @@ tmgr_port_create(const char *name, struct tmgr_port_params *params)
 		}
 
 		for (j = 0; j < params->n_pipes_per_subport; j++) {
+
 			status = rte_sched_pipe_config(
 				s,
 				i,
@@ -183,7 +268,8 @@ tmgr_subport_config(const char *port_name,
 	status = rte_sched_subport_config(
 		port->s,
 		subport_id,
-		&subport_profile[subport_profile_id]);
+		NULL,
+		subport_profile_id);
 
 	return status;
 }

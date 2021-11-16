@@ -42,7 +42,7 @@ The rte_event structure contains the following metadata fields, which the
 application fills in to have the event scheduled as required:
 
 * ``flow_id`` - The targeted flow identifier for the enq/deq operation.
-* ``event_type`` - The source of this event, eg RTE_EVENT_TYPE_ETHDEV or CPU.
+* ``event_type`` - The source of this event, e.g. RTE_EVENT_TYPE_ETHDEV or CPU.
 * ``sub_event_type`` - Distinguishes events inside the application, that have
   the same event_type (see above)
 * ``op`` - This field takes one of the RTE_EVENT_OP_* values, and tells the
@@ -63,12 +63,44 @@ the actual event being scheduled is. The payload is a union of the following:
 * ``uint64_t u64``
 * ``void *event_ptr``
 * ``struct rte_mbuf *mbuf``
+* ``struct rte_event_vector *vec``
 
-These three items in a union occupy the same 64 bits at the end of the rte_event
+These four items in a union occupy the same 64 bits at the end of the rte_event
 structure. The application can utilize the 64 bits directly by accessing the
-u64 variable, while the event_ptr and mbuf are provided as convenience
+u64 variable, while the event_ptr, mbuf, vec are provided as a convenience
 variables.  For example the mbuf pointer in the union can used to schedule a
 DPDK packet.
+
+Event Vector
+~~~~~~~~~~~~
+
+The rte_event_vector struct contains a vector of elements defined by the event
+type specified in the ``rte_event``. The event_vector structure contains the
+following data:
+
+* ``nb_elem`` - The number of elements held within the vector.
+
+Similar to ``rte_event`` the payload of event vector is also a union, allowing
+flexibility in what the actual vector is.
+
+* ``struct rte_mbuf *mbufs[0]`` - An array of mbufs.
+* ``void *ptrs[0]`` - An array of pointers.
+* ``uint64_t *u64s[0]`` - An array of uint64_t elements.
+
+The size of the event vector is related to the total number of elements it is
+configured to hold, this is achieved by making `rte_event_vector` a variable
+length structure.
+A helper function is provided to create a mempool that holds event vector, which
+takes name of the pool, total number of required ``rte_event_vector``,
+cache size, number of elements in each ``rte_event_vector`` and socket id.
+
+.. code-block:: c
+
+        rte_event_vector_pool_create("vector_pool", nb_event_vectors, cache_sz,
+                                     nb_elements_per_vector, socket_id);
+
+The function ``rte_event_vector_pool_create`` creates mempool with the best
+platform mempool ops.
 
 Queues
 ~~~~~~
@@ -120,7 +152,7 @@ Ports
 ~~~~~
 
 Ports are the points of contact between worker cores and the eventdev. The
-general use-case will see one CPU core using one port to enqueue and dequeue
+general use case will see one CPU core using one port to enqueue and dequeue
 events from an eventdev. Ports are linked to queues in order to retrieve events
 from those queues (more details in `Linking Queues and Ports`_ below).
 
@@ -242,9 +274,10 @@ Once queues are set up successfully, create the ports as required.
         };
         int dev_id = 0;
         int rx_port_id = 0;
+        int worker_port_id;
         int err = rte_event_port_setup(dev_id, rx_port_id, &rx_conf);
 
-        for(int worker_port_id = 1; worker_port_id <= 4; worker_port_id++) {
+        for (worker_port_id = 1; worker_port_id <= 4; worker_port_id++) {
 	        int err = rte_event_port_setup(dev_id, worker_port_id, &worker_conf);
         }
 
@@ -265,7 +298,7 @@ Linking Queues and Ports
 The final step is to "wire up" the ports to the queues. After this, the
 eventdev is capable of scheduling events, and when cores request work to do,
 the correct events are provided to that core. Note that the RX core takes input
-from eg: a NIC so it is not linked to any eventdev queues.
+from e.g.: a NIC so it is not linked to any eventdev queues.
 
 Linking all workers to atomic queues, and the TX core to the single-link queue
 can be achieved like this:
@@ -276,9 +309,10 @@ can be achieved like this:
         uint8_t tx_port_id = 5;
         uint8_t atomic_qs[] = {0, 1};
         uint8_t single_link_q = 2;
-        uin8t_t priority = RTE_EVENT_DEV_PRIORITY_NORMAL;
+        uint8_t priority = RTE_EVENT_DEV_PRIORITY_NORMAL;
+        int worker_port_id;
 
-        for(int worker_port_id = 1; worker_port_id <= 4; worker_port_id++) {
+        for (worker_port_id = 1; worker_port_id <= 4; worker_port_id++) {
                 int links_made = rte_event_port_link(dev_id, worker_port_id, atomic_qs, NULL, 2);
         }
         int links_made = rte_event_port_link(dev_id, tx_port_id, &single_link_q, &priority, 1);
@@ -295,6 +329,11 @@ eventdev.
 .. code-block:: c
 
         int err = rte_event_dev_start(dev_id);
+
+.. Note::
+
+         EventDev needs to be started before starting the event producers such
+         as event_eth_rx_adapter, event_timer_adapter and event_crypto_adapter.
 
 Ingress of New Events
 ~~~~~~~~~~~~~~~~~~~~~

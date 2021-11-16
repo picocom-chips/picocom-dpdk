@@ -17,13 +17,11 @@ build_map_changes()
 		# map files are altered, and all section/symbol names
 		# appearing between a triggering of this rule and the
 		# next trigger of this rule are associated with this file
-		/[-+] a\/.*\.map/ {map=$2; in_map=1}
+		/[-+] [ab]\/.*\.map/ {map=$2; in_map=1; next}
 
-		# Same pattern as above, only it matches on anything that
-		# does not end in 'map', indicating we have left the map chunk.
-		# When we hit this, turn off the in_map variable, which
-		# supresses the subordonate rules below
-		/[-+] a\/.*\.[^map]/ {in_map=0}
+		# The previous rule catches all .map files, anything else
+		# indicates we left the map chunk.
+		/[-+] [ab]\// {in_map=0}
 
 		# Triggering this rule, which starts a line and ends it
 		# with a { identifies a versioned section.  The section name is
@@ -79,6 +77,10 @@ build_map_changes()
 
 }
 
+is_stable_section() {
+	[ "$1" != 'EXPERIMENTAL' ] && [ "$1" != 'INTERNAL' ]
+}
+
 check_for_rule_violations()
 {
 	local mapdb="$1"
@@ -97,7 +99,7 @@ check_for_rule_violations()
 			then
 				# Just inform the user of this occurrence, but
 				# don't flag it as an error
-				echo -n "INFO: symbol $syname is added but "
+				echo -n "INFO: symbol $symname is added but "
 				echo -n "patch has insuficient context "
 				echo -n "to determine the section name "
 				echo -n "please ensure the version is "
@@ -105,29 +107,53 @@ check_for_rule_violations()
 				continue
 			fi
 
-			if [ "$secname" != "EXPERIMENTAL" ]
+			oldsecname=$(sed -n \
+			"s#$mname $symname \(.*\) del#\1#p" "$mapdb")
+
+			# A symbol can not enter a stable section directly
+			if [ -z "$oldsecname" ]
 			then
-				# Symbols that are getting added in a section
-				# other than the experimental section
-				# to be moving from an already supported
-				# section or its a violation
-				grep -q \
-				"$mname $symname [^EXPERIMENTAL] del" "$mapdb"
-				if [ $? -ne 0 ]
+				if ! is_stable_section $secname
 				then
+					echo -n "INFO: symbol $symname has "
+					echo -n "been added to the "
+					echo -n "$secname section of the "
+					echo "version map"
+					continue
+				else
 					echo -n "ERROR: symbol $symname "
 					echo -n "is added in the $secname "
 					echo -n "section, but is expected to "
 					echo -n "be added in the EXPERIMENTAL "
 					echo "section of the version map"
 					ret=1
+					continue
 				fi
+			fi
+
+			# This symbol is moving inside a section, nothing to do
+			if [ "$oldsecname" = "$secname" ]
+			then
+				continue
+			fi
+
+			# This symbol is moving between two sections (the
+			# original section is a stable section).
+			# This can be legit, just warn.
+			if is_stable_section $oldsecname
+			then
+				echo -n "INFO: symbol $symname is being "
+				echo -n "moved from $oldsecname to $secname. "
+				echo -n "Ensure that it has gone through the "
+				echo "deprecation process"
+				continue
 			fi
 		else
 
-			if [ "$secname" != "EXPERIMENTAL" ]
+			if ! grep -q "$mname $symname .* add" "$mapdb" && \
+			   is_stable_section $secname
 			then
-				# Just inform users that non-experimenal
+				# Just inform users that stable
 				# symbols need to go through a deprecation
 				# process
 				echo -n "INFO: symbol $symname is being "

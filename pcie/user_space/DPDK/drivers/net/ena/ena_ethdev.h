@@ -1,43 +1,21 @@
-/*-
-* BSD LICENSE
-*
-* Copyright (c) 2015-2016 Amazon.com, Inc. or its affiliates.
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions
-* are met:
-*
-* * Redistributions of source code must retain the above copyright
-* notice, this list of conditions and the following disclaimer.
-* * Redistributions in binary form must reproduce the above copyright
-* notice, this list of conditions and the following disclaimer in
-* the documentation and/or other materials provided with the
-* distribution.
-* * Neither the name of copyright holder nor the names of its
-* contributors may be used to endorse or promote products derived
-* from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-* "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-* LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-* A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-* OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-* SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-* DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-* THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-* OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2015-2020 Amazon.com, Inc. or its affiliates.
+ * All rights reserved.
+ */
 
 #ifndef _ENA_ETHDEV_H_
 #define _ENA_ETHDEV_H_
 
+#include <rte_atomic.h>
+#include <rte_ether.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_cycles.h>
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
 #include <rte_timer.h>
+#include <rte_dev.h>
+#include <rte_net.h>
 
 #include "ena_com.h"
 
@@ -48,6 +26,8 @@
 #define ENA_MIN_FRAME_LEN	64
 #define ENA_NAME_MAX_LEN	20
 #define ENA_PKT_MAX_BUFS	17
+#define ENA_RX_BUF_MIN_SIZE	1400
+#define ENA_DEFAULT_RING_SIZE	1024
 
 #define ENA_MIN_MTU		128
 
@@ -55,6 +35,34 @@
 
 #define ENA_WD_TIMEOUT_SEC	3
 #define ENA_DEVICE_KALIVE_TIMEOUT (ENA_WD_TIMEOUT_SEC * rte_get_timer_hz())
+
+/* While processing submitted and completed descriptors (rx and tx path
+ * respectively) in a loop it is desired to:
+ *  - perform batch submissions while populating sumbissmion queue
+ *  - avoid blocking transmission of other packets during cleanup phase
+ * Hence the utilization ratio of 1/8 of a queue size or max value if the size
+ * of the ring is very big - like 8k Rx rings.
+ */
+#define ENA_REFILL_THRESH_DIVIDER      8
+#define ENA_REFILL_THRESH_PACKET       256
+
+#define ENA_IDX_NEXT_MASKED(idx, mask) (((idx) + 1) & (mask))
+#define ENA_IDX_ADD_MASKED(idx, n, mask) (((idx) + (n)) & (mask))
+
+#define ENA_RX_RSS_TABLE_LOG_SIZE	7
+#define ENA_RX_RSS_TABLE_SIZE		(1 << ENA_RX_RSS_TABLE_LOG_SIZE)
+
+#define ENA_HASH_KEY_SIZE		40
+
+#define ENA_ALL_RSS_HF (ETH_RSS_NONFRAG_IPV4_TCP | ETH_RSS_NONFRAG_IPV4_UDP | \
+			ETH_RSS_NONFRAG_IPV6_TCP | ETH_RSS_NONFRAG_IPV6_UDP)
+
+#define ENA_IO_TXQ_IDX(q)		(2 * (q))
+#define ENA_IO_RXQ_IDX(q)		(2 * (q) + 1)
+/* Reversed version of ENA_IO_RXQ_IDX */
+#define ENA_IO_RXQ_IDX_REV(q)		(((q) - 1) / 2)
+
+extern struct ena_shared_data *ena_shared_data;
 
 struct ena_adapter;
 
@@ -70,11 +78,17 @@ struct ena_tx_buffer {
 	struct ena_com_buf bufs[ENA_PKT_MAX_BUFS];
 };
 
+/* Rx buffer holds only pointer to the mbuf - may be expanded in the future */
+struct ena_rx_buffer {
+	struct rte_mbuf *mbuf;
+	struct ena_com_buf ena_buf;
+};
+
 struct ena_calc_queue_size_ctx {
 	struct ena_com_dev_get_features_ctx *get_feat_ctx;
 	struct ena_com_dev *ena_dev;
-	u16 rx_queue_size;
-	u16 tx_queue_size;
+	u32 max_rx_queue_size;
+	u32 max_tx_queue_size;
 	u16 max_tx_sgl_size;
 	u16 max_rx_sgl_size;
 };
@@ -107,6 +121,10 @@ struct ena_ring {
 
 	enum ena_ring_type type;
 	enum ena_admin_placement_policy_type tx_mem_queue_type;
+
+	/* Indicate there are Tx packets pushed to the device and wait for db */
+	bool pkts_without_db;
+
 	/* Holds the empty requests for TX/RX OOO completions */
 	union {
 		uint16_t *empty_tx_reqs;
@@ -115,10 +133,11 @@ struct ena_ring {
 
 	union {
 		struct ena_tx_buffer *tx_buffer_info; /* contex of tx packet */
-		struct rte_mbuf **rx_buffer_info; /* contex of rx packet */
+		struct ena_rx_buffer *rx_buffer_info; /* contex of rx packet */
 	};
 	struct rte_mbuf **rx_refill_buffer;
 	unsigned int ring_size; /* number of tx/rx_buffer_info's entries */
+	unsigned int size_mask;
 
 	struct ena_com_io_cq *ena_com_io_cq;
 	struct ena_com_io_sq *ena_com_io_sq;
@@ -139,10 +158,14 @@ struct ena_ring {
 	uint64_t offloads;
 	u16 sgl_size;
 
+	bool disable_meta_caching;
+
 	union {
 		struct ena_stats_rx rx_stats;
 		struct ena_stats_tx tx_stats;
 	};
+
+	unsigned int numa_socket_id;
 } __rte_cache_aligned;
 
 enum ena_adapter_state {
@@ -158,41 +181,85 @@ struct ena_driver_stats {
 	rte_atomic64_t ierrors;
 	rte_atomic64_t oerrors;
 	rte_atomic64_t rx_nombuf;
-	rte_atomic64_t rx_drops;
+	u64 rx_drops;
 };
 
 struct ena_stats_dev {
 	u64 wd_expired;
 	u64 dev_start;
 	u64 dev_stop;
+	/*
+	 * Tx drops cannot be reported as the driver statistic, because DPDK
+	 * rte_eth_stats structure isn't providing appropriate field for that.
+	 * As a workaround it is being published as an extended statistic.
+	 */
+	u64 tx_drops;
+};
+
+struct ena_stats_eni {
+	/*
+	 * The number of packets shaped due to inbound aggregate BW
+	 * allowance being exceeded
+	 */
+	uint64_t bw_in_allowance_exceeded;
+	/*
+	 * The number of packets shaped due to outbound aggregate BW
+	 * allowance being exceeded
+	 */
+	uint64_t bw_out_allowance_exceeded;
+	/* The number of packets shaped due to PPS allowance being exceeded */
+	uint64_t pps_allowance_exceeded;
+	/*
+	 * The number of packets shaped due to connection tracking
+	 * allowance being exceeded and leading to failure in establishment
+	 * of new connections
+	 */
+	uint64_t conntrack_allowance_exceeded;
+	/*
+	 * The number of packets shaped due to linklocal packet rate
+	 * allowance being exceeded
+	 */
+	uint64_t linklocal_allowance_exceeded;
+};
+
+struct ena_offloads {
+	bool tso4_supported;
+	bool tx_csum_supported;
+	bool rx_csum_supported;
+	bool rss_hash_supported;
 };
 
 /* board specific private data structure */
 struct ena_adapter {
 	/* OS defined structs */
-	struct rte_pci_device *pdev;
-	struct rte_eth_dev_data *rte_eth_dev_data;
-	struct rte_eth_dev *rte_dev;
+	struct rte_eth_dev_data *edev_data;
 
 	struct ena_com_dev ena_dev __rte_cache_aligned;
 
 	/* TX */
 	struct ena_ring tx_ring[ENA_MAX_NUM_QUEUES] __rte_cache_aligned;
-	int tx_ring_size;
+	u32 max_tx_ring_size;
 	u16 max_tx_sgl_size;
 
 	/* RX */
 	struct ena_ring rx_ring[ENA_MAX_NUM_QUEUES] __rte_cache_aligned;
-	int rx_ring_size;
+	u32 max_rx_ring_size;
 	u16 max_rx_sgl_size;
 
-	u16 num_queues;
+	u32 max_num_io_queues;
 	u16 max_mtu;
-	u8 tso4_supported;
+	struct ena_offloads offloads;
+
+	/* The admin queue isn't protected by the lock and is used to
+	 * retrieve statistics from the device. As there is no guarantee that
+	 * application won't try to get statistics from multiple threads, it is
+	 * safer to lock the queue to avoid admin queue failure.
+	 */
+	rte_spinlock_t admin_lock;
 
 	int id_number;
 	char name[ENA_NAME_MAX_LEN];
-	u8 mac_addr[ETHER_ADDR_LEN];
+	u8 mac_addr[RTE_ETHER_ADDR_LEN];
 
 	void *regs;
 	void *dev_mem_base;
@@ -214,10 +281,25 @@ struct ena_adapter {
 	uint64_t keep_alive_timeout;
 
 	struct ena_stats_dev dev_stats;
+	struct ena_stats_eni eni_stats;
 
 	bool trigger_reset;
 
 	bool wd_state;
+
+	bool use_large_llq_hdr;
 };
+
+int ena_rss_reta_update(struct rte_eth_dev *dev,
+			struct rte_eth_rss_reta_entry64 *reta_conf,
+			uint16_t reta_size);
+int ena_rss_reta_query(struct rte_eth_dev *dev,
+		       struct rte_eth_rss_reta_entry64 *reta_conf,
+		       uint16_t reta_size);
+int ena_rss_hash_update(struct rte_eth_dev *dev,
+			struct rte_eth_rss_conf *rss_conf);
+int ena_rss_hash_conf_get(struct rte_eth_dev *dev,
+			  struct rte_eth_rss_conf *rss_conf);
+int ena_rss_configure(struct ena_adapter *adapter);
 
 #endif /* _ENA_ETHDEV_H_ */

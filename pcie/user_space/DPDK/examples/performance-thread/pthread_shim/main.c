@@ -27,6 +27,7 @@
 
 #define DEBUG_APP 0
 #define HELLOW_WORLD_MAX_LTHREADS 10
+#define THREAD_NAME_LEN	16
 
 #ifndef __GLIBC__ /* sched_getcpu() is glibc-specific */
 #define sched_getcpu() rte_lcore_id()
@@ -118,7 +119,7 @@ void *helloworld_pthread(void *arg)
  */
 __thread pthread_t tid[HELLOW_WORLD_MAX_LTHREADS];
 
-static void *initial_lthread(void *args __attribute__((unused)))
+static void *initial_lthread(void *args __rte_unused)
 {
 	int lcore = (int) rte_lcore_id();
 	/*
@@ -149,6 +150,7 @@ static void *initial_lthread(void *args __attribute__((unused)))
 		 */
 		pthread_attr_t attr;
 		rte_cpuset_t cpuset;
+		char name[THREAD_NAME_LEN];
 
 		CPU_ZERO(&cpuset);
 		CPU_SET(lcore, &cpuset);
@@ -160,6 +162,9 @@ static void *initial_lthread(void *args __attribute__((unused)))
 				helloworld_pthread, (void *) i);
 		if (ret != 0)
 			rte_exit(EXIT_FAILURE, "Cannot create helloworld thread\n");
+
+		snprintf(name, sizeof(name), "helloworld-%u", (uint32_t)i);
+		rte_thread_setname(tid[i], name);
 	}
 
 	/* wait for 1s to allow threads
@@ -204,7 +209,7 @@ static void *initial_lthread(void *args __attribute__((unused)))
  * in the core mask
  */
 static int
-lthread_scheduler(void *args __attribute__((unused)))
+lthread_scheduler(void *args __rte_unused)
 {
 	/* create initial thread  */
 	struct lthread *lt;
@@ -252,11 +257,15 @@ int main(int argc, char **argv)
 	lthread_num_schedulers_set(num_sched);
 
 	/* launch all threads */
-	rte_eal_mp_remote_launch(lthread_scheduler, (void *)NULL, CALL_MASTER);
+	rte_eal_mp_remote_launch(lthread_scheduler, (void *)NULL, CALL_MAIN);
 
 	/* wait for threads to stop */
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		rte_eal_wait_lcore(lcore_id);
 	}
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
+
 	return 0;
 }

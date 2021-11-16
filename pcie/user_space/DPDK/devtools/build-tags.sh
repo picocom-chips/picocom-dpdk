@@ -19,8 +19,8 @@ arm_64=true
 print_usage()
 {
 	echo "Usage: $(basename $0) [-h] [-v] tags|cscope|gtags|etags [config]"
-	echo "Valid configs are:"
-	make showconfigs | sed 's,^,\t,'
+	echo "Examples of valid configs are: "
+	echo "x86_64-bsd, arm64-linux, ppc_64-linux"
 }
 
 # Move to the root of the git tree
@@ -38,10 +38,10 @@ shift $(($OPTIND - 1))
 #ignore version control files
 ignore="( -name .svn -o -name CVS -o -name .hg -o -name .git ) -prune -o"
 
-source_dirs="test app buildtools drivers examples lib"
+source_dirs="app buildtools drivers examples lib"
 
-skip_bsd="( -name bsdapp ) -prune -o"
-skip_linux="( -name linuxapp ) -prune -o"
+skip_bsd="( -name freebsd ) -prune -o"
+skip_linux="( -name linux ) -prune -o"
 skip_arch="( -name arch ) -prune -o"
 skip_sse="( -name *_sse*.[chS] ) -prune -o"
 skip_avx="( -name *_avx*.[chS] ) -prune -o"
@@ -67,39 +67,38 @@ common_sources()
 
 linux_sources()
 {
-	find_sources "lib/librte_eal/linuxapp" '*.[chS]'
+	find_sources "lib/eal/linux" '*.[chS]'
+	find_sources "kernel/linux" '*.[chS]'
 }
 
 bsd_sources()
 {
-	find_sources "lib/librte_eal/bsdapp" '*.[chS]'
+	find_sources "lib/eal/freebsd" '*.[chS]'
+	find_sources "kernel/freebsd" '*.[chS]'
 }
 
 arm_common()
 {
-	find_sources "lib/librte_eal/common/arch/arm" '*.[chS]'
 	find_sources "$source_dirs" '*neon*.[chS]'
 }
 
 arm_32_sources()
 {
 	arm_common
-	find_sources "lib/librte_eal/common/include/arch/arm" '*.[chS]' \
+	find_sources "lib/eal/arm" '*.[chS]' \
 					"$skip_64b_files"
 }
 
 arm_64_sources()
 {
 	arm_common
-	find_sources "lib/librte_eal/common/include/arch/arm" '*.[chS]' \
+	find_sources "lib/eal/arm" '*.[chS]' \
 					 "$skip_32b_files"
 	find_sources "$source_dirs" '*arm64.[chS]'
 }
 
 x86_common()
 {
-	find_sources "lib/librte_eal/common/arch/x86" '*.[chS]'
-
 	find_sources "examples/performance-thread/common/arch/x86" '*.[chS]'
 	find_sources "$source_dirs" '*_sse*.[chS]'
 	find_sources "$source_dirs" '*_avx*.[chS]'
@@ -109,45 +108,26 @@ x86_common()
 x86_32_sources()
 {
 	x86_common
-	find_sources "lib/librte_eal/common/include/arch/x86" '*.[chS]' \
+	find_sources "lib/eal/x86" '*.[chS]' \
 					"$skip_64b_files"
 }
 
 x86_64_sources()
 {
 	x86_common
-	find_sources "lib/librte_eal/common/include/arch/x86" '*.[chS]' \
+	find_sources "lib/eal/x86" '*.[chS]' \
 					"$skip_32b_files"
 }
 
 ppc_64_sources()
 {
-	find_sources "lib/librte_eal/common/arch/ppc_64" '*.[chS]'
-	find_sources "lib/librte_eal/common/include/arch/ppc_64" '*.[chS]'
+	find_sources "lib/eal/ppc" '*.[chS]'
 	find_sources "$source_dirs" '*altivec*.[chS]'
 }
 
-check_valid_target()
-{
-	cfgfound=false
-	allconfigs=$(make showconfigs)
-	for cfg in $allconfigs ; do
-		if [ "$cfg" = "$1" ] ; then
-			cfgfound=true
-		fi
-	done
-	if ! $cfgfound ; then
-		echo "Invalid config: $1"
-		print_usage
-		exit 0
-	fi
-}
-
 if [ -n "$2" ]; then
-	check_valid_target $2
-
-	echo $2 | grep -q "linuxapp-" || linux=false
-	echo $2 | grep -q "bsdapp-" || bsd=false
+	echo $2 | grep -q "linux" || linux=false
+	echo $2 | grep -q "bsd" || bsd=false
 	echo $2 | grep -q "x86_64-" || x86_64=false
 	echo $2 | grep -q "arm-" || arm_32=false
 	echo $2 | grep -q "arm64-" || arm_64=false

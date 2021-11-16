@@ -70,7 +70,7 @@ Credit Quanta
 The credit quanta is the number of credits that a port will fetch at a time from
 the instance's credit pool. Higher numbers will cause less overhead in the
 atomic credit fetch code, however it also reduces the overall number of credits
-in the system faster. A balanced number (eg 32) ensures that only small numbers
+in the system faster. A balanced number (e.g. 32) ensures that only small numbers
 of credits are pre-allocated at a time, while also mitigating performance impact
 of the atomics.
 
@@ -87,6 +87,28 @@ verify possible gains.
 
     --vdev="event_sw0,credit_quanta=64"
 
+Scheduler tuning arguments
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The scheduler minimum number of events that are processed can be increased to
+reduce per event overhead and increase internal burst sizes, which can
+improve throughput.
+
+* ``min_burst`` specifies the minimum number of inflight events that can be
+  moved to the next stage in the scheduler. Default value is 1.
+
+* ``refill_once`` is a switch that when set instructs the scheduler to deque
+  the events waiting in the ingress rings only once per call. The default
+  behavior is to dequeue as needed.
+
+* ``deq_burst`` is the burst size used to dequeue from the port rings.
+  Default value is 32, and it should be increased to 64 or 128 when setting
+  ``refill_once=1``.
+
+.. code-block:: console
+
+    --vdev="event_sw0,min_burst=8,deq_burst=64,refill_once=1"
+
 
 Limitations
 -----------
@@ -100,7 +122,7 @@ feature would be significant.
 ~~~~~~~~~~~~~~~~~~
 
 The software eventdev does not support creating queues that handle all types of
-traffic. An eventdev with this capability allows enqueueing Atomic, Ordered and
+traffic. An eventdev with this capability allows enqueuing Atomic, Ordered and
 Parallel traffic to the same queue, but scheduling each of them appropriately.
 
 The reason to not allow Atomic, Ordered and Parallel event types in the

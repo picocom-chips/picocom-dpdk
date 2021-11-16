@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright 2017-2018 NXP
+ * Copyright 2017-2019 NXP
  */
 
 #include <fcntl.h>
@@ -25,16 +25,16 @@
 #include <caam_jr_log.h>
 
 /* RTA header files */
-#include <hw/desc/common.h>
-#include <hw/desc/algo.h>
-#include <of.h>
-
+#include <desc/common.h>
+#include <desc/algo.h>
+#include <dpaa_of.h>
+#ifdef RTE_LIBRTE_PMD_CAAM_JR_DEBUG
+#define CAAM_JR_DBG    1
+#else
 #define CAAM_JR_DBG	0
+#endif
 #define CRYPTODEV_NAME_CAAM_JR_PMD	crypto_caam_jr
 static uint8_t cryptodev_driver_id;
-int caam_jr_logtype;
-
-enum rta_sec_era rta_sec_era;
 
 /* Lists the states possible for the SEC user space driver. */
 enum sec_driver_state_e {
@@ -62,15 +62,13 @@ struct sec_outring_entry {
 static inline phys_addr_t
 caam_jr_vtop_ctx(struct caam_jr_op_ctx *ctx, void *vaddr)
 {
-	PMD_INIT_FUNC_TRACE();
 	return (size_t)vaddr - ctx->vtop_offset;
 }
 
 static inline void
 caam_jr_op_ending(struct caam_jr_op_ctx *ctx)
 {
-	PMD_INIT_FUNC_TRACE();
-	/* report op status to sym->op and then free the ctx memeory  */
+	/* report op status to sym->op and then free the ctx memory  */
 	rte_mempool_put(ctx->ctx_pool, (void *)ctx);
 }
 
@@ -80,7 +78,6 @@ caam_jr_alloc_ctx(struct caam_jr_session *ses)
 	struct caam_jr_op_ctx *ctx;
 	int ret;
 
-	PMD_INIT_FUNC_TRACE();
 	ret = rte_mempool_get(ses->ctx_pool, (void **)(&ctx));
 	if (!ctx || ret) {
 		CAAM_JR_DP_WARN("Alloc sec descriptor failed!");
@@ -158,7 +155,6 @@ void caam_jr_stats_reset(struct rte_cryptodev *dev)
 static inline int
 is_cipher_only(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ((ses->cipher_alg != RTE_CRYPTO_CIPHER_NULL) &&
 		(ses->auth_alg == RTE_CRYPTO_AUTH_NULL));
 }
@@ -166,7 +162,6 @@ is_cipher_only(struct caam_jr_session *ses)
 static inline int
 is_auth_only(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ((ses->cipher_alg == RTE_CRYPTO_CIPHER_NULL) &&
 		(ses->auth_alg != RTE_CRYPTO_AUTH_NULL));
 }
@@ -174,7 +169,6 @@ is_auth_only(struct caam_jr_session *ses)
 static inline int
 is_aead(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ((ses->cipher_alg == 0) &&
 		(ses->auth_alg == 0) &&
 		(ses->aead_alg != 0));
@@ -183,7 +177,6 @@ is_aead(struct caam_jr_session *ses)
 static inline int
 is_auth_cipher(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ((ses->cipher_alg != RTE_CRYPTO_CIPHER_NULL) &&
 		(ses->auth_alg != RTE_CRYPTO_AUTH_NULL) &&
 		(ses->proto_alg != RTE_SECURITY_PROTOCOL_IPSEC));
@@ -192,28 +185,24 @@ is_auth_cipher(struct caam_jr_session *ses)
 static inline int
 is_proto_ipsec(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return (ses->proto_alg == RTE_SECURITY_PROTOCOL_IPSEC);
 }
 
 static inline int
 is_encode(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ses->dir == DIR_ENC;
 }
 
 static inline int
 is_decode(struct caam_jr_session *ses)
 {
-	PMD_INIT_FUNC_TRACE();
 	return ses->dir == DIR_DEC;
 }
 
 static inline void
 caam_auth_alg(struct caam_jr_session *ses, struct alginfo *alginfo_a)
 {
-	PMD_INIT_FUNC_TRACE();
 	switch (ses->auth_alg) {
 	case RTE_CRYPTO_AUTH_NULL:
 		ses->digest_length = 0;
@@ -262,7 +251,6 @@ caam_auth_alg(struct caam_jr_session *ses, struct alginfo *alginfo_a)
 static inline void
 caam_cipher_alg(struct caam_jr_session *ses, struct alginfo *alginfo_c)
 {
-	PMD_INIT_FUNC_TRACE();
 	switch (ses->cipher_alg) {
 	case RTE_CRYPTO_CIPHER_NULL:
 		break;
@@ -292,7 +280,6 @@ caam_cipher_alg(struct caam_jr_session *ses, struct alginfo *alginfo_c)
 static inline void
 caam_aead_alg(struct caam_jr_session *ses, struct alginfo *alginfo)
 {
-	PMD_INIT_FUNC_TRACE();
 	switch (ses->aead_alg) {
 	case RTE_CRYPTO_AEAD_AES_GCM:
 		alginfo->algtype = OP_ALG_ALGSEL_AES;
@@ -311,13 +298,12 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 	int32_t shared_desc_len = 0;
 	struct sec_cdb *cdb;
 	int err;
-#if RTE_BYTE_ORDER == RTE_BIG_ENDIAN
+#if CAAM_BYTE_ORDER == CORE_BYTE_ORDER
 	int swap = false;
 #else
 	int swap = true;
 #endif
 
-	PMD_INIT_FUNC_TRACE();
 	if (ses->cdb)
 		caam_jr_dma_free(ses->cdb);
 
@@ -346,8 +332,7 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 
 		shared_desc_len = cnstr_shdsc_blkcipher(
 						cdb->sh_desc, true,
-						swap, &alginfo_c,
-						NULL,
+						swap, SHR_NEVER, &alginfo_c,
 						ses->iv.length,
 						ses->dir);
 	} else if (is_auth_only(ses)) {
@@ -364,7 +349,7 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 		alginfo_a.key_type = RTA_DATA_IMM;
 
 		shared_desc_len = cnstr_shdsc_hmac(cdb->sh_desc, true,
-						   swap, &alginfo_a,
+						   swap, SHR_NEVER, &alginfo_a,
 						   !ses->dir,
 						   ses->digest_length);
 	} else if (is_aead(ses)) {
@@ -382,13 +367,13 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 		if (ses->dir == DIR_ENC)
 			shared_desc_len = cnstr_shdsc_gcm_encap(
 					cdb->sh_desc, true, swap,
-					&alginfo,
+					SHR_NEVER, &alginfo,
 					ses->iv.length,
 					ses->digest_length);
 		else
 			shared_desc_len = cnstr_shdsc_gcm_decap(
 					cdb->sh_desc, true, swap,
-					&alginfo,
+					SHR_NEVER, &alginfo,
 					ses->iv.length,
 					ses->digest_length);
 	} else {
@@ -461,12 +446,11 @@ caam_jr_prep_cdb(struct caam_jr_session *ses)
 						&alginfo_c, &alginfo_a);
 			}
 		} else {
-			/* Auth_only_len is set as 0 here and it will be
-			 * overwritten in fd for each packet.
-			 */
+			/* Auth_only_len is overwritten in fd for each job */
 			shared_desc_len = cnstr_shdsc_authenc(cdb->sh_desc,
-					true, swap, &alginfo_c, &alginfo_a,
-					ses->iv.length, 0,
+					true, swap, SHR_SERIAL,
+					&alginfo_c, &alginfo_a,
+					ses->iv.length,
 					ses->digest_length, ses->dir);
 		}
 	}
@@ -504,7 +488,6 @@ hw_flush_job_ring(struct sec_job_ring_t *job_ring,
 	int32_t jobs_no_to_discard = 0;
 	int32_t discarded_descs_no = 0;
 
-	PMD_INIT_FUNC_TRACE();
 	CAAM_JR_DEBUG("Jr[%p] pi[%d] ci[%d].Flushing jr notify desc=[%d]",
 		job_ring, job_ring->pidx, job_ring->cidx, do_notify);
 
@@ -558,7 +541,6 @@ hw_poll_job_ring(struct sec_job_ring_t *job_ring,
 	phys_addr_t *temp_addr;
 	struct caam_jr_op_ctx *ctx;
 
-	PMD_INIT_FUNC_TRACE();
 	/* TODO check for ops have memory*/
 	/* check here if any JR error that cannot be written
 	 * in the output status word has occurred
@@ -681,7 +663,6 @@ caam_jr_dequeue_burst(void *qp, struct rte_crypto_op **ops,
 	int num_rx;
 	int ret;
 
-	PMD_INIT_FUNC_TRACE();
 	CAAM_JR_DP_DEBUG("Jr[%p]Polling. limit[%d]", ring, nb_ops);
 
 	/* Poll job ring
@@ -738,7 +719,6 @@ build_auth_only_sg(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	struct sec_job_descriptor_t *jobdescr;
 	uint8_t extra_segs;
 
-	PMD_INIT_FUNC_TRACE();
 	if (is_decode(ses))
 		extra_segs = 2;
 	else
@@ -798,7 +778,7 @@ build_auth_only_sg(struct rte_crypto_op *op, struct caam_jr_session *ses)
 		sg->len = cpu_to_caam32(ses->digest_length);
 		length += ses->digest_length;
 	} else {
-		length -= ses->digest_length;
+		sg->len -= ses->digest_length;
 	}
 
 	/* last element*/
@@ -823,7 +803,6 @@ build_auth_only(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	uint64_t sdesc_offset;
 	struct sec_job_descriptor_t *jobdescr;
 
-	PMD_INIT_FUNC_TRACE();
 	ctx = caam_jr_alloc_ctx(ses);
 	if (!ctx)
 		return NULL;
@@ -892,7 +871,6 @@ build_cipher_only_sg(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	struct sec_job_descriptor_t *jobdescr;
 	uint8_t reg_segs;
 
-	PMD_INIT_FUNC_TRACE();
 	if (sym->m_dst) {
 		mbuf = sym->m_dst;
 		reg_segs = mbuf->nb_segs + sym->m_src->nb_segs + 2;
@@ -1007,7 +985,6 @@ build_cipher_only(struct rte_crypto_op *op, struct caam_jr_session *ses)
 			ses->iv.offset);
 	struct sec_job_descriptor_t *jobdescr;
 
-	PMD_INIT_FUNC_TRACE();
 	ctx = caam_jr_alloc_ctx(ses);
 	if (!ctx)
 		return NULL;
@@ -1083,11 +1060,11 @@ build_cipher_auth_sg(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			ses->iv.offset);
 	struct sec_job_descriptor_t *jobdescr;
-	uint32_t auth_only_len;
-
-	PMD_INIT_FUNC_TRACE();
-	auth_only_len = op->sym->auth.data.length -
-				op->sym->cipher.data.length;
+	uint16_t auth_hdr_len = sym->cipher.data.offset -
+			sym->auth.data.offset;
+	uint16_t auth_tail_len = sym->auth.data.length -
+			sym->cipher.data.length - auth_hdr_len;
+	uint32_t auth_only_len = (auth_tail_len << 16) | auth_hdr_len;
 
 	if (sym->m_dst) {
 		mbuf = sym->m_dst;
@@ -1226,11 +1203,11 @@ build_cipher_auth(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	uint8_t *IV_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 			ses->iv.offset);
 	struct sec_job_descriptor_t *jobdescr;
-	uint32_t auth_only_len;
-
-	PMD_INIT_FUNC_TRACE();
-	auth_only_len = op->sym->auth.data.length -
-				op->sym->cipher.data.length;
+	uint16_t auth_hdr_len = sym->cipher.data.offset -
+			sym->auth.data.offset;
+	uint16_t auth_tail_len = sym->auth.data.length -
+			sym->cipher.data.length - auth_hdr_len;
+	uint32_t auth_only_len = (auth_tail_len << 16) | auth_hdr_len;
 
 	src_start_addr = rte_pktmbuf_iova(sym->m_src);
 	if (sym->m_dst)
@@ -1334,7 +1311,6 @@ build_proto(struct rte_crypto_op *op, struct caam_jr_session *ses)
 	uint64_t sdesc_offset;
 	struct sec_job_descriptor_t *jobdescr;
 
-	PMD_INIT_FUNC_TRACE();
 	ctx = caam_jr_alloc_ctx(ses);
 	if (!ctx)
 		return NULL;
@@ -1374,8 +1350,10 @@ caam_jr_enqueue_op(struct rte_crypto_op *op, struct caam_jr_qp *qp)
 	struct caam_jr_session *ses;
 	struct caam_jr_op_ctx *ctx = NULL;
 	struct sec_job_descriptor_t *jobdescr __rte_unused;
+#if CAAM_JR_DBG
+	int i;
+#endif
 
-	PMD_INIT_FUNC_TRACE();
 	switch (op->sess_type) {
 	case RTE_CRYPTO_OP_WITH_SESSION:
 		ses = (struct caam_jr_session *)
@@ -1437,7 +1415,7 @@ err1:
 			rte_pktmbuf_data_len(op->sym->m_src));
 
 	printf("\n JD before conversion\n");
-	for (int i = 0; i < 12; i++)
+	for (i = 0; i < 12; i++)
 		printf("\n 0x%08x", ctx->jobdes.desc[i]);
 #endif
 
@@ -1496,8 +1474,6 @@ caam_jr_enqueue_burst(void *qp, struct rte_crypto_op **ops,
 	int32_t ret;
 	struct caam_jr_qp *jr_qp = (struct caam_jr_qp *)qp;
 	uint16_t num_tx = 0;
-
-	PMD_INIT_FUNC_TRACE();
 	/*Prepare each packet which is to be sent*/
 	for (loop = 0; loop < nb_ops; loop++) {
 		ret = caam_jr_enqueue_op(ops[loop], jr_qp);
@@ -1562,15 +1538,6 @@ caam_jr_queue_pair_setup(
 	return 0;
 }
 
-/* Return the number of allocated queue pairs */
-static uint32_t
-caam_jr_queue_pair_count(struct rte_cryptodev *dev)
-{
-	PMD_INIT_FUNC_TRACE();
-
-	return dev->data->nb_queue_pairs;
-}
-
 /* Returns the size of the aesni gcm session structure */
 static unsigned int
 caam_jr_sym_session_get_size(struct rte_cryptodev *dev __rte_unused)
@@ -1585,7 +1552,6 @@ caam_jr_cipher_init(struct rte_cryptodev *dev __rte_unused,
 		    struct rte_crypto_sym_xform *xform,
 		    struct caam_jr_session *session)
 {
-	PMD_INIT_FUNC_TRACE();
 	session->cipher_alg = xform->cipher.algo;
 	session->iv.length = xform->cipher.iv.length;
 	session->iv.offset = xform->cipher.iv.offset;
@@ -1610,7 +1576,6 @@ caam_jr_auth_init(struct rte_cryptodev *dev __rte_unused,
 		  struct rte_crypto_sym_xform *xform,
 		  struct caam_jr_session *session)
 {
-	PMD_INIT_FUNC_TRACE();
 	session->auth_alg = xform->auth.algo;
 	session->auth_key.data = rte_zmalloc(NULL, xform->auth.key.length,
 					     RTE_CACHE_LINE_SIZE);
@@ -1634,7 +1599,6 @@ caam_jr_aead_init(struct rte_cryptodev *dev __rte_unused,
 		  struct rte_crypto_sym_xform *xform,
 		  struct caam_jr_session *session)
 {
-	PMD_INIT_FUNC_TRACE();
 	session->aead_alg = xform->aead.algo;
 	session->iv.length = xform->aead.iv.length;
 	session->iv.offset = xform->aead.iv.offset;
@@ -1919,6 +1883,8 @@ caam_jr_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			PDBOPTS_ESP_OIHI_PDB_INL |
 			PDBOPTS_ESP_IVSRC |
 			PDBHMO_ESP_ENCAP_DTTL;
+		if (ipsec_xform->options.esn)
+			session->encap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->encap_pdb.spi = ipsec_xform->spi;
 		session->encap_pdb.ip_hdr_len = sizeof(struct ip);
 
@@ -1927,6 +1893,8 @@ caam_jr_set_ipsec_session(__rte_unused struct rte_cryptodev *dev,
 			RTE_SECURITY_IPSEC_SA_DIR_INGRESS) {
 		memset(&session->decap_pdb, 0, sizeof(struct ipsec_decap_pdb));
 		session->decap_pdb.options = sizeof(struct ip) << 16;
+		if (ipsec_xform->options.esn)
+			session->decap_pdb.options |= PDBOPTS_ESP_ESN;
 		session->dir = DIR_DEC;
 	} else
 		goto out;
@@ -1950,7 +1918,6 @@ caam_jr_security_session_create(void *dev,
 	struct rte_cryptodev *cdev = (struct rte_cryptodev *)dev;
 	int ret;
 
-	PMD_INIT_FUNC_TRACE();
 	if (rte_mempool_get(mempool, &sess_private_data)) {
 		CAAM_JR_ERR("Couldn't get object from session mempool");
 		return -ENOMEM;
@@ -2086,7 +2053,6 @@ static struct rte_cryptodev_ops caam_jr_ops = {
 	.stats_reset	      = caam_jr_stats_reset,
 	.queue_pair_setup     = caam_jr_queue_pair_setup,
 	.queue_pair_release   = caam_jr_queue_pair_release,
-	.queue_pair_count     = caam_jr_queue_pair_count,
 	.sym_session_get_size = caam_jr_sym_session_get_size,
 	.sym_session_configure = caam_jr_sym_session_configure,
 	.sym_session_clear    = caam_jr_sym_session_clear
@@ -2108,8 +2074,7 @@ static struct rte_security_ops caam_jr_security_ops = {
 static void
 close_job_ring(struct sec_job_ring_t *job_ring)
 {
-	PMD_INIT_FUNC_TRACE();
-	if (job_ring->irq_fd) {
+	if (job_ring->irq_fd != -1) {
 		/* Producer index is frozen. If consumer index is not equal
 		 * with producer index, then we have descs to flush.
 		 */
@@ -2118,7 +2083,7 @@ close_job_ring(struct sec_job_ring_t *job_ring)
 
 		/* free the uio job ring */
 		free_job_ring(job_ring->irq_fd);
-		job_ring->irq_fd = 0;
+		job_ring->irq_fd = -1;
 		caam_jr_dma_free(job_ring->input_ring);
 		caam_jr_dma_free(job_ring->output_ring);
 		g_job_rings_no--;
@@ -2222,7 +2187,7 @@ caam_jr_dev_uninit(struct rte_cryptodev *dev)
  *
  */
 static void *
-init_job_ring(void *reg_base_addr, uint32_t irq_id)
+init_job_ring(void *reg_base_addr, int irq_id)
 {
 	struct sec_job_ring_t *job_ring = NULL;
 	int i, ret = 0;
@@ -2232,7 +2197,7 @@ init_job_ring(void *reg_base_addr, uint32_t irq_id)
 	int irq_coalescing_count = 0;
 
 	for (i = 0; i < MAX_SEC_JOB_RINGS; i++) {
-		if (g_job_rings[i].irq_fd == 0) {
+		if (g_job_rings[i].irq_fd == -1) {
 			job_ring = &g_job_rings[i];
 			g_job_rings_no++;
 			break;
@@ -2423,6 +2388,8 @@ init_error:
 static int
 cryptodev_caam_jr_probe(struct rte_vdev_device *vdev)
 {
+	int ret;
+
 	struct rte_cryptodev_pmd_init_params init_params = {
 		"",
 		sizeof(struct sec_job_ring_t),
@@ -2439,6 +2406,12 @@ cryptodev_caam_jr_probe(struct rte_vdev_device *vdev)
 	input_args = rte_vdev_device_args(vdev);
 	rte_cryptodev_pmd_parse_input_args(&init_params, input_args);
 
+	ret = of_init();
+	if (ret) {
+		RTE_LOG(ERR, PMD,
+		"of_init failed\n");
+		return -EINVAL;
+	}
 	/* if sec device version is not configured */
 	if (!rta_get_sec_era()) {
 		const struct device_node *caam_node;
@@ -2449,7 +2422,7 @@ cryptodev_caam_jr_probe(struct rte_vdev_device *vdev)
 					NULL);
 			if (prop) {
 				rta_set_sec_era(
-					INTL_SEC_ERA(cpu_to_caam32(*prop)));
+					INTL_SEC_ERA(rte_be_to_cpu_32(*prop)));
 				break;
 			}
 		}
@@ -2485,6 +2458,15 @@ cryptodev_caam_jr_remove(struct rte_vdev_device *vdev)
 	return rte_cryptodev_pmd_destroy(cryptodev);
 }
 
+static void
+sec_job_rings_init(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_SEC_JOB_RINGS; i++)
+		g_job_rings[i].irq_fd = -1;
+}
+
 static struct rte_vdev_driver cryptodev_caam_jr_drv = {
 	.probe = cryptodev_caam_jr_probe,
 	.remove = cryptodev_caam_jr_remove
@@ -2499,9 +2481,10 @@ RTE_PMD_REGISTER_PARAM_STRING(CRYPTODEV_NAME_CAAM_JR_PMD,
 RTE_PMD_REGISTER_CRYPTO_DRIVER(caam_jr_crypto_drv, cryptodev_caam_jr_drv.driver,
 		cryptodev_driver_id);
 
-RTE_INIT(caam_jr_init_log)
+RTE_INIT(caam_jr_init)
 {
-	caam_jr_logtype = rte_log_register("pmd.crypto.caam");
-	if (caam_jr_logtype >= 0)
-		rte_log_set_level(caam_jr_logtype, RTE_LOG_NOTICE);
+	sec_uio_job_rings_init();
+	sec_job_rings_init();
 }
+
+RTE_LOG_REGISTER(caam_jr_logtype, pmd.crypto.caam, NOTICE);

@@ -25,8 +25,9 @@ Bearing that in mind, the GSO library enables DPDK applications to segment
 packets in software. Note however, that GSO is implemented as a standalone
 library, and not via a 'fallback' mechanism (i.e. for when TSO is unsupported
 in the underlying hardware); that is, applications must explicitly invoke the
-GSO library to segment packets. The size of GSO segments ``(segsz)`` is
-configurable by the application.
+GSO library to segment packets, they also must call ``rte_pktmbuf_free()``
+to free mbuf GSO segments attached after calling ``rte_gso_segment()``.
+The size of GSO segments (``segsz``) is configurable by the application.
 
 Limitations
 -----------
@@ -44,8 +45,8 @@ Limitations
 
  - TCP
  - UDP
- - VxLAN
- - GRE
+ - VXLAN
+ - GRE TCP
 
   See `Supported GSO Packet Types`_ for further details.
 
@@ -156,14 +157,14 @@ does not modify it during segmentation. Therefore, after UDP GSO, only the
 first output packet has the original UDP header, and others just have l2
 and l3 headers.
 
-VxLAN GSO
-~~~~~~~~~
-VxLAN packets GSO supports segmentation of suitably large VxLAN packets,
-which contain an outer IPv4 header, inner TCP/IPv4 headers, and optional
-inner and/or outer VLAN tag(s).
+VXLAN IPv4 GSO
+~~~~~~~~~~~~~~
+VXLAN packets GSO supports segmentation of suitably large VXLAN packets,
+which contain an outer IPv4 header, inner TCP/IPv4 or UDP/IPv4 headers, and
+optional inner and/or outer VLAN tag(s).
 
-GRE GSO
-~~~~~~~
+GRE TCP/IPv4 GSO
+~~~~~~~~~~~~~~~~
 GRE GSO supports segmentation of suitably large GRE packets, which contain
 an outer IPv4 header, inner TCP/IPv4 headers, and an optional VLAN tag.
 
@@ -206,7 +207,7 @@ To segment an outgoing packet, an application must:
 2. Set the appropriate ol_flags in the mbuf.
 
    - The GSO library use the value of an mbuf's ``ol_flags`` attribute to
-     to determine how a packet should be segmented. It is the application's
+     determine how a packet should be segmented. It is the application's
      responsibility to ensure that these flags are set.
 
    - For example, in order to segment TCP/IPv4 packets, the application should
@@ -233,8 +234,9 @@ To segment an outgoing packet, an application must:
 
 #. Invoke the GSO segmentation API, ``rte_gso_segment()``.
 
+#. Call ``rte_pktmbuf_free()`` to free mbuf ``rte_gso_segment()`` segments.
+
 #. If required, update the L3 and L4 checksums of the newly-created segments.
    For tunneled packets, the outer IPv4 headers' checksums should also be
    updated. Alternatively, the application may offload checksum calculation
    to HW.
-

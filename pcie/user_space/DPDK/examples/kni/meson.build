@@ -7,9 +7,13 @@
 # DPDK instance, use 'make'
 
 # this app can be built if-and-only-if KNI library is buildable
-build = dpdk_conf.has('RTE_LIBRTE_KNI')
+build = dpdk_conf.has('RTE_LIB_KNI')
+if not build
+    subdir_done()
+endif
+
 deps += ['kni', 'bus_pci']
 sources = files(
-	'main.c'
+        'main.c',
 )
 allow_experimental_apis = true

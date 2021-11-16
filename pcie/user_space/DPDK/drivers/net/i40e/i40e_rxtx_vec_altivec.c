@@ -1,39 +1,10 @@
-/*-
- *   BSD LICENSE
- *
- *   Copyright(c) 2010-2015 Intel Corporation. All rights reserved.
- *   Copyright(c) 2017 IBM Corporation.
- *   All rights reserved.
- *
- *   Redistribution and use in source and binary forms, with or without
- *   modification, are permitted provided that the following conditions
- *   are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in
- *       the documentation and/or other materials provided with the
- *       distribution.
- *     * Neither the name of Intel Corporation nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- *   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- *   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- *   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2010 - 2015 Intel Corporation
+ * Copyright(c) 2017 IBM Corporation.
  */
 
 #include <stdint.h>
-#include <rte_ethdev_driver.h>
+#include <ethdev_driver.h>
 #include <rte_malloc.h>
 
 #include "base/i40e_prototype.h"
@@ -42,7 +13,7 @@
 #include "i40e_rxtx.h"
 #include "i40e_rxtx_vec_common.h"
 
-#include <altivec.h>
+#include <rte_altivec.h>
 
 #pragma GCC diagnostic ignored "-Wcast-qual"
 
@@ -161,10 +132,10 @@ desc_to_olflags_v(vector unsigned long descs[4], struct rte_mbuf **rx_pkts)
 			PKT_RX_IP_CKSUM_BAD,
 			PKT_RX_L4_CKSUM_BAD,
 			PKT_RX_L4_CKSUM_BAD | PKT_RX_IP_CKSUM_BAD,
-			PKT_RX_EIP_CKSUM_BAD,
-			PKT_RX_EIP_CKSUM_BAD | PKT_RX_IP_CKSUM_BAD,
-			PKT_RX_EIP_CKSUM_BAD | PKT_RX_L4_CKSUM_BAD,
-			PKT_RX_EIP_CKSUM_BAD | PKT_RX_L4_CKSUM_BAD
+			PKT_RX_OUTER_IP_CKSUM_BAD,
+			PKT_RX_OUTER_IP_CKSUM_BAD | PKT_RX_IP_CKSUM_BAD,
+			PKT_RX_OUTER_IP_CKSUM_BAD | PKT_RX_L4_CKSUM_BAD,
+			PKT_RX_OUTER_IP_CKSUM_BAD | PKT_RX_L4_CKSUM_BAD
 					     | PKT_RX_IP_CKSUM_BAD,
 			0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -217,11 +188,13 @@ desc_to_ptype_v(vector unsigned long descs[4], struct rte_mbuf **rx_pkts,
 		ptype_tbl[(*(vector unsigned char *)&ptype1)[8]];
 }
 
- /* Notice:
-  * - nb_pkts < RTE_I40E_DESCS_PER_LOOP, just return no packet
-  * - nb_pkts > RTE_I40E_VPMD_RX_BURST, only scan RTE_I40E_VPMD_RX_BURST
-  *   numbers of DD bits
-  */
+/**
+ * vPMD raw receive routine, only accept(nb_pkts >= RTE_I40E_DESCS_PER_LOOP)
+ *
+ * Notice:
+ * - nb_pkts < RTE_I40E_DESCS_PER_LOOP, just return no packet
+ * - floor align nb_pkts to a RTE_I40E_DESCS_PER_LOOP power-of-two
+ */
 static inline uint16_t
 _recv_raw_pkts_vec(struct i40e_rx_queue *rxq, struct rte_mbuf **rx_pkts,
 		   uint16_t nb_pkts, uint8_t *split_packet)
@@ -242,9 +215,6 @@ _recv_raw_pkts_vec(struct i40e_rx_queue *rxq, struct rte_mbuf **rx_pkts,
 		0, 0, 0       /* ignore non-length fields */
 		};
 	vector unsigned long dd_check, eop_check;
-
-	/* nb_pkts shall be less equal than RTE_I40E_MAX_RX_BURST */
-	nb_pkts = RTE_MIN(nb_pkts, RTE_I40E_MAX_RX_BURST);
 
 	/* nb_pkts has to be floor-aligned to RTE_I40E_DESCS_PER_LOOP */
 	nb_pkts = RTE_ALIGN_FLOOR(nb_pkts, RTE_I40E_DESCS_PER_LOOP);
@@ -488,15 +458,15 @@ i40e_recv_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 	return _recv_raw_pkts_vec(rx_queue, rx_pkts, nb_pkts, NULL);
 }
 
- /* vPMD receive routine that reassembles scattered packets
-  * Notice:
-  * - nb_pkts < RTE_I40E_DESCS_PER_LOOP, just return no packet
-  * - nb_pkts > RTE_I40E_VPMD_RX_BURST, only scan RTE_I40E_VPMD_RX_BURST
-  *   numbers of DD bits
-  */
-uint16_t
-i40e_recv_scattered_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
-			     uint16_t nb_pkts)
+/**
+ * vPMD receive routine that reassembles single burst of 32 scattered packets
+ *
+ * Notice:
+ * - nb_pkts < RTE_I40E_DESCS_PER_LOOP, just return no packet
+ */
+static uint16_t
+i40e_recv_scattered_burst_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
+			      uint16_t nb_pkts)
 {
 	struct i40e_rx_queue *rxq = rx_queue;
 	uint8_t split_flags[RTE_I40E_VPMD_RX_BURST] = {0};
@@ -527,6 +497,32 @@ i40e_recv_scattered_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
 	}
 	return i + reassemble_packets(rxq, &rx_pkts[i], nb_bufs - i,
 		&split_flags[i]);
+}
+
+/**
+ * vPMD receive routine that reassembles scattered packets.
+ */
+uint16_t
+i40e_recv_scattered_pkts_vec(void *rx_queue, struct rte_mbuf **rx_pkts,
+			     uint16_t nb_pkts)
+{
+	uint16_t retval = 0;
+
+	while (nb_pkts > RTE_I40E_VPMD_RX_BURST) {
+		uint16_t burst;
+
+		burst = i40e_recv_scattered_burst_vec(rx_queue,
+						      rx_pkts + retval,
+						      RTE_I40E_VPMD_RX_BURST);
+		retval += burst;
+		nb_pkts -= burst;
+		if (burst < RTE_I40E_VPMD_RX_BURST)
+			return retval;
+	}
+
+	return retval + i40e_recv_scattered_burst_vec(rx_queue,
+						      rx_pkts + retval,
+						      nb_pkts);
 }
 
 static inline void
@@ -620,25 +616,25 @@ i40e_xmit_fixed_burst_vec(void *tx_queue, struct rte_mbuf **tx_pkts,
 	return nb_pkts;
 }
 
-void __attribute__((cold))
+void __rte_cold
 i40e_rx_queue_release_mbufs_vec(struct i40e_rx_queue *rxq)
 {
 	_i40e_rx_queue_release_mbufs_vec(rxq);
 }
 
-int __attribute__((cold))
+int __rte_cold
 i40e_rxq_vec_setup(struct i40e_rx_queue *rxq)
 {
 	return i40e_rxq_vec_setup_default(rxq);
 }
 
-int __attribute__((cold))
+int __rte_cold
 i40e_txq_vec_setup(struct i40e_tx_queue __rte_unused * txq)
 {
 	return 0;
 }
 
-int __attribute__((cold))
+int __rte_cold
 i40e_rx_vec_dev_conf_condition_check(struct rte_eth_dev *dev)
 {
 	return i40e_rx_vec_dev_conf_condition_check_default(dev);

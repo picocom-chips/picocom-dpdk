@@ -4,8 +4,7 @@
 Event Timer Adapter Library
 ===========================
 
-The DPDK
-`Event Device library <http://doc.dpdk.org/guides/prog_guide/eventdev.html>`_
+The DPDK :doc:`Event Device library <eventdev>`
 introduces an event driven programming model which presents applications with
 an alternative to the polling model traditionally used in DPDK
 applications. Event devices can be coupled with arbitrary components to provide
@@ -21,7 +20,7 @@ The Event Timer Adapter library is designed to interface with hardware or
 software implementations of the timer mechanism; it will query an eventdev PMD
 to determine which implementation should be used.  The default software
 implementation manages timers using the DPDK
-`Timer library <http://doc.dpdk.org/guides/prog_guide/timer_lib.html>`_.
+:doc:`Timer library <timer_lib>`.
 
 Examples of using the API are presented in the `API Overview`_ and
 `Processing Timer Expiry Events`_ sections.  Code samples are abstracted and
@@ -36,7 +35,7 @@ device upon timer expiration.
 
 The Event Timer Adapter API represents each event timer with a generic struct,
 which contains an event and user metadata.  The ``rte_event_timer`` struct is
-defined in ``lib/librte_event/librte_event_timer_adapter.h``.
+defined in ``lib/event/librte_event_timer_adapter.h``.
 
 .. _timer_expiry_event:
 
@@ -139,6 +138,18 @@ This function is passed a callback function that will be invoked if the
 adapter needs to create an event port, giving the application the opportunity
 to control how it is done.
 
+Adapter modes
+^^^^^^^^^^^^^
+An event timer adapter can be configured in either periodic or non-periodic mode
+to support timers of the respective type. A periodic timer expires at a fixed
+time interval repeatedly till it is cancelled. A non-periodic timer expires only
+once. The periodic capability flag, ``RTE_EVENT_TIMER_ADAPTER_CAP_PERIODIC``,
+can be set for implementations that support periodic mode if desired. To
+configure an adapter in periodic mode, ``timer_adapter_flags`` of
+``rte_event_timer_adapter_conf`` is set to include the periodic flag
+``RTE_EVENT_TIMER_ADAPTER_F_PERIODIC``. Maximum timeout (``max_tmo_nsec``) does
+not apply to periodic mode.
+
 Retrieve Event Timer Adapter Contextual Information
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The event timer adapter implementation may have constraints on tick resolution
@@ -178,6 +189,11 @@ The application should call ``rte_event_timer_adapter_start()`` to start
 running the event timer adapter. This function calls the start entry points
 defined by eventdev PMDs for hardware implementations or puts a service
 component into the running state in the software implementation.
+
+.. Note::
+
+         The eventdev to which the event_timer_adapter is connected needs to
+         be started before calling rte_event_timer_adapter_start().
 
 Arming Event Timers
 ~~~~~~~~~~~~~~~~~~~
@@ -225,7 +241,9 @@ Now we can arm the event timer with ``rte_event_timer_arm_burst()``:
 
 Once an event timer expires, the application may free it or rearm it as
 necessary.  If the application will rearm the timer, the state should be reset
-to RTE_EVENT_TIMER_NOT_ARMED by the application before rearming it.
+to RTE_EVENT_TIMER_NOT_ARMED by the application before rearming it. Timer expiry
+events will be generated once or periodically until the timer is cancelled based
+on adapter mode.
 
 Multiple Event Timers with Same Expiry Value
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -11,6 +11,8 @@
 #include <inttypes.h>
 #include <sys/queue.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>
 
 #include <rte_common.h>
@@ -68,12 +70,19 @@ get_printable_mac_addr(uint16_t port)
 {
 	static const char err_address[] = "00:00:00:00:00:00";
 	static char addresses[RTE_MAX_ETHPORTS][sizeof(err_address)];
-	struct ether_addr mac;
+	struct rte_ether_addr mac;
+	int ret;
 
 	if (unlikely(port >= RTE_MAX_ETHPORTS))
 		return err_address;
 	if (unlikely(addresses[port][0] == '\0')) {
-		rte_eth_macaddr_get(port, &mac);
+		ret = rte_eth_macaddr_get(port, &mac);
+		if (ret != 0) {
+			printf("Failed to get MAC address (port %u): %s\n",
+			       port, rte_strerror(-ret));
+			return err_address;
+		}
+
 		snprintf(addresses[port], sizeof(addresses[port]),
 				"%02x:%02x:%02x:%02x:%02x:%02x\n",
 				mac.addr_bytes[0], mac.addr_bytes[1],
@@ -86,10 +95,12 @@ get_printable_mac_addr(uint16_t port)
 /*
  * This function displays the recorded statistics for each port
  * and for each node. It uses ANSI terminal codes to clear
- * screen when called. It is called from a single non-master
+ * screen when called. It is called from a single worker
  * thread in the server process, when the process is run with more
  * than one lcore enabled.
  */
+
+/* Display recorded statistics. 8< */
 static void
 do_stats_display(void)
 {
@@ -157,15 +168,16 @@ do_stats_display(void)
 
 	printf("\n");
 }
+/* >8 End of displaying the recorded statistics. */
 
 /*
- * The function called from each non-master lcore used by the process.
+ * The function called from each non-main lcore used by the process.
  * The test_and_set function is used to randomly pick a single lcore on which
  * the code to display the statistics will run. Otherwise, the code just
  * repeatedly sleeps.
  */
 static int
-sleep_lcore(__attribute__((unused)) void *dummy)
+sleep_lcore(__rte_unused void *dummy)
 {
 	/* Used to pick a display thread - static, so zero-initialised */
 	static rte_atomic32_t display_stats;
@@ -203,6 +215,8 @@ clear_stats(void)
  * send a burst of traffic to a node, assuming there are packets
  * available to be sent to this node
  */
+
+/* Flush rx queue. 8< */
 static void
 flush_rx_queue(uint16_t node)
 {
@@ -223,6 +237,7 @@ flush_rx_queue(uint16_t node)
 
 	cl_rx_buf[node].count = 0;
 }
+/* >8 End of sending a burst of traffic to a node. */
 
 /*
  * marks a packet down to be sent to a particular node process
@@ -236,8 +251,10 @@ enqueue_rx_packet(uint8_t node, struct rte_mbuf *buf)
 /*
  * This function takes a group of packets and routes them
  * individually to the node process. Very simply round-robins the packets
- * without checking any of the packet contents.
+ * without checking any of the packet contents. 8<
  */
+
+/* Processing packets. 8< */
 static void
 process_packets(uint32_t port_num __rte_unused, struct rte_mbuf *pkts[],
 		uint16_t rx_count, unsigned int socket_id)
@@ -247,13 +264,13 @@ process_packets(uint32_t port_num __rte_unused, struct rte_mbuf *pkts[],
 	efd_value_t data[RTE_EFD_BURST_MAX];
 	const void *key_ptrs[RTE_EFD_BURST_MAX];
 
-	struct ipv4_hdr *ipv4_hdr;
+	struct rte_ipv4_hdr *ipv4_hdr;
 	uint32_t ipv4_dst_ip[RTE_EFD_BURST_MAX];
 
 	for (i = 0; i < rx_count; i++) {
 		/* Handle IPv4 header.*/
-		ipv4_hdr = rte_pktmbuf_mtod_offset(pkts[i], struct ipv4_hdr *,
-				sizeof(struct ether_hdr));
+		ipv4_hdr = rte_pktmbuf_mtod_offset(pkts[i],
+			struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 		ipv4_dst_ip[i] = ipv4_hdr->dst_addr;
 		key_ptrs[i] = (void *)&ipv4_dst_ip[i];
 	}
@@ -279,9 +296,10 @@ process_packets(uint32_t port_num __rte_unused, struct rte_mbuf *pkts[],
 	for (i = 0; i < num_nodes; i++)
 		flush_rx_queue(i);
 }
+/* >8 End of process_packets. */
 
 /*
- * Function called by the master lcore of the DPDK process.
+ * Function called by the main lcore of the DPDK process.
  */
 static void
 do_packet_forwarding(void)
@@ -321,9 +339,13 @@ main(int argc, char *argv[])
 	/* clear statistics */
 	clear_stats();
 
-	/* put all other cores to sleep bar master */
-	rte_eal_mp_remote_launch(sleep_lcore, NULL, SKIP_MASTER);
+	/* put all other cores to sleep except main */
+	rte_eal_mp_remote_launch(sleep_lcore, NULL, SKIP_MAIN);
 
 	do_packet_forwarding();
+
+	/* clean up the EAL */
+	rte_eal_cleanup();
+
 	return 0;
 }
