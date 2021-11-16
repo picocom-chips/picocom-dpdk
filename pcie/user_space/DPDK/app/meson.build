@@ -12,6 +12,7 @@ apps = [
         'test-eventdev',
         'test-fib',
         'test-flow-perf',
+        'test-pc802',
         'test-pipeline',
         'test-pmd',
         'test-regex',
