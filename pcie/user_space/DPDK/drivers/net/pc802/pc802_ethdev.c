@@ -17,8 +17,8 @@
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
 #include <rte_ether.h>
-#include <rte_ethdev_driver.h>
-#include <rte_ethdev_pci.h>
+#include <ethdev_driver.h>
+#include <ethdev_pci.h>
 #include <rte_memory.h>
 #include <rte_eal.h>
 #include <rte_malloc.h>
@@ -142,7 +142,7 @@ struct pc802_adapter {
     uint64_t descs_phy_addr;
     struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
     struct pc802_rx_queue  rxq[MAX_UL_CH_NUM];
-    struct ether_addr eth_addr;
+    struct rte_ether_addr eth_addr;
     uint8_t started;
     uint8_t stopped;
 
@@ -482,7 +482,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     return nb_tx;
 }
 
-static void
+static int
 eth_pc802_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 {
     //struct e1000_hw *hw = E1000_DEV_PRIVATE_TO_HW(dev->data->dev_private);
@@ -542,6 +542,8 @@ eth_pc802_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
     dev_info->default_txportconf.nb_queues = 1;
     dev_info->default_txportconf.ring_size = 256;
     dev_info->default_rxportconf.ring_size = 256;
+
+    return 0;
 }
 
 static int
@@ -757,11 +759,11 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
     return 0;
 }
 
-static void
+static int
 eth_pc802_promiscuous_enable(struct rte_eth_dev *dev)
 {
     dev = dev;
-    return;
+    return 0;
 }
 
 static void
@@ -804,9 +806,7 @@ eth_pc802_interrupt_handler(void *param)
 {
     struct rte_eth_dev *dev = (struct rte_eth_dev *)param;
 
-    //eth_em_interrupt_get_status(dev);
-    //eth_em_interrupt_action(dev, dev->intr_handle);
-    _rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
+    rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
 }
 
 /*********************************************************************
@@ -815,7 +815,7 @@ eth_pc802_interrupt_handler(void *param)
  *  global reset on the MAC.
  *
  **********************************************************************/
-static void
+static int
 eth_pc802_stop(struct rte_eth_dev *dev)
 {
     //struct pc802_adapter *adapter =
@@ -843,6 +843,8 @@ eth_pc802_stop(struct rte_eth_dev *dev)
         rte_free(intr_handle->intr_vec);
         intr_handle->intr_vec = NULL;
     }
+
+    return 0;
 }
 
 /*********************************************************************
@@ -1226,7 +1228,7 @@ eth_pc802_stats_get(struct rte_eth_dev *dev, struct rte_eth_stats *stats)
     return 0;
 }
 
-static void
+static int
 eth_pc802_stats_reset(struct rte_eth_dev *dev)
 {
     struct rte_eth_dev_data *data = dev->data;
@@ -1246,6 +1248,7 @@ eth_pc802_stats_reset(struct rte_eth_dev *dev)
         txq->stats.bytes = 0;
         txq->stats.err_pkts = 0;
     }
+    return 0;
 }
 
 uint64_t *pc802_get_debug_mem(uint16_t port_id)
@@ -1523,8 +1526,7 @@ static int eth_pc802_pci_remove(struct rte_pci_device *pci_dev)
 
 static struct rte_pci_driver rte_pc802_pmd = {
     .id_table = pci_id_pc802_map,
-    .drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC |
-             RTE_PCI_DRV_IOVA_AS_VA,
+    .drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC,
     .probe = eth_pc802_pci_probe,
     .remove = eth_pc802_pci_remove,
 };

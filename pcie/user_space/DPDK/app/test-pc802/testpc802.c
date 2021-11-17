@@ -27,7 +27,6 @@
 #include <rte_log.h>
 #include <rte_debug.h>
 #include <rte_cycles.h>
-#include <rte_malloc_heap.h>
 #include <rte_memory.h>
 #include <rte_memcpy.h>
 #include <rte_launch.h>
@@ -83,7 +82,7 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
         .rxmode = {
-            .max_rx_pkt_len = ETHER_MAX_LEN,
+            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
         },
     };
 
@@ -310,8 +309,8 @@ static int case1(void)
 
     uint32_t *b;
     while (0 == rx_blks(QID_CTRL, &b, 1));
-    uint32_t length;
-    uint8_t type, eop;
+    uint32_t length = 0;
+    uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
     if ((type != 2) || (eop != 1))
         return -1;
@@ -422,7 +421,7 @@ static int case2(void)
     uint32_t N;
     uint32_t *a[2];
     uint32_t *b[2];
-    uint32_t length;
+    uint32_t length = 0;
     uint8_t type, eop;
 
     a[0] = alloc_tx_blk(QID_DATA);
@@ -501,7 +500,7 @@ static int case3(void)
     uint32_t N;
     uint32_t *a[3];
     uint32_t *b[2];
-    uint32_t length;
+    uint32_t length = 0;
     uint8_t type, eop;
 
     a[0] = alloc_tx_blk(QID_DATA);
@@ -593,7 +592,7 @@ static int case4(uint16_t D)
     uint32_t *a[17];
     uint32_t *b[2];
     int k;
-    uint32_t length;
+    uint32_t length = 0;
     uint8_t  type, eop;
 
     if (D > 16) D = 16;
@@ -747,11 +746,11 @@ static int case201(void)
         offset = 0;
         tx_dst_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
         offset += 6;
-        eth_random_addr(tx_dst_addr);
+        rte_eth_random_addr(tx_dst_addr);
 
         tx_src_addr = rte_pktmbuf_mtod_offset(tx_pkts[n], uint8_t *, offset);
         offset += 6;
-        eth_random_addr(tx_src_addr);
+        rte_eth_random_addr(tx_src_addr);
 
         tx_type = rte_pktmbuf_mtod_offset(tx_pkts[n], uint16_t *, offset);
         offset += 2;
@@ -1088,8 +1087,8 @@ int pc802_download_boot_image(uint16_t port)
     fclose(fp);
     DBLOG("Read %u bytes from PC802.img\n", N);
 
-    bar->BOOTSRCL = (uint32_t)(mz->phys_addr);
-	bar->BOOTSRCH = (uint32_t)(mz->phys_addr >> 32);
+    bar->BOOTSRCL = (uint32_t)(mz->iova);
+    bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
 	bar->BOOTDST  = 0;
 	bar->BOOTSZ = 0;
 	rte_wmb();

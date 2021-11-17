@@ -52,7 +52,7 @@ cmdline_parse_token_string_t cmd_run_test_case_result_test =
 cmdline_parse_token_string_t cmd_run_test_case_result_case =
     TOKEN_STRING_INITIALIZER(struct cmd_run_test_case_result, caze, "case");
 cmdline_parse_token_num_t cmd_run_test_case_result_caseNo =
-    TOKEN_NUM_INITIALIZER(struct cmd_run_test_case_result, caseNo, INT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_run_test_case_result, caseNo, RTE_INT32);
 
 static void cmd_run_test_case_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -121,9 +121,9 @@ cmdline_parse_token_string_t cmd_read_memory_result_read =
 cmdline_parse_token_string_t cmd_read_memory_result_who =
     TOKEN_STRING_INITIALIZER(struct cmd_read_memory_result, who, "pc802#npu");
 cmdline_parse_token_num_t cmd_read_memory_result_startPhyAddr =
-    TOKEN_NUM_INITIALIZER(struct cmd_read_memory_result, startAddr, UINT64);
+    TOKEN_NUM_INITIALIZER(struct cmd_read_memory_result, startAddr, RTE_UINT64);
 cmdline_parse_token_num_t cmd_read_memory_result_bytesNum =
-    TOKEN_NUM_INITIALIZER(struct cmd_read_memory_result, bytesNum, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_read_memory_result, bytesNum, RTE_UINT32);
 
 static void cmd_read_memory_result_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -217,7 +217,7 @@ cmdline_parse_token_string_t cmd_show_pc802_info_result_type =
 cmdline_parse_token_string_t cmd_show_pc802_info_result_info =
     TOKEN_STRING_INITIALIZER(struct cmd_show_pc802_info_result, info, "info");
 cmdline_parse_token_num_t cmd_show_pc802_info_result_idx =
-    TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_info_result, idx, UINT16);
+    TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_info_result, idx, RTE_UINT16);
 
 static void cmd_show_pc802_info_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -282,7 +282,7 @@ cmdline_parse_token_string_t cmd_show_pc802_data_result_type =
 cmdline_parse_token_string_t cmd_show_pc802_data_result_data =
     TOKEN_STRING_INITIALIZER(struct cmd_show_pc802_data_result, data, "data");
 cmdline_parse_token_num_t cmd_show_pc802_data_result_idx =
-    TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_data_result, idx, UINT16);
+    TOKEN_NUM_INITIALIZER(struct cmd_show_pc802_data_result, idx, RTE_UINT16);
 
 static void cmd_show_pc802_data_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -339,9 +339,9 @@ struct cmd_download_test_vector_result {
 cmdline_parse_token_string_t cmd_download_test_vector_result_download =
     TOKEN_STRING_INITIALIZER(struct cmd_download_test_vector_result, download, "download");
 cmdline_parse_token_num_t cmd_download_test_vector_result_pc802_mem =
-    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, pc802_mem, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, pc802_mem, RTE_UINT32);
 cmdline_parse_token_num_t cmd_download_test_vector_result_byte_num =
-    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, byte_num, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_download_test_vector_result, byte_num, RTE_UINT32);
 
 static void cmd_download_test_vector_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -441,9 +441,9 @@ struct cmd_upload_test_vector_result {
 cmdline_parse_token_string_t cmd_upload_test_vector_result_download =
     TOKEN_STRING_INITIALIZER(struct cmd_upload_test_vector_result, upload, "upload");
 cmdline_parse_token_num_t cmd_upload_test_vector_result_pc802_mem =
-    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, pc802_mem, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, pc802_mem, RTE_UINT32);
 cmdline_parse_token_num_t cmd_upload_test_vector_result_byte_num =
-    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, byte_num, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_upload_test_vector_result, byte_num, RTE_UINT32);
 
 static void cmd_upload_test_vector_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
@@ -500,9 +500,9 @@ cmdline_parse_token_string_t cmd_test_memdump_result_test =
 cmdline_parse_token_string_t cmd_test_memdump_result_memdump =
     TOKEN_STRING_INITIALIZER(struct cmd_test_memdump_result, memdump, "memdump");
 cmdline_parse_token_num_t cmd_test_memdump_result_pc802_mem =
-    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, pc802_mem, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, pc802_mem, RTE_UINT32);
 cmdline_parse_token_num_t cmd_test_memdump_result_byte_num =
-    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, byte_num, UINT32);
+    TOKEN_NUM_INITIALIZER(struct cmd_test_memdump_result, byte_num, RTE_UINT32);
 
 void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num);
 

@@ -6,6 +6,8 @@ if is_windows
     subdir_done()
 endif
 
+cflags += '-DRTE_ENABLE_ASSERT'
+
 sources = files(
         'pc802_ethdev.c',
         'pc802_logs.c',
