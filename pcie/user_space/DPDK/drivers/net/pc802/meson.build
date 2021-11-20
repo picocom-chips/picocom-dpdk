@@ -13,3 +13,8 @@ sources = files(
         'pc802_logs.c',
         'pcxx_ipc.c',
 )
+
+headers = files(
+        'rte_pmd_pc802.h',
+        'pcxx_ipc.h'
+)
