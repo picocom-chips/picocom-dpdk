@@ -1549,10 +1549,49 @@ char * picocom_pc802_version(void)
 }
 
 __attribute__((__weak__))
-int pc802_download_boot_image(uint16_t port_id)
+int pc802_download_boot_image(uint16_t port)
 {
-    printf("Begin WEAK pc802_download_boot_image,  port_id = %hu\n", port_id);
-    port_id = port_id;
-	return 0;
-}
+    PC802_BAR_t *bar = pc802_get_BAR(port);
+    volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
+    volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
 
+    printf("Begin WEAK pc802_download_boot_image,  port = %hu\n", port);
+    if (0xFFFFFFFF == *BOOTRCCNT) {
+        printf("PC802 ELF image has already been downloaded and is running !\n");
+        return 0;
+    }
+    printf("Begin test_boot_download !\n");
+    *BOOTRCCNT = 0;
+    const struct rte_memzone *mz;
+    uint32_t tsize = 0x600000;
+    int socket_id = pc802_get_socket_id(port);
+    mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
+            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+
+    uint8_t *pimg = (uint8_t *)mz->addr;
+
+    FILE *fp = fopen("PC802.img", "rb");
+    if (NULL==fp) {
+        DBLOG("Failed to open PC802.img .\n");
+        return -1;
+    }
+    uint32_t N = fread(pimg, 1, tsize, fp);
+    fclose(fp);
+    DBLOG("Read %u bytes from PC802.img\n", N);
+
+    bar->BOOTSRCL = (uint32_t)(mz->iova);
+    bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
+    bar->BOOTDST  = 0;
+    bar->BOOTSZ = 0;
+    rte_wmb();
+    (*BOOTRCCNT)++;
+    printf("BOOT Image Size = %d\n", N);
+    printf("BAR->BOOTRCCNT = %u\n", bar->BOOTRCCNT);
+    while(*BOOTRCCNT != *BOOTEPCNT)
+        usleep(1);
+
+    rte_memzone_free(mz);
+
+    printf("Finish WEAK test_boot_download !\n");
+    return 0;
+}
