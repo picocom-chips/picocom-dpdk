@@ -419,8 +419,8 @@ static void check_down_up(void)
     RTE_ASSERT(NULL != (fp2 = fopen("UL_test_vector.dat", "rb")));
     int flag = 1;
     for (k = 0; flag && (k < sz1); k++) {
-        fread(&d1, 1, 1, fp1);
-        fread(&d2, 1, 1, fp2);
+        RTE_ASSERT(1 == fread(&d1, 1, 1, fp1));
+        RTE_ASSERT(1 == fread(&d2, 1, 1, fp2));
         flag = (d1 == d2);
     }
     fclose(fp1);
