@@ -1,0 +1,74 @@
+diff --git a/arch/arm64/boot/dts/freescale/Makefile b/arch/arm64/boot/dts/freescale/Makefile
+index cfb8166a6aa3..525c0b6088b8 100644
+--- a/arch/arm64/boot/dts/freescale/Makefile
++++ b/arch/arm64/boot/dts/freescale/Makefile
+@@ -43,6 +43,9 @@ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-rdb.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-rdb-sdk.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-rdb-usdpaa.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-rdb-usdpaa-shared.dtb
++dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-pscb.dtb
++dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-pscb-sdk.dtb
++dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1046a-pscb-usdpaa.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1088a-qds.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls1088a-rdb.dtb
+ dtb-$(CONFIG_ARCH_LAYERSCAPE) += fsl-ls2080a-qds.dtb
+diff --git a/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb-sdk.dts b/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb-sdk.dts
+index d777113c233a..1f5afffbe090 100644
+--- a/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb-sdk.dts
++++ b/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb-sdk.dts
+@@ -107,9 +107,14 @@ ethernet@7 {
+ 	ethernet@8 {
+ 		status = "disabled";
+ 	};
++
+ 	ethernet@9 {
+-		status = "disabled";
++		compatible = "fsl,dpa-ethernet";
++		fsl,fman-mac = <&enet7>;
++		dma-coherent;
++                phy-connection-type = "xgmii";
+ 	};
++
+ };
+ 
+ &fman0 {
+diff --git a/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb.dts b/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb.dts
+index d2915014ef45..f9688ba31851 100644
+--- a/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb.dts
++++ b/arch/arm64/boot/dts/freescale/fsl-ls1046a-pscb.dts
+@@ -197,6 +197,7 @@ &usb1 {
+ 
+ #include "fsl-ls1046-post.dtsi"
+ 
++
+ &fman0 {
+ 	ethernet@e4000 {
+ 		status = "disabled";
+@@ -220,7 +221,8 @@ ethernet@f0000 { /* 10GEC1 */
+ 	};
+ 
+ 	ethernet@f2000 { /* 10GEC2 */
+-		status = "disabled";
++              fixed-link = <0 1 10000 0 0>;
++              phy-connection-type = "xgmii";
+ 	};
+ 
+ 	mdio@fc000 {
+@@ -229,7 +231,14 @@ sgmii_phy1: ethernet-phy@3 {
+ 		};
+ 	};
+ 
+-	mdio@fd000 {
+-		status = "disabled";
+-	};
++
++ 	mdio@fd000 {
++                aqr106_phy: ethernet-phy@0 {
++                        compatible = "ethernet-phy-ieee802.3-c45";
++                        interrupts = <0 131 4>;
++                        reg = <0x0>;
++                };
++        };
++
++
+ };
