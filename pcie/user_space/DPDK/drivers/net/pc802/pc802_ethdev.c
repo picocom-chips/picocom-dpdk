@@ -979,7 +979,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
     PC802_WRITE_REG(bar->DBAL, laddr);
     PC802_WRITE_REG(bar->DBAH, haddr);
-    printf("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
+    DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     socket_id = dev->device->numa_node;
     mz = rte_memzone_reserve_aligned("PC802DBG", ((uint32_t)160 << 20), socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
@@ -992,7 +992,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PC802_WRITE_REG(bar->DBGRCAL, laddr);
     PC802_WRITE_REG(bar->DBGRCAH, haddr);
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
-    printf("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
+    DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     volatile uint32_t devRdy;
 
@@ -1003,7 +1003,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (3 != devRdy);
-    DBLOG("bar->DEVRDY = 3\n");
+    DBLOG("DEVEN = 1, DEVRDY = 3\n");
 
     volatile uint32_t macAddrL;
     macAddrL = PC802_READ_REG(bar->MACADDRL);
@@ -1468,8 +1468,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     memset(mz->addr, 0, tsize);
     adapter->pDescs = (PC802_Descs_t *)mz->addr;
     adapter->descs_phy_addr = mz->iova;
-    printf("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
-    printf("descs_virt_addr = %p\n", adapter->pDescs);
+    DBLOG("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
+    DBLOG("descs_virt_addr = %p\n", adapter->pDescs);
 
     PC802_WRITE_REG(bar->DEVEN, 0);
     usleep(1000);
@@ -1478,6 +1478,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (1 != devRdy);
+    DBLOG("DEVEN = 0, DEVRDY = 1\n");
 
     adapter->started = 1;
 
@@ -1491,6 +1492,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (2 != devRdy);
+    DBLOG("DEVEN = 0, DEVRDY = 2\n");
 
     return 0;
 }
