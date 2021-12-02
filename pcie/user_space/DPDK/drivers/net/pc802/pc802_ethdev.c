@@ -1474,7 +1474,17 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DEVEN, 0);
     usleep(1000);
 
+    volatile uint32_t BOOTEPCNT;
     volatile uint32_t devRdy;
+    BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT);
+    if (0xFFFFFFFF == BOOTEPCNT) {
+        do {
+            devRdy = PC802_READ_REG(bar->DEVRDY);
+        } while (2 != devRdy);
+        DBLOG("PC802 bootworker has done: DEVEN = 0, DEVRDY = 2\n");
+        return 0;
+    }
+
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (1 != devRdy);
