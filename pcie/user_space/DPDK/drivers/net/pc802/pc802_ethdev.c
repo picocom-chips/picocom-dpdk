@@ -1575,7 +1575,7 @@ int pc802_download_boot_image(uint16_t port)
     printf("Begin test_boot_download !\n");
     *BOOTRCCNT = 0;
     const struct rte_memzone *mz;
-    uint32_t tsize = 0x600000;
+    uint32_t tsize = 64 * 1024;
     int socket_id = pc802_get_socket_id(port);
     mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 0x10000);
@@ -1587,22 +1587,26 @@ int pc802_download_boot_image(uint16_t port)
         DBLOG("Failed to open PC802.img .\n");
         return -1;
     }
-    uint32_t N = fread(pimg, 1, tsize, fp);
-    fclose(fp);
-    DBLOG("Read %u bytes from PC802.img\n", N);
 
     bar->BOOTSRCL = (uint32_t)(mz->iova);
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    rte_wmb();
-    (*BOOTRCCNT)++;
-    printf("BOOT Image Size = %d\n", N);
-    printf("BAR->BOOTRCCNT = %u\n", bar->BOOTRCCNT);
-    while(*BOOTRCCNT != *BOOTEPCNT)
-        usleep(1);
+    uint32_t N;
+    do {
+        N = fread(pimg, 1, tsize, fp);
+        if (N < 4)
+            break;
+        rte_wmb();
+        (*BOOTRCCNT)++;
+        while(*BOOTRCCNT != *BOOTEPCNT)
+            usleep(1);
+        printf("BAR->BOOTRCCNT = %u  Finish downloading %u bytes\n", bar->BOOTRCCNT, N);
+        N = 0;
+    } while (1);
 
     rte_memzone_free(mz);
+    fclose(fp);
 
     printf("Finish WEAK test_boot_download !\n");
     return 0;
