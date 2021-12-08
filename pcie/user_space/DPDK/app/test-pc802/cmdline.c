@@ -10,7 +10,7 @@
 #include <cmdline_parse_num.h>
 #include <cmdline.h>
 
-#include <pc802_ethdev.h>
+#include <rte_pmd_pc802.h>
 
 extern int main_stop;
 
