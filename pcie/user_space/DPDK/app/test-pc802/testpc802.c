@@ -934,14 +934,14 @@ static int prompt(void* arg)
 
 int test_case_No;
 
-#define disp_test_result(caseNo, result) do { \
+#define disp_test_result(caseNo, result)  { \
     if (result) { \
         printf("Case %d --- FAILED\n", caseNo); \
         break; \
     } else { \
         printf("Case %d --- PASSED\n", caseNo); \
     } \
- } while(0)
+ }
 
 static void run_case(int caseNo)
 {
