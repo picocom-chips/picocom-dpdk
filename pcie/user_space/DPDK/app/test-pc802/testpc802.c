@@ -1031,10 +1031,12 @@ static void run_case(int caseNo)
         printf("Case -2 Passed !\n");
         break;
     case -1000:
-        N = 50;
+        N = 100000;
         for (k = 0; k < N; k++) {
             diag = case201();
             disp_test_result(201, diag);
+            diag = case301();
+            disp_test_result(301, diag);
             diag = case1();
             disp_test_result(1, diag);
             diag = case2();
@@ -1048,6 +1050,17 @@ static void run_case(int caseNo)
             printf("Case -1000 Passed !\n");
         else
             printf("Case -1000 Failed when k = %d !\n", k);
+        break;
+   case -2000:
+        N = 1000000;
+        for (k = 0; k < N; k++) {
+            diag = case1();
+            disp_test_result(1, diag);
+        }
+        if (k == N)
+            printf("Case -2000 Passed !\n");
+        else
+            printf("Case -2000 Failed when k = %d !\n", k);
         break;
     default:
         printf("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
