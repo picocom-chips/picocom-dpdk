@@ -405,8 +405,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
         rte_prefetch0(&rxm[1]);
-        DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
-            queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+        //DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
+        //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
 
         sw_ring[idx].mblk = nmb;
@@ -463,8 +463,8 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
-        DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
-            queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
+        //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
+        //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
         tx_blk->next =  NULL;
         tx_id++;

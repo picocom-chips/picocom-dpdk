@@ -199,10 +199,10 @@ static void get_blk_attr(uint32_t *blk, uint32_t *length, uint8_t *type, uint8_t
     }
 }
 
-#if 0
+#if 1
 static int produce_dl_src_data(uint32_t *buf)
 {
-    static uint32_t idx = 0;
+    //static uint32_t idx = 0;
     uint32_t N, s, d, k;
     do {
         s = (uint32_t)rand();
@@ -213,7 +213,7 @@ static int produce_dl_src_data(uint32_t *buf)
     if (N < 10) N = 10;
     *buf++ = N;
     d = (uint32_t)rand();
-    printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
+    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
     for (k = 0; k < N; k++) {
         *buf++ = d;
         d += s;
@@ -244,25 +244,23 @@ static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
     uint32_t k, N, s, exp;
     uint32_t *pd;
     uint32_t sz = 0;
-    static uint32_t idx = 0;
+    //static uint32_t idx = 0;
     uint32_t m = 0;
-    int err_cnt = 0;
+    //int err_cnt = 0;
     uint32_t rx_data;
 
     pd = buf;
     while (sz < msgSz) {
         s = *pd++;
         N = *pd++;
-        printf("UL_MSG[1][%3d]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, pd[0]);
+        //printf("UL_MSG[1][%3d]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, pd[0]);
         exp = s + *pd++;
         for (k = 1; k < N; k++) {
             rx_data = *pd++;
             if (rx_data != exp) {
                 printf("Msg ERROR: m = %u , k = %u rx_data = 0x%08X exp = 0x%08X\n",
                     m, k, rx_data, exp);
-                err_cnt++;
-                if (err_cnt == 4)
-                    return -1;
+                return -1;
             }
             exp += s;
         }
@@ -275,7 +273,7 @@ static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
 static int check_single_same(uint32_t *a, uint32_t *b)
 {
     uint32_t k, N;
-    static uint32_t idx = 0;
+    //static uint32_t idx = 0;
     if (a[1] != b[1]) return -1;
     N = a[1] + 2;
     for (k = 0; k < N; k++) {
@@ -283,8 +281,8 @@ static int check_single_same(uint32_t *a, uint32_t *b)
             return -2;
         }
    }
-   printf("UL_MSG[%u]: N=%u S=0x%08X D=0x%08X\n",
-       idx++, N, b[0], b[2]);
+   //printf("UL_MSG[%u]: N=%u S=0x%08X D=0x%08X\n",
+   //    idx++, N, b[0], b[2]);
    return 0;
 }
 
@@ -338,7 +336,7 @@ static int case1(void)
     if ((type != 2) || (eop != 1))
         return -1;
     swap_msg(b, length);
-    printf("CASE1: UL msg length = %u\n", length);
+    //printf("CASE1: UL msg length = %u\n", length);
     check_ul_dst_data(b, length);
     re = check_single_same(a, b);
     free_blk(a);
@@ -626,14 +624,14 @@ static int case4(uint16_t D)
         N = sizeof(uint32_t) * (a[k][1] + 2);
         eop = k == (D-1);
         set_blk_attr(a[k], N, 0, eop);
-        printf("  Type=0  m=%u  EOP=%1u\n", k, eop);
+        //printf("  Type=0  m=%u  EOP=%1u\n", k, eop);
         tx_blks(QID_DATA, &a[k], 1);
     }
     a[k] = alloc_tx_blk(QID_CTRL);
     produce_dl_src_data(a[k]);
     N = sizeof(uint32_t) * (a[k][1] + 2);
     set_blk_attr(a[k], N, 1, 1);
-    printf("  Type=1  m=%u  EOP=1\n", k);
+    //printf("  Type=1  m=%u  EOP=1\n", k);
     tx_blks(QID_CTRL, &a[k], 1);
 
     uint16_t s;
@@ -791,6 +789,7 @@ static int case201(void)
         tx_pkts[n]->nb_segs = 1;
         tx_pkts[n]->pkt_len = tx_pkts[n]->data_len = 14 + tx_length;
         tx_pkts[n]->next = NULL;
+#if 0
         DBLOG("TX-pkt[%u]: DST-Addr = %02X %02X %02X %02X %02X %02X\n",
             n, tx_dst_addr[0], tx_dst_addr[1], tx_dst_addr[2],
             tx_dst_addr[3], tx_dst_addr[4], tx_dst_addr[5]);
@@ -798,6 +797,7 @@ static int case201(void)
             n, tx_src_addr[0], tx_src_addr[1], tx_src_addr[2],
             tx_src_addr[3], tx_src_addr[4], tx_src_addr[5]);
         DBLOG("TX-pkt[%u]: Type = %04X, Data-Len = %u\n", n, *tx_type, tx_length);
+#endif
     }
     RTE_ASSERT(N == rte_eth_tx_burst(0, 0, tx_pkts, N));
 
@@ -1073,6 +1073,22 @@ static void run_case(int caseNo)
             printf("Case -1000 Passed !\n");
         else
             printf("Case -1000 Failed when k = %d !\n", k);
+        break;
+    case 802:
+        while(1) {
+            diag = case201();
+            disp_test_result(201, diag);
+            diag = case301();
+            disp_test_result(301, diag);
+            diag = case1();
+            disp_test_result(1, diag);
+            diag = case2();
+            disp_test_result(2, diag);
+            diag = case3();
+            disp_test_result(3, diag);
+            diag = case4(16);
+            disp_test_result(4, diag);
+        }
         break;
    case -2000:
         N = 1000000;
