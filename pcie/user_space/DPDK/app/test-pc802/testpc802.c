@@ -199,6 +199,7 @@ static void get_blk_attr(uint32_t *blk, uint32_t *length, uint8_t *type, uint8_t
     }
 }
 
+#if 0
 static int produce_dl_src_data(uint32_t *buf)
 {
     static uint32_t idx = 0;
@@ -219,6 +220,24 @@ static int produce_dl_src_data(uint32_t *buf)
     }
     return 0;
 }
+#else
+static int produce_dl_src_data(uint32_t *buf)
+{
+    static uint32_t idx = 0;
+    uint32_t N, s, d, k;
+    s = 0x01010101;
+    *buf++ = s;
+    N = 510;
+    *buf++ = N;
+    d = 0x03020100;
+    printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
+    for (k = 0; k < N; k++) {
+        *buf++ = d;
+        d += s;
+    }
+    return 0;
+}
+#endif
 
 static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
 {
@@ -227,7 +246,8 @@ static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
     uint32_t sz = 0;
     static uint32_t idx = 0;
     uint32_t m = 0;
-    int re = 0;
+    int err_cnt = 0;
+    uint32_t rx_data;
 
     pd = buf;
     while (sz < msgSz) {
@@ -236,17 +256,20 @@ static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
         printf("UL_MSG[1][%3d]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, pd[0]);
         exp = s + *pd++;
         for (k = 1; k < N; k++) {
-            //printf("UL_MSG_D[%u] = 0x%08X\n", k, pd[0]);
-            if (*pd++ != exp) {
-                re = -1;
-                printf("Msg ERROR: m = %u , k = %u \n", m, k);
+            rx_data = *pd++;
+            if (rx_data != exp) {
+                printf("Msg ERROR: m = %u , k = %u rx_data = 0x%08X exp = 0x%08X\n",
+                    m, k, rx_data, exp);
+                err_cnt++;
+                if (err_cnt == 4)
+                    return -1;
             }
             exp += s;
         }
         sz += (N + 2) * sizeof(uint32_t);
         m++;
     }
-    return re;
+    return 0;
 }
 
 static int check_single_same(uint32_t *a, uint32_t *b)
