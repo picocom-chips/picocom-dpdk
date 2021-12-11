@@ -527,6 +527,41 @@ cmdline_parse_inst_t test_memdump = {
         },
 };
 
+struct cmd_set_test_data_mode_result {
+    cmdline_fixed_string_t set;
+    cmdline_fixed_string_t data;
+    int                    mode;
+};
+
+cmdline_parse_token_string_t cmd_set_test_data_mode_result_set =
+    TOKEN_STRING_INITIALIZER(struct cmd_set_test_data_mode_result, set, "set");
+cmdline_parse_token_string_t cmd_set_test_data_mode_result_data =
+    TOKEN_STRING_INITIALIZER(struct cmd_set_test_data_mode_result, data, "data");
+cmdline_parse_token_num_t cmd_set_test_data_mode_result_mode =
+    TOKEN_NUM_INITIALIZER(struct cmd_set_test_data_mode_result, mode, RTE_INT32);
+
+extern int testpc802_data_mode;
+static void cmd_set_test_data_mode_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_set_test_data_mode_result *res = parsed_result;
+    printf("PC802 Test Data Mode : %d -->> %d\n", testpc802_data_mode, res->mode);
+    testpc802_data_mode = res->mode;
+}
+
+cmdline_parse_inst_t set_test_data_mode = {
+    .f = cmd_set_test_data_mode_parsed,
+    .data = NULL,
+    .help_str = "set data <mode>",
+    .tokens = {
+        (void *)&cmd_set_test_data_mode_result_set,
+        (void *)&cmd_set_test_data_mode_result_data,
+        (void *)&cmd_set_test_data_mode_result_mode,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -537,6 +572,7 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&download_test_vector,
     (cmdline_parse_inst_t *)&upload_test_vector,
     (cmdline_parse_inst_t *)&test_memdump,
+    (cmdline_parse_inst_t *)&set_test_data_mode,
     NULL,
 };
 

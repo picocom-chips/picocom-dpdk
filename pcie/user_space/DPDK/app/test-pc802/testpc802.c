@@ -55,6 +55,7 @@
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
 
+int testpc802_data_mode = 0;
 struct rte_mempool *mpool_pc802_tx;
 
 #define MAX_DATA_BUF_SZ (256*1024)
@@ -199,8 +200,7 @@ static void get_blk_attr(uint32_t *blk, uint32_t *length, uint8_t *type, uint8_t
     }
 }
 
-#if 1
-static int produce_dl_src_data(uint32_t *buf)
+static int produce_random_dl_src_data(uint32_t *buf)
 {
     //static uint32_t idx = 0;
     uint32_t N, s, d, k;
@@ -220,24 +220,33 @@ static int produce_dl_src_data(uint32_t *buf)
     }
     return 0;
 }
-#else
-static int produce_dl_src_data(uint32_t *buf)
+
+static int produce_fixed_dl_src_data(uint32_t *buf)
 {
-    static uint32_t idx = 0;
+    //static uint32_t idx = 0;
     uint32_t N, s, d, k;
     s = 0x01010101;
     *buf++ = s;
     N = 510;
     *buf++ = N;
     d = 0x03020100;
-    printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
+    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
     for (k = 0; k < N; k++) {
         *buf++ = d;
         d += s;
     }
     return 0;
 }
-#endif
+
+static int produce_dl_src_data(uint32_t *buf)
+{
+    if (0 == testpc802_data_mode) {
+        produce_random_dl_src_data(buf);
+    } else {
+        produce_fixed_dl_src_data(buf);
+    }
+    return 0;
+}
 
 static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
 {
