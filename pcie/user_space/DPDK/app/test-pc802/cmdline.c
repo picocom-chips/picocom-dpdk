@@ -562,6 +562,37 @@ cmdline_parse_inst_t set_test_data_mode = {
         },
 };
 
+struct cmd_exit_test_loop_result {
+    cmdline_fixed_string_t exit;
+    cmdline_fixed_string_t loop;
+};
+
+cmdline_parse_token_string_t cmd_exit_test_loop_result_exit =
+    TOKEN_STRING_INITIALIZER(struct cmd_exit_test_loop_result, exit, "exit");
+cmdline_parse_token_string_t cmd_exit_test_loop_result_loop =
+    TOKEN_STRING_INITIALIZER(struct cmd_exit_test_loop_result, loop, "loop");
+
+extern int testpc802_exit_loop;
+static void cmd_exit_test_loop_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_exit_test_loop_result *res = parsed_result;
+    res = res;
+    testpc802_exit_loop = 1;
+}
+
+cmdline_parse_inst_t exit_test_loop = {
+    .f = cmd_exit_test_loop_parsed,
+    .data = NULL,
+    .help_str = "exit loop",
+    .tokens = {
+        (void *)&cmd_exit_test_loop_result_exit,
+        (void *)&cmd_exit_test_loop_result_loop,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -573,6 +604,7 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&upload_test_vector,
     (cmdline_parse_inst_t *)&test_memdump,
     (cmdline_parse_inst_t *)&set_test_data_mode,
+    (cmdline_parse_inst_t *)&exit_test_loop,
     NULL,
 };
 

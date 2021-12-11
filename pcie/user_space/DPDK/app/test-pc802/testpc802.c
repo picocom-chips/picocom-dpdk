@@ -56,6 +56,8 @@
 #include <pcxx_ipc.h>
 
 int testpc802_data_mode = 0;
+int testpc802_exit_loop = 0;
+
 struct rte_mempool *mpool_pc802_tx;
 
 #define MAX_DATA_BUF_SZ (256*1024)
@@ -1045,8 +1047,13 @@ static int case_n1000(void)
         return_if_fail(4, diag);
         m++;
         if (1000 == m) {
-            DBLOG("Case -1000 Passed %u Loops.", k+1);
+            DBLOG("Case -1000 Passed %u Loops.\n", k+1);
             m = 0;
+        }
+        if (testpc802_exit_loop) {
+            DBLOG("Case -1000 Passed %u Loops.\n", k+1);
+            testpc802_exit_loop = 0;
+            return 0;
         }
     }
     return 0;
@@ -1058,7 +1065,7 @@ static int case_n802(void)
     int diag;
     m = 0;
     k = 0;
-    while(1) {
+    while (1) {
         diag = case201();
         return_if_fail(201, diag);
         diag = case301();
@@ -1074,8 +1081,13 @@ static int case_n802(void)
         m++;
         k++;
         if (1000 == m) {
-            DBLOG("Case 802 Passed %u Loops.", k);
+            DBLOG("Case -802 Passed %u Loops.\n", k);
             m = 0;
+        }
+        if (testpc802_exit_loop) {
+            DBLOG("Case -802 Passed %u Loops.\n", k+1);
+            testpc802_exit_loop = 0;
+            return 0;
         }
     }
     return 0;
@@ -1092,8 +1104,13 @@ static int case_n2000(void)
         return_if_fail(1, diag);
         m++;
         if (1000 == m) {
-            DBLOG("Case 1 Passed %7d times.", k+1);
+            DBLOG("Case 1 Passed %7d times.\n", k+1);
             m = 0;
+        }
+        if (testpc802_exit_loop) {
+            DBLOG("Case -2000 Passed %u Loops.\n", k+1);
+            testpc802_exit_loop = 0;
+            return 0;
         }
     }
     return 0;
