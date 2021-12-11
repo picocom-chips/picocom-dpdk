@@ -316,34 +316,6 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 #define QID_CTRL    PC802_TRAFFIC_5G_EMBB_CTRL
 #define QID_OAM     PC802_TRAFFIC_OAM
 
-static int case1(void)
-{
-    int re;
-    uint32_t N;
-    uint32_t *a = alloc_tx_blk(QID_CTRL);
-    if (NULL == a) return -1;
-
-    produce_dl_src_data(a);
-    N = sizeof(uint32_t) * (a[1] + 2);
-    set_blk_attr(a, N, 2, 1);
-    tx_blks(QID_CTRL, &a, 1);
-
-    uint32_t *b;
-    while (0 == rx_blks(QID_CTRL, &b, 1));
-    uint32_t length = 0;
-    uint8_t type, eop = 0;
-    get_blk_attr(b, &length, &type, &eop);
-    if ((type != 2) || (eop != 1))
-        return -1;
-    swap_msg(b, length);
-    //printf("CASE1: UL msg length = %u\n", length);
-    check_ul_dst_data(b, length);
-    re = check_single_same(a, b);
-    free_blk(a);
-    free_blk(b);
-    return re;
-}
-
 static union {
     const char *cc;
     uint32_t   *up;
@@ -414,6 +386,34 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
         atl_test_result |= 2;
     }
     return payloadSize;
+}
+
+static int case1(void)
+{
+    int re;
+    uint32_t N;
+    uint32_t *a = alloc_tx_blk(QID_CTRL);
+    if (NULL == a) return -1;
+
+    produce_dl_src_data(a);
+    N = sizeof(uint32_t) * (a[1] + 2);
+    set_blk_attr(a, N, 2, 1);
+    tx_blks(QID_CTRL, &a, 1);
+
+    uint32_t *b;
+    while (0 == rx_blks(QID_CTRL, &b, 1));
+    uint32_t length = 0;
+    uint8_t type, eop = 0;
+    get_blk_attr(b, &length, &type, &eop);
+    if ((type != 2) || (eop != 1))
+        return -1;
+    swap_msg(b, length);
+    //printf("CASE1: UL msg length = %u\n", length);
+    check_ul_dst_data(b, length);
+    re = check_single_same(a, b);
+    free_blk(a);
+    free_blk(b);
+    return re;
 }
 
 static int case101(void)
