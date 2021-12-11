@@ -55,6 +55,8 @@
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
 
+#define TEST_PC802_DISP_LOOP_NUM    10000
+
 int testpc802_data_mode = 0;
 int testpc802_exit_loop = 0;
 
@@ -709,17 +711,17 @@ static int case104(uint16_t D)
 
 static int case5(void)
 {
-    uint32_t D, n;
+    uint32_t D;
     uint32_t L = (uint32_t)rand();
     L = 16 + (L & 7);
 
-    printf("Case 5 will execute Case 4 for %u times!\n", L);
-    n = 0;
+    //printf("Case 5 will execute Case 4 for %u times!\n", L);
+    //n = 0;
     while (L) {
         D = (uint32_t)rand();
         D = (D & 15) + 1;
         L--;
-        printf("... Test Case 4 with %u users for No. %u, Left %u times.\n", D, n++, L);
+        //printf("... Test Case 4 with %u users for No. %u, Left %u times.\n", D, n++, L);
         if (case4(D))
             return -1;
     }
@@ -728,17 +730,17 @@ static int case5(void)
 
 static int case105(void)
 {
-    uint32_t D, n;
+    uint32_t D;
     uint32_t L = (uint32_t)rand();
     L = 16 + (L & 7);
 
-    printf("Case 105 will execute Case 104 for %u times!\n", L);
-    n = 0;
+    //printf("Case 105 will execute Case 104 for %u times!\n", L);
+    //n = 0;
     while (L) {
         D = (uint32_t)rand();
         D = (D & 15) + 1;
         L--;
-        printf("... Test Case 104 with %u users for No. %u, Left %u times\n", D, n++, L);
+        //printf("... Test Case 104 with %u users for No. %u, Left %u times\n", D, n++, L);
         if (case104(D))
             return -1;
     }
@@ -1046,7 +1048,7 @@ static int case_n1000(void)
         diag = case4(16);
         return_if_fail(4, diag);
         m++;
-        if (1000 == m) {
+        if (TEST_PC802_DISP_LOOP_NUM == m) {
             DBLOG("Case -1000 Passed %u Loops.\n", k+1);
             m = 0;
         }
@@ -1080,7 +1082,7 @@ static int case_n802(void)
         return_if_fail(4, diag);
         m++;
         k++;
-        if (1000 == m) {
+        if (TEST_PC802_DISP_LOOP_NUM == m) {
             DBLOG("Case -802 Passed %u Loops.\n", k);
             m = 0;
         }
@@ -1103,7 +1105,7 @@ static int case_n2000(void)
         diag = case1();
         return_if_fail(1, diag);
         m++;
-        if (1000 == m) {
+        if (TEST_PC802_DISP_LOOP_NUM == m) {
             DBLOG("Case 1 Passed %7d times.\n", k+1);
             m = 0;
         }
