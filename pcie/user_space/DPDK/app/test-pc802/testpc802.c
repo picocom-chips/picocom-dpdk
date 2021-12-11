@@ -957,10 +957,151 @@ int test_case_No;
         break; \
     }
 
+#define return_if_fail(case, result) do {\
+        if (result) { \
+            DBLOG("Case %d --- FAILED\n", case); \
+            return -case; \
+        } \
+    } while(0)
+
+static int case_n1(void)
+{
+    int diag;
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case1();
+    return_if_fail(1, diag);
+    diag = case2();
+    return_if_fail(2, diag);
+    diag = case3();
+    return_if_fail(3, diag);
+    diag = case4(16);
+    return_if_fail(4, diag);
+    diag = case5();
+    return_if_fail(5, diag);
+    diag = case101();
+    return_if_fail(101, diag);
+    diag = case102();
+    return_if_fail(102, diag);
+    diag = case103();
+    return_if_fail(103, diag);
+    diag = case104(16);
+    return_if_fail(104, diag);
+    diag = case105();
+    return_if_fail(105, diag);
+    return 0;
+}
+
+static int case_n2(void)
+{
+    int diag;
+    diag = case201();
+    return_if_fail(201, diag);
+    diag = case301();
+    return_if_fail(301, diag);
+    diag = case1();
+    return_if_fail(1, diag);
+    diag = case2();
+    return_if_fail(2, diag);
+    diag = case3();
+    return_if_fail(3, diag);
+    diag = case4(16);
+    return_if_fail(4, diag);
+    return 0;
+}
+
+static int case_n1000(void)
+{
+    uint32_t m, k, N;
+    int diag;
+    N = 100000;
+    m = 0;
+    for (k = 0; k < N; k++) {
+        diag = case201();
+        return_if_fail(201, diag);
+        diag = case301();
+        return_if_fail(301, diag);
+        diag = case1();
+        return_if_fail(1, diag);
+        diag = case2();
+        return_if_fail(2, diag);
+        diag = case3();
+        return_if_fail(3, diag);
+        diag = case4(16);
+        return_if_fail(4, diag);
+        m++;
+        if (1000 == m) {
+            DBLOG("Case -1000 Passed %u Loops.", k+1);
+            m = 0;
+        }
+    }
+    return 0;
+}
+
+static int case_n802(void)
+{
+    uint32_t m, k;
+    int diag;
+    m = 0;
+    k = 0;
+    while(1) {
+        diag = case201();
+        return_if_fail(201, diag);
+        diag = case301();
+        return_if_fail(301, diag);
+        diag = case1();
+        return_if_fail(1, diag);
+        diag = case2();
+        return_if_fail(2, diag);
+        diag = case3();
+        return_if_fail(3, diag);
+        diag = case4(16);
+        return_if_fail(4, diag);
+        m++;
+        k++;
+        if (1000 == m) {
+            DBLOG("Case 802 Passed %u Loops.", k);
+            m = 0;
+        }
+    }
+    return 0;
+}
+
+static int case_n2000(void)
+{
+    uint32_t m, k, N;
+    int diag;
+    N = 1000000;
+    m = 0;
+    for (k = 0; k < N; k++) {
+        diag = case1();
+        return_if_fail(1, diag);
+        m++;
+        if (1000 == m) {
+            DBLOG("Case 1 Passed %7d times.", k+1);
+            m = 0;
+        }
+    }
+    return 0;
+}
+
 static void run_case(int caseNo)
 {
     int diag;
-    uint32_t m, k, N;
     if (0 == caseNo)
         return;
     printf("Begin Test Case %d\n", caseNo);
@@ -1014,126 +1155,24 @@ static void run_case(int caseNo)
         disp_test_result(301, diag);
         break;
     case -1:
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case1();
-        disp_test_result(1, diag);
-        diag = case2();
-        disp_test_result(2, diag);
-        diag = case3();
-        disp_test_result(3, diag);
-        diag = case4(16);
-        disp_test_result(4, diag);
-        diag = case5();
-        disp_test_result(5, diag);
-        diag = case101();
-        disp_test_result(101, diag);
-        diag = case102();
-        disp_test_result(102, diag);
-        diag = case103();
-        disp_test_result(103, diag);
-        diag = case104(16);
-        disp_test_result(104, diag);
-        diag = case105();
-        disp_test_result(105, diag);
-        printf("Case -1 Passed !\n");
+        diag = case_n1();
+        disp_test_result(-1, diag);
         break;
     case -2:
-        diag = case201();
-        disp_test_result(201, diag);
-        diag = case301();
-        disp_test_result(301, diag);
-        diag = case1();
-        disp_test_result(1, diag);
-        diag = case2();
-        disp_test_result(2, diag);
-        diag = case3();
-        disp_test_result(3, diag);
-        diag = case4(16);
-        disp_test_result(4, diag);
-        printf("Case -2 Passed !\n");
+        diag = case_n2();
+        disp_test_result(-2, diag);
         break;
     case -1000:
-        N = 100000;
-        m = 0;
-        for (k = 0; k < N; k++) {
-            diag = case201();
-            disp_if_fail(201, diag);
-            diag = case301();
-            disp_if_fail(301, diag);
-            diag = case1();
-            disp_if_fail(1, diag);
-            diag = case2();
-            disp_if_fail(2, diag);
-            diag = case3();
-            disp_if_fail(3, diag);
-            diag = case4(16);
-            disp_if_fail(4, diag);
-            m++;
-            if (1000 == m) {
-                DBLOG("Case -1000 Passed %u Loops.", k+1);
-                m = 0;
-            }
-        }
-        if (k == N)
-            DBLOG("Case -1000 Passed !\n");
-        else
-            DBLOG("Case -1000 Failed when k = %u !\n", k);
+        diag = case_n1000();
+        disp_test_result(-1000, diag);
         break;
-    case 802:
-        m = 0;
-        k = 0;
-        while(1) {
-            diag = case201();
-            disp_if_fail(201, diag);
-            diag = case301();
-            disp_if_fail(301, diag);
-            diag = case1();
-            disp_if_fail(1, diag);
-            diag = case2();
-            disp_if_fail(2, diag);
-            diag = case3();
-            disp_if_fail(3, diag);
-            diag = case4(16);
-            disp_if_fail(4, diag);
-            m++;
-            k++;
-            if (1000 == m) {
-                DBLOG("Case 802 Passed %u Loops.", k);
-                m = 0;
-            }
-        }
+    case -802:
+        diag = case_n802();
+        disp_test_result(-802, diag);
         break;
    case -2000:
-        N = 1000000;
-        m = 0;
-        for (k = 0; k < N; k++) {
-            diag = case1();
-            disp_if_fail(1, diag);
-            m++;
-            if (1000 == m) {
-                DBLOG("Case 1 Passed %7d times.", k+1);
-                m = 0;
-            }
-        }
-        if (k == N)
-            DBLOG("Case -2000 Passed !\n");
-        else
-            DBLOG("Case -2000 Failed when k = %d !\n", k);
+        diag = case_n2000();
+        disp_test_result(-2000, diag);
         break;
     default:
         DBLOG("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
