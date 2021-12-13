@@ -333,7 +333,13 @@ static union {
     const char *cc;
     uint32_t   *up;
 } dl_a[17];
-static uint32_t dl_a_num;
+static uint32_t dl_a_num = 0;
+static union {
+    const char *cc;
+    uint32_t   *up;
+} dl_oam[32];
+static uint32_t dl_oam_num = 0;
+
 static int      atl_test_result;
 
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
@@ -362,8 +368,8 @@ static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
 {
     buf = buf;
     payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
+    dl_oam[dl_oam_num].cc = buf;
+    dl_oam_num++;
     return 0;
 }
 
@@ -373,10 +379,11 @@ static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize)
     uint32_t *ul_msg = (uint32_t *)addr;
     swap_msg(ul_msg, payloadSize);
     uint32_t **dl_msg;
-    dl_msg = &dl_a[0].up;
-    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
+    dl_msg = &dl_oam[0].up;
+    if (check_same(dl_msg, dl_oam_num, ul_msg)) {
         atl_test_result |= 4;
     }
+    dl_oam_num = 0;
     return payloadSize;
 }
 
