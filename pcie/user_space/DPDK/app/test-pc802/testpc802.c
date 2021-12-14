@@ -252,37 +252,6 @@ static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
     return 0;
 }
 
-static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
-{
-    uint32_t k, N, s, exp;
-    uint32_t *pd;
-    uint32_t sz = 0;
-    //static uint32_t idx = 0;
-    uint32_t m = 0;
-    //int err_cnt = 0;
-    uint32_t rx_data;
-
-    pd = buf;
-    while (sz < msgSz) {
-        s = *pd++;
-        N = *pd++;
-        //printf("UL_MSG[1][%3d]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, pd[0]);
-        exp = s + *pd++;
-        for (k = 1; k < N; k++) {
-            rx_data = *pd++;
-            if (rx_data != exp) {
-                printf("Msg ERROR: m = %u , k = %u rx_data = 0x%08X exp = 0x%08X\n",
-                    m, k, rx_data, exp);
-                return -1;
-            }
-            exp += s;
-        }
-        sz += (N + 2) * sizeof(uint32_t);
-        m++;
-    }
-    return 0;
-}
-
 static int check_single_same(uint32_t *a, uint32_t *b)
 {
     uint32_t k, N;
