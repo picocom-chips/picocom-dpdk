@@ -1042,6 +1042,38 @@ static int case_n2(void)
     return 0;
 }
 
+static int case_n800(void)
+{
+    uint32_t m, k;
+    int diag;
+    m = 0;
+    k = 0;
+    while (1) {
+        diag = case301();
+        return_if_fail(301, diag, k);
+        diag = case1();
+        return_if_fail(1, diag, k);
+        diag = case2();
+        return_if_fail(2, diag, k);
+        diag = case3();
+        return_if_fail(3, diag, k);
+        diag = case4(16);
+        return_if_fail(4, diag, k);
+        m++;
+        k++;
+        if (TEST_PC802_DISP_LOOP_NUM == m) {
+            DBLOG("Case -800 Passed %u Loops.\n", k);
+            m = 0;
+        }
+        if (testpc802_exit_loop) {
+            DBLOG("Case -800 Passed %u Loops.\n", k+1);
+            testpc802_exit_loop = 0;
+            return 0;
+        }
+    }
+    return 0;
+}
+
 static int case_n1000(void)
 {
     uint32_t m, k, N;
@@ -1194,6 +1226,10 @@ static void run_case(int caseNo)
     case -2:
         diag = case_n2();
         disp_test_result(-2, diag);
+        break;
+    case -800:
+        diag = case_n800();
+        disp_test_result(-800, diag);
         break;
     case -1000:
         diag = case_n1000();
