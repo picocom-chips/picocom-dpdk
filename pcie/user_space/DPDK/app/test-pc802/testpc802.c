@@ -225,15 +225,15 @@ static int produce_random_dl_src_data(uint32_t *buf)
     return 0;
 }
 
-static int produce_fixed_dl_src_data(uint32_t *buf)
+static int produce_fixed_dl_src_data(uint32_t *buf, uint16_t qId)
 {
     //static uint32_t idx = 0;
     uint32_t N, s, d, k;
-    s = 0x01010101;
+    s = 0;
     *buf++ = s;
     N = 510;
     *buf++ = N;
-    d = 0x03020100;
+    d = 0x11111111 * (1 + qId);
     //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
     for (k = 0; k < N; k++) {
         *buf++ = d;
@@ -242,12 +242,12 @@ static int produce_fixed_dl_src_data(uint32_t *buf)
     return 0;
 }
 
-static int produce_dl_src_data(uint32_t *buf)
+static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
 {
     if (0 == testpc802_data_mode) {
         produce_random_dl_src_data(buf);
     } else {
-        produce_fixed_dl_src_data(buf);
+        produce_fixed_dl_src_data(buf, qId);
     }
     return 0;
 }
@@ -415,7 +415,7 @@ static int case1(void)
     uint32_t *a = alloc_tx_blk(QID_CTRL);
     if (NULL == a) return -1;
 
-    produce_dl_src_data(a);
+    produce_dl_src_data(a, QID_CTRL);
     N = sizeof(uint32_t) * (a[1] + 2);
     set_blk_attr(a, N, 2, 1);
     tx_blks(QID_CTRL, &a, 1);
@@ -446,7 +446,7 @@ static int case101(void)
     pcxxSendStart();
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail));
     A = (uint32_t *)a;
-    produce_dl_src_data(A);
+    produce_dl_src_data(A, QID_CTRL);
     N = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a, N);
     pcxxSendEnd();
@@ -466,13 +466,13 @@ static int case2(void)
     uint8_t type, eop;
 
     a[0] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[0]);
+    produce_dl_src_data(a[0], QID_DATA);
     N = sizeof(uint32_t) * (a[0][1] + 2);
     set_blk_attr(a[0], N, 0, 1);
     tx_blks(QID_DATA, &a[0], 1);
 
     a[1] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[1]);
+    produce_dl_src_data(a[1], QID_CTRL);
     N = sizeof(uint32_t) * (a[1][1] + 2);
     set_blk_attr(a[1], N, 1, 1);
     tx_blks(QID_CTRL, &a[1], 1);
@@ -513,7 +513,7 @@ static int case102(void)
 
     pcxxSendStart();
 
-    produce_dl_src_data(tmp);
+    produce_dl_src_data(tmp, QID_DATA);
     length = sizeof(uint32_t) * (tmp[1] + 2);
     RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
     memcpy(a[0], tmp, length);
@@ -522,7 +522,7 @@ static int case102(void)
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a[1], &avail));
     A = (uint32_t *)a[1];
-    produce_dl_src_data(A);
+    produce_dl_src_data(A, QID_CTRL);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a[1], length);
 
@@ -545,19 +545,19 @@ static int case3(void)
     uint8_t type, eop;
 
     a[0] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[0]);
+    produce_dl_src_data(a[0], QID_DATA);
     N = sizeof(uint32_t) * (a[0][1] + 2);
     set_blk_attr(a[0], N, 0, 0);
     tx_blks(QID_DATA, &a[0], 1);
 
     a[1] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[1]);
+    produce_dl_src_data(a[1], QID_DATA);
     N = sizeof(uint32_t) * (a[1][1] + 2);
     set_blk_attr(a[1], N, 0, 1);
     tx_blks(QID_DATA, &a[1], 1);
 
     a[2] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[2]);
+    produce_dl_src_data(a[2], QID_CTRL);
     N = sizeof(uint32_t) * (a[2][1] + 2);
     set_blk_attr(a[2], N, 1, 1);
     tx_blks(QID_CTRL, &a[2], 1);
@@ -599,13 +599,13 @@ static int case103(void)
 
     pcxxSendStart();
 
-    produce_dl_src_data(tmp);
+    produce_dl_src_data(tmp, QID_DATA);
     length = sizeof(uint32_t) * (tmp[1] + 2);
     RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
     memcpy(a[0], tmp, length);
     pcxxDataSend(offset, length);
 
-    produce_dl_src_data(tmp);
+    produce_dl_src_data(tmp, QID_DATA);
     length = sizeof(uint32_t) * (tmp[1] + 2);
     RTE_ASSERT(0 == pcxxDataAlloc(length, &a[1], &offset));
     memcpy(a[1], tmp, length);
@@ -614,7 +614,7 @@ static int case103(void)
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a[2], &avail));
     A = (uint32_t *)a[2];
-    produce_dl_src_data(A);
+    produce_dl_src_data(A, QID_CTRL);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a[2], length);
 
@@ -640,7 +640,7 @@ static int case4(uint16_t D)
 
     for (k = 0; k < D; k++) {
         a[k] = alloc_tx_blk(QID_DATA);
-        produce_dl_src_data(a[k]);
+        produce_dl_src_data(a[k], QID_DATA);
         N = sizeof(uint32_t) * (a[k][1] + 2);
         eop = k == (D-1);
         set_blk_attr(a[k], N, 0, eop);
@@ -648,7 +648,7 @@ static int case4(uint16_t D)
         tx_blks(QID_DATA, &a[k], 1);
     }
     a[k] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[k]);
+    produce_dl_src_data(a[k], QID_CTRL);
     N = sizeof(uint32_t) * (a[k][1] + 2);
     set_blk_attr(a[k], N, 1, 1);
     //printf("  Type=1  m=%u  EOP=1\n", k);
@@ -693,7 +693,7 @@ static int case104(uint16_t D)
     pcxxSendStart();
 
     for (k = 0; k < D; k++) {
-        produce_dl_src_data(tmp);
+        produce_dl_src_data(tmp, QID_DATA);
         length = sizeof(uint32_t) * (tmp[1] + 2);
         RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset));
         memcpy(a[k], tmp, length);
@@ -702,7 +702,7 @@ static int case104(uint16_t D)
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail));
     A = (uint32_t *)a[k];
-    produce_dl_src_data(A);
+    produce_dl_src_data(A, QID_CTRL);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a[k], length);
 
@@ -925,7 +925,7 @@ static int case301(void)
     pcxxSendStart();
     RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail));
     A = (uint32_t *)a;
-    produce_dl_src_data(A);
+    produce_dl_src_data(A, QID_OAM);
     N = sizeof(uint32_t) * (A[1] + 2);
     pcxxOamSend(a, N);
     pcxxSendEnd();
