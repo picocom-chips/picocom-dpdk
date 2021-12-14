@@ -286,17 +286,22 @@ static int check_ul_dst_data(uint32_t *buf, uint32_t msgSz)
 static int check_single_same(uint32_t *a, uint32_t *b)
 {
     uint32_t k, N;
-    //static uint32_t idx = 0;
-    if (a[1] != b[1]) return -1;
+    uint32_t err_cnt;
+    int res;
+    err_cnt = 0;
+    res = 0;
     N = a[1] + 2;
     for (k = 0; k < N; k++) {
         if (a[k] != b[k]) {
-            return -2;
+            res = -1;
+            DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
+                k, a[k], k, b[k]);
+            err_cnt++;
+            if (16 == err_cnt)
+                return -1;
         }
    }
-   //printf("UL_MSG[%u]: N=%u S=0x%08X D=0x%08X\n",
-   //    idx++, N, b[0], b[2]);
-   return 0;
+   return res;
 }
 
 static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
@@ -307,8 +312,10 @@ static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
     for (k = 0; k < na; k++) {
         pa = a[k];
         N = pa[1] + 2;
-        if (check_single_same(pa, b))
+        if (check_single_same(pa, b)) {
+            DBLOG("ERROR: k = %hu\n", k);
             return -k;
+        }
         b += N;
     }
     return 0;
@@ -429,7 +436,7 @@ static int case1(void)
         return -1;
     swap_msg(b, length);
     //printf("CASE1: UL msg length = %u\n", length);
-    check_ul_dst_data(b, length);
+    //check_ul_dst_data(b, length);
     re = check_single_same(a, b);
     free_blk(a);
     free_blk(b);
