@@ -998,6 +998,8 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     usleep(1000);
     rte_wmb();
+    PC802_WRITE_REG(bar->ULDMAN, 1);
+    DBLOG("Set UL DMA Count = 1\n");
     PC802_WRITE_REG(bar->DEVEN, 1);
 
     do {
@@ -1611,3 +1613,16 @@ int pc802_download_boot_image(uint16_t port)
     printf("Finish WEAK test_boot_download !\n");
     return 0;
 }
+
+int pc802_set_ul_dma_count(uint16_t port, uint32_t n)
+{
+    PC802_BAR_t *bar = pc802_get_BAR(port);
+    if (0 == n)
+        n = 1;
+    if (n > 4)
+        n = 4;
+    bar->ULDMAN = n;
+    rte_wmb();
+    return 0;
+}
+

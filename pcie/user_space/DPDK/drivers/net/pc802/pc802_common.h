@@ -42,6 +42,7 @@ typedef struct PC802_BAR_t {
             uint32_t DEVRDY;
             uint32_t DBAL;
             uint32_t DBAH;
+            uint32_t ULDMAN;
         };
     };
     union {
