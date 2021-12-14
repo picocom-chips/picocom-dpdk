@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2018-2020 Picocom Corporation
  */
-#ifndef _PC802_ETHDEV_H_
-#define _PC802_ETHDEV_H_
+#ifndef __RTE_PMD_PC802_H__
+#define __RTE_PMD_PC802_H__
 
 #include <stdint.h>
 #include <stdio.h>
@@ -24,28 +24,6 @@ typedef enum PC802_Traffic_Type_e {
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
 
-#if 0
-#include "pc802_common.h"
-
-static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
-{
-    __asm__ volatile ("" : : : "memory");
-    *addr = value;
-    return;
-}
-
-static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
-{
-    uint32_t val;
-    val = *addr;
-    __asm__ volatile ("" : : : "memory");
-    return val;
-}
-
-#define PC802_WRITE_REG(reg, value) \
-    pc802_write_reg((volatile uint32_t *)&(reg), (value))
-#endif
-
 #define NPU_CACHE_LINE_SZ   64
 
 struct pc802_mem_block {
@@ -58,13 +36,6 @@ struct pc802_mem_block {
     uint8_t  eop;
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
-
-#if 0
-#define PC802_READ_REG(reg) \
-    pc802_read_reg((volatile uint32_t *)&(reg))
-
-PC802_BAR_t * pc802_get_BAR(uint16_t port_id);
-#endif
 
 int pc802_get_socket_id(uint16_t port_id);
 
@@ -91,4 +62,4 @@ void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
 
 int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 
-#endif /* _PC802_ETHDEV_H_ */
+#endif /* __RTE_PMD_PC802_H__ */
