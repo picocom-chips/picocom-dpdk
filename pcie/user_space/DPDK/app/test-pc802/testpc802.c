@@ -283,7 +283,7 @@ static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
         N = pa[1] + 2;
         if (check_single_same(pa, b)) {
             DBLOG("ERROR: k = %hu\n", k);
-            return -k;
+            return -1;
         }
         b += N;
     }
