@@ -59,7 +59,7 @@ void pc802_show_tx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
 void pc802_show_rx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
 void pc802_show_tx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
 void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
-
+int pc802_check_dma_timeout(uint16_t port);
 int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 
 #endif /* __RTE_PMD_PC802_H__ */

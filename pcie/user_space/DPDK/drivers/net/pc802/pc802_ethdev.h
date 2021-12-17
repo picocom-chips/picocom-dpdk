@@ -103,7 +103,7 @@ void pc802_show_tx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
 void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
 
 int pc802_download_boot_image(uint16_t port_id);
-
+int pc802_check_dma_timeout(uint16_t port);
 int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 
 #endif /* _PC802_ETHDEV_H_ */

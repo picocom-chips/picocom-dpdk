@@ -1034,6 +1034,7 @@ static int case_n800(void)
             DBLOG("Case -800 Passed %u Loops.\n", k);
             m = 0;
         }
+        pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
             DBLOG("Case -800 Passed %u Loops.\n", k+1);
             testpc802_exit_loop = 0;
@@ -1067,6 +1068,7 @@ static int case_n1000(void)
             DBLOG("Case -1000 Passed %u Loops.\n", k+1);
             m = 0;
         }
+        pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
             DBLOG("Case -1000 Passed %u Loops.\n", k+1);
             testpc802_exit_loop = 0;
@@ -1101,6 +1103,7 @@ static int case_n802(void)
             DBLOG("Case -802 Passed %u Loops.\n", k);
             m = 0;
         }
+        pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
             DBLOG("Case -802 Passed %u Loops.\n", k+1);
             testpc802_exit_loop = 0;
@@ -1124,6 +1127,7 @@ static int case_n2000(void)
             DBLOG("Case 1 Passed %7d times.\n", k+1);
             m = 0;
         }
+        pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
             DBLOG("Case -2000 Passed %u Loops.\n", k+1);
             testpc802_exit_loop = 0;

@@ -114,6 +114,27 @@ typedef struct PC802_BAR_t {
         PC802_CacheLine_t _cahce_line_debug_ep;
         uint32_t DBGEPCNT;
     };
+    union {
+        PC802_CacheLine_t _cahce_line_sync_ecpri;
+        struct {
+            uint32_t DRVSTATE;
+            uint32_t MEMCFGADDR;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_ul_dma;
+        struct {
+            uint32_t ULDMA_TIMEOUT_FINISHED[4];
+            uint32_t ULDMA_TIMEOUT_ERROR[4];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_dl_dma;
+        struct {
+            uint32_t DLDMA_TIMEOUT_FINISHED[4];
+            uint32_t DLDMA_TIMEOUT_ERROR[4];
+        };
+    };
 } PC802_BAR_t;
 
 #define PC802_DEVEN             (offsetof(PC802_BAR_t,   DEVEN))

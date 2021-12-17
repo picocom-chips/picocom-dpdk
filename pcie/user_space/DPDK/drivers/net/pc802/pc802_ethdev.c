@@ -1626,3 +1626,42 @@ int pc802_set_ul_dma_count(uint16_t port, uint32_t n)
     return 0;
 }
 
+int pc802_check_dma_timeout(uint16_t port)
+{
+    static uint32_t timeout_counter[16];
+    static const char *head[] = {"PC802 UL Timeout FINISHED:", "PC802 UL Timeout ERROR:",
+        "PC802 DL Timeout FINISHED:", "PC802 DL Timeout ERROR:"};
+    uint32_t *local_counter;
+    uint32_t *bar_counter;
+    char buf[1024];
+    char *p;
+    int flag;
+    int m, n;
+
+    flag= 0;
+    p = buf;
+    local_counter = &timeout_counter[0];
+    PC802_BAR_t *bar = pc802_get_BAR(port);
+    bar_counter = &bar->ULDMA_TIMEOUT_FINISHED[0];
+    for (m = 0; m < 4; m++) {
+        flag = 0;
+        for (n = 0; n < 4; n++) {
+            if (local_counter[0] != bar_counter[0]) {
+                local_counter[0] = bar_counter[0];
+                if (0 == flag) {
+                    p += sprintf(p, "%s", head[m]);
+                    flag = 1;
+                }
+                p += sprintf(p, " [%1d]=%10u", n, bar_counter[0]);
+            }
+            local_counter++;
+            bar_counter++;
+        }
+        if (flag)
+            p += sprintf(p, "\n");
+    }
+    if (p != buf)
+        printf("%s", buf);
+    return 0;
+}
+
