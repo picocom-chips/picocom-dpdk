@@ -226,7 +226,7 @@ static int produce_random_dl_src_data(uint32_t *buf)
     return 0;
 }
 
-static int produce_fixed_dl_src_data(uint32_t *buf, uint16_t qId)
+static int produce_fixed_dl_src_data_1(uint32_t *buf, uint16_t qId)
 {
     //static uint32_t idx = 0;
     uint32_t N, s, d, k;
@@ -243,12 +243,33 @@ static int produce_fixed_dl_src_data(uint32_t *buf, uint16_t qId)
     return 0;
 }
 
+static int produce_fixed_dl_src_data_2(uint32_t *buf, uint16_t qId)
+{
+    //static uint32_t idx = 0;
+    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    uint32_t N, s, d, k;
+    s = 1;
+    *buf++ = s;
+    N = 500;
+    *buf++ = N;
+    d = d0[qId];
+    d0[qId]++;
+    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
+    for (k = 0; k < N; k++) {
+        *buf++ = d;
+        d += s;
+    }
+    return 0;
+}
+
 static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
 {
     if (0 == testpc802_data_mode) {
         produce_random_dl_src_data(buf);
+    } else if (1 == testpc802_data_mode) {
+        produce_fixed_dl_src_data_1(buf, qId);
     } else {
-        produce_fixed_dl_src_data(buf, qId);
+        produce_fixed_dl_src_data_2(buf, qId);
     }
     return 0;
 }
