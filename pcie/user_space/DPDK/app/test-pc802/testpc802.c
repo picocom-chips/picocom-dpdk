@@ -262,14 +262,35 @@ static int produce_fixed_dl_src_data_2(uint32_t *buf, uint16_t qId)
     return 0;
 }
 
+static int produce_fixed_dl_src_data_3(uint32_t *buf, uint16_t qId)
+{
+    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    static uint32_t L = 400;
+    uint32_t N, s, d, k;
+    s = 1;
+    *buf++ = s;
+    if (L >= 501) L = 400;
+    N = L++;
+    *buf++ = N;
+    d = d0[qId];
+    d0[qId]++;
+    for (k = 0; k < N; k++) {
+        *buf++ = d;
+        d += s;
+    }
+    return 0;
+}
+
 static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
 {
     if (0 == testpc802_data_mode) {
         produce_random_dl_src_data(buf);
     } else if (1 == testpc802_data_mode) {
         produce_fixed_dl_src_data_1(buf, qId);
-    } else {
+    } else if (2 == testpc802_data_mode) {
         produce_fixed_dl_src_data_2(buf, qId);
+    } else {
+        produce_fixed_dl_src_data_3(buf, qId);
     }
     return 0;
 }
