@@ -215,6 +215,7 @@ static int produce_random_dl_src_data(uint32_t *buf)
     N = (uint32_t)rand();
     N &= 511;
     if (N < 10) N = 10;
+    if (N > 500) N = 500;
     *buf++ = N;
     d = (uint32_t)rand();
     //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
@@ -231,7 +232,7 @@ static int produce_fixed_dl_src_data(uint32_t *buf, uint16_t qId)
     uint32_t N, s, d, k;
     s = 0;
     *buf++ = s;
-    N = 510;
+    N = 500;
     *buf++ = N;
     d = 0x11111111 * (1 + qId);
     //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
