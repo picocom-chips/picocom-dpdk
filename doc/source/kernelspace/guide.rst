@@ -59,14 +59,16 @@ Build all the images::
 Build PC802_KDriver:
    
     1. If run pcitest to test PCIe basic function::
-
+        $ sudo mkdir /lib/firmware/pico
+        $ cp <path of pc802.img> to /lib/firmware/pico/pc802.img
         $ make KERNEL_DIR=<your kernel source folder> all
         $ sudo insmod pcieptest.ko
         $ export PATH=$PATH:.
         $ ./pcitest.sh
     
     2. If Run PC802 traffic test::
-
+        $ sudo mkdir /lib/firmware/pico
+        $ cp <path of pc802.img> to /lib/firmware/pico/pc802.img
         $ make KERNEL_DIR=<your kernel source folder> all
         $ sudo insmod pcsc.ko
         $ sudo ./pcsc_test
