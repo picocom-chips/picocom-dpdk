@@ -202,4 +202,26 @@ static inline int isPowerOf2(uint32_t n)
 #define  DBLOG(format, ...) \
     printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
 
+struct PC802_BAR_Ext_t {
+    union {
+        uint32_t _a0[16];
+        struct {
+            volatile uint32_t MB_EPCNT;
+            uint32_t MB_COMMAND;
+            uint32_t MB_ARGS[14];
+        };
+    };
+    union {
+        uint32_t _a1[8];
+        struct {
+            uint32_t MB_RCCNT;
+            uint32_t MB_RESULT;
+        };
+    };
+} __attribute__((__aligned__(32)));
+
+typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
+
+
+
 #endif
