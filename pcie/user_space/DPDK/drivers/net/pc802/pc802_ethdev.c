@@ -998,8 +998,8 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     usleep(1000);
     rte_wmb();
-    PC802_WRITE_REG(bar->ULDMAN, 1);
-    DBLOG("Set UL DMA Count = 1\n");
+    PC802_WRITE_REG(bar->ULDMAN, 4);
+    DBLOG("Set UL DMA Count = 4\n");
     PC802_WRITE_REG(bar->DEVEN, 1);
 
     do {
