@@ -1824,3 +1824,13 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
     return 0;
 }
 
+uint32_t pc802_vec_read(uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+{
+    return handle_vec_read(file_id, offset, address, length);
+}
+
+uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
+{
+    return handle_vec_dump(file_id, address, length);
+}
+

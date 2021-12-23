@@ -630,6 +630,92 @@ cmdline_parse_inst_t set_ul_dma_count = {
         },
 };
 
+struct cmd_vec_read_result {
+    cmdline_fixed_string_t vec;
+    cmdline_fixed_string_t read;
+    uint32_t               file_id;
+    uint32_t               offset;
+    uint32_t               pc802_address;
+    uint32_t               length;
+};
+
+cmdline_parse_token_string_t cmd_vec_read_result_vec =
+    TOKEN_STRING_INITIALIZER(struct cmd_vec_read_result, vec, "vec");
+cmdline_parse_token_string_t cmd_vec_read_result_read =
+    TOKEN_STRING_INITIALIZER(struct cmd_vec_read_result, read, "read");
+cmdline_parse_token_num_t cmd_vec_read_result_file_id =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_read_result, file_id, RTE_UINT32);
+cmdline_parse_token_num_t cmd_vec_read_result_offset =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_read_result, offset, RTE_UINT32);
+cmdline_parse_token_num_t cmd_vec_read_result_pc802_address =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_read_result, pc802_address, RTE_UINT32);
+cmdline_parse_token_num_t cmd_vec_read_result_length =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_read_result, length, RTE_UINT32);
+
+static void cmd_vec_read_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_vec_read_result *res = parsed_result;
+    pc802_vec_read(res->file_id, res->offset, res->pc802_address, res->length);
+}
+
+cmdline_parse_inst_t vec_read = {
+    .f = cmd_vec_read_parsed,
+    .data = NULL,
+    .help_str = "vec read <file_id> <offset> <pc802_address> <length>",
+    .tokens = {
+        (void *)&cmd_vec_read_result_vec,
+        (void *)&cmd_vec_read_result_read,
+        (void *)&cmd_vec_read_result_file_id,
+        (void *)&cmd_vec_read_result_offset,
+        (void *)&cmd_vec_read_result_pc802_address,
+        (void *)&cmd_vec_read_result_length,
+        NULL,
+        },
+};
+
+struct cmd_vec_dump_result {
+    cmdline_fixed_string_t vec;
+    cmdline_fixed_string_t dump;
+    uint32_t               file_id;
+    uint32_t               pc802_address;
+    uint32_t               length;
+};
+
+cmdline_parse_token_string_t cmd_vec_dump_result_vec =
+    TOKEN_STRING_INITIALIZER(struct cmd_vec_dump_result, vec, "vec");
+cmdline_parse_token_string_t cmd_vec_dump_result_dump =
+    TOKEN_STRING_INITIALIZER(struct cmd_vec_dump_result, dump, "dump");
+cmdline_parse_token_num_t cmd_vec_dump_result_file_id =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_dump_result, file_id, RTE_UINT32);
+cmdline_parse_token_num_t cmd_vec_dump_result_pc802_address =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_dump_result, pc802_address, RTE_UINT32);
+cmdline_parse_token_num_t cmd_vec_dump_result_length =
+    TOKEN_NUM_INITIALIZER(struct cmd_vec_dump_result, length, RTE_UINT32);
+
+static void cmd_vec_dump_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_vec_dump_result *res = parsed_result;
+    pc802_vec_dump(res->file_id, res->pc802_address, res->length);
+}
+
+cmdline_parse_inst_t vec_dump = {
+    .f = cmd_vec_dump_parsed,
+    .data = NULL,
+    .help_str = "vec dump <file_id> <pc802_address> <length>",
+    .tokens = {
+        (void *)&cmd_vec_dump_result_vec,
+        (void *)&cmd_vec_dump_result_dump,
+        (void *)&cmd_vec_dump_result_file_id,
+        (void *)&cmd_vec_dump_result_pc802_address,
+        (void *)&cmd_vec_dump_result_length,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -643,6 +729,8 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&set_test_data_mode,
     (cmdline_parse_inst_t *)&exit_test_loop,
     (cmdline_parse_inst_t *)&set_ul_dma_count,
+    (cmdline_parse_inst_t *)&vec_read,
+    (cmdline_parse_inst_t *)&vec_dump,
     NULL,
 };
 
