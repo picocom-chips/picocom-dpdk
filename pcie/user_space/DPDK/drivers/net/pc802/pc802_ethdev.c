@@ -1807,7 +1807,7 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
 
     // Parse the file
     DBLOG("Dumping to file %s\n", file_name);
-    FILE         * fh_vector  = fopen(file_name, "a");
+    FILE         * fh_vector  = fopen(file_name, "w");
 
     fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     for (unsigned int offset = 0; offset < length; offset += 4) {
