@@ -1782,6 +1782,7 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
 // -----------------------------------------------------------------------------
 static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
 {
+    unsigned int offset;
     if ((length & 3) | (address & 3)) {
        DBLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
        return -1;
@@ -1810,7 +1811,7 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
     FILE         * fh_vector  = fopen(file_name, "w");
 
     fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (unsigned int offset = 0; offset < length; offset += 4) {
+    for (offset = 0; offset < length; offset += 4) {
       unsigned int mem_data = *pd++;;
       fprintf(fh_vector, "%08x\n", mem_data);
     }
