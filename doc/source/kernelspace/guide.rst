@@ -21,6 +21,7 @@ Setup the environment variable and import the build script::
 Get the component source code from remote git repository::
 
    flex-builder -i repo-update
+   flex-builder -i repo-fetch
 
 Patch the component source to support Pico SCB::
 
@@ -47,6 +48,10 @@ Patch the component source to support Pico SCB::
 
     # patch the lsdk
     patch -p1 < {path_to_patch}/flexbuild_lsdk2108.patch
+   
+The development environment is not Ubuntu-20.04 You need to start docker ubuntu-20.04::
+
+   flex-builder docker
 
 Build all the images::
 
@@ -59,6 +64,7 @@ Build all the images::
 Build PC802_KDriver:
    
     1. If run pcitest to test PCIe basic function::
+          
         $ sudo mkdir /lib/firmware/pico
         $ cp <path of pc802.img> to /lib/firmware/pico/pc802.img
         $ make KERNEL_DIR=<your kernel source folder> all
@@ -67,6 +73,7 @@ Build PC802_KDriver:
         $ ./pcitest.sh
     
     2. If Run PC802 traffic test::
+
         $ sudo mkdir /lib/firmware/pico
         $ cp <path of pc802.img> to /lib/firmware/pico/pc802.img
         $ make KERNEL_DIR=<your kernel source folder> all
