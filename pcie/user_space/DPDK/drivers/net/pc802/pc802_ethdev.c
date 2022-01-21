@@ -1490,7 +1490,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     volatile uint32_t BOOTEPCNT;
     volatile uint32_t devRdy;
     BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT);
+    DBLOG("BOOTEPCNT = 0x%08X\n", BOOTEPCNT);
     if (0xFFFFFFFF == BOOTEPCNT) {
+	DBLOG("Wait for DEVRDY = 2 !\n");
         do {
             devRdy = PC802_READ_REG(bar->DEVRDY);
         } while (2 != devRdy);
@@ -1498,6 +1500,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         return 0;
     }
 
+    DBLOG("Wait for DEVRDY = 1 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (1 != devRdy);
@@ -1512,6 +1515,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     bar->BOOTRCCNT = 0xFFFFFFFF;
+    DBLOG("Wait for DEVRDY = 2 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (2 != devRdy);
