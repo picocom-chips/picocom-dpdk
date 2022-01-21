@@ -19,9 +19,14 @@ build igb_uio
 Build PC802 pcie driver on NPU side
 -----------------------------------
 
-Download PC802_UDriver and enter directory::
+Download `DPDK 21.08<http://fast.dpdk.org/rel/dpdk-21.08.tar.xz>`_.
+.. code-block:: console
+   wget http://fast.dpdk.org/rel/dpdk-21.08.tar.xz
 
-   cd path/npu_driver/pcie/user_space/DPDK
+Apply PC802_UDriver patch.
+.. code-block:: console
+   cd dpdk-21.08
+   patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
 
 Please see `DPDK Documentation <https://www.dpdk.org/>`_ for compiling DPDK.
 
