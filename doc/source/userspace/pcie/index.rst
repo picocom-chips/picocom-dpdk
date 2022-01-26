@@ -8,4 +8,3 @@ PCIe driver
    :numbered:
 
    PCIe_driver
-   sample

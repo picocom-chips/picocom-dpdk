@@ -16,24 +16,16 @@ build igb_uio
 
 .. _build_PC802_PCIe_driver:
 
-Build PC802 pcie driver on NPU side
------------------------------------
+Build PC802 PCIe driver on NPU side from source code
+----------------------------------------------------
 
-Download `DPDK 21.08 <http://fast.dpdk.org/rel/dpdk-21.08.tar.xz>`_
+Download PC802_UDriver and enter directory::
 
-.. code-block:: console
-
-   wget http://fast.dpdk.org/rel/dpdk-21.08.tar.xz
-
-Apply PC802_UDriver patch
-
-.. code-block:: console
-
-   tar xvf dpdk-21.08.tar.xz
-   cd dpdk-21.08
-   patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
+   cd path/npu_driver/pcie/user_space/DPDK
 
 Please see `DPDK Documentation <https://www.dpdk.org/>`_ for compiling DPDK.
+
+.. _check_PC802_active:
 
 Check if PC802 is active
 ------------------------
@@ -42,23 +34,6 @@ Check if PC802 is active
     
     ./usertools/dpdk-devbind.py -s
 
-.. code-block:: console
-    
-    Network devices using kernel driver
-    ===================================
-    ...
-    No 'Crypto' devices detected
-    ============================
-    No 'Eventdev' devices detected
-    ==============================
-    No 'Mempool' devices detected
-    ==============================
-    No 'Compress' devices detected
-    ==============================
-
-
-Without ``af: 00.0``, you need to restart the server, and vice versa.
- 
 .. code-block:: console
 
     Network devices using kernel driver

@@ -17,4 +17,3 @@ The document describes how to compile and run a application basing on PC802_UDri
     compile
     pcie/index
     atll/index
-    samples/index
