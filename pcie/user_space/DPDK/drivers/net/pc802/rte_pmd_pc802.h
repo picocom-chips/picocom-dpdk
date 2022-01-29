@@ -41,14 +41,50 @@ int pc802_get_socket_id(uint16_t port_id);
 
 char * picocom_pc802_version(void);
 
+/**
+* @brief Create Rx queue for queue_id >= 1
+*
+* @param[in] port_id PC802 chip number, start with 0
+* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
+* @param[in] block_size memory block size in byte (buffer header + message body)
+* @param[in] block_num number of memory blocks in the pool of the queue
+* @param[in] nb_desc number of message descriptors, should be less than block_num
+* @return returns 0 if open success, or else return error
+*/
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc);
+
+/**
+* @brief Create Tx queue for queue_id >= 1
+*
+* @param[in] port_id PC802 chip number, start with 0
+* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
+* @param[in] block_size memory block size in byte (buffer header + message body)
+* @param[in] block_num number of memory blocks in the pool of the queue
+* @param[in] nb_desc number of message descriptors, should be less than block_num
+* @return returns 0 if open success, or else return error
+*/
 int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc);
 
+/**
+* @brief Allocated one message memory from current block in used for tx.
+*
+* @param[in] port_id PC802 chip number,start with 0
+* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
+* @return return pointer to message body, Null when failure
+*/
 PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id);
+
+/**
+* @brief Free one message memory from current block in used for rx.
+*
+* @param[in] mblk pointer to message block
+* @return void
+*/
 void pc802_free_mem_block(PC802_Mem_Block_t *mblk);
 
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks);
+
 uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **tx_blks, uint16_t nb_blks);
 

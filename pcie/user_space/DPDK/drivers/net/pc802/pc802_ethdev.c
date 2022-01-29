@@ -26,6 +26,7 @@
 #include <rte_dev.h>
 
 #include "pc802_logs.h"
+#include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
 
 #define PCI_VENDOR_PICOCOM          0x1EC4
@@ -176,12 +177,14 @@ struct pc802_adapter {
 
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
+
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
+static int pc802_download_boot_image(uint16_t port);
 static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(    uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
 
-PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
+static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
@@ -1598,14 +1601,13 @@ char * picocom_pc802_version(void)
     return ver;
 }
 
-__attribute__((__weak__))
-int pc802_download_boot_image(uint16_t port)
+static int pc802_download_boot_image(uint16_t port)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
     volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
 
-    printf("Begin WEAK pc802_download_boot_image,  port = %hu\n", port);
+    printf("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         printf("PC802 ELF image has already been downloaded and is running !\n");
         return 0;

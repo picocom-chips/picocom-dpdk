@@ -2,6 +2,7 @@
 
 #include <rte_debug.h>
 
+#include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
 #include "pcxx_ipc.h"
 

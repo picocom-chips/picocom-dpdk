@@ -6,85 +6,210 @@
 
 #include <stdint.h>
 
-#include "pc802_common.h"
+#include "rte_pmd_pc802.h"
 
-struct pc802_mem_block {
-    struct pc802_mem_block *next;
-    struct pc802_mem_block **first;
-    uint32_t alloced;
-    uint64_t buf_phy_addr;
-    uint32_t pkt_length;
-    uint8_t  pkt_type;
-    uint8_t  eop;
+#define MIN_DESC_NUM    8
+#define MAX_DESC_NUM  128
+
+#define MAX_DL_CH_NUM   PC802_TRAFFIC_NUM
+#define MAX_UL_CH_NUM   PC802_TRAFFIC_NUM
+
+#define DEFAULT_PC802_5G_DESC_NUM   256
+
+#define PC802_CACHE_LINE_SZ 32
+
+struct PC802_CacheLine_t{
+    uint32_t _a[8];
+} __attribute__((__aligned__(PC802_CACHE_LINE_SZ)));
+
+typedef struct PC802_CacheLine_t PC802_CacheLine_t;
+
+typedef struct PC802_BAR_t {
+    union {
+        PC802_CacheLine_t _cahce_line;
+        struct {
+            uint32_t DEVEN;
+            uint32_t DEVRDY;
+            uint32_t DBAL;
+            uint32_t DBAH;
+            uint32_t ULDMAN;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_tdnum;
+        uint32_t TDNUM[PC802_TRAFFIC_NUM];
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_trccnt;
+        uint32_t TRCCNT[PC802_TRAFFIC_NUM];
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_tepcnt;
+        uint32_t TEPCNT[PC802_TRAFFIC_NUM];
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_rdnum;
+        uint32_t RDNUM[PC802_TRAFFIC_NUM];
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_rrccnt;
+        uint32_t RRCCNT[PC802_TRAFFIC_NUM];
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_repcnt;
+        uint32_t REPCNT[PC802_TRAFFIC_NUM];
+    };
+	union {
+        PC802_CacheLine_t _cahce_line_brccnt;
+		struct {
+			uint32_t BOOTSRCL;
+			uint32_t BOOTSRCH;
+			uint32_t BOOTDST;
+			uint32_t BOOTSZ;
+			uint32_t BOOTRCCNT;
+			uint32_t BOOTRSPL;
+			uint32_t BOOTRSPH;
+		};
+    };
+	union {
+        PC802_CacheLine_t _cahce_line_bepcnt;
+		struct {
+			uint32_t BOOTEPCNT;
+			uint32_t BOOTERROR;
+		};
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_macaddr;
+        struct {
+            uint32_t MACADDRL;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_debug_rcm;
+        struct {
+            uint32_t DBGRCAL;
+            uint32_t DBGRCAH;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_debug_rcc;
+        struct {
+            uint32_t DBGEPADDR;
+            uint32_t DBGBYTESNUM;
+            uint32_t DBGCMD;
+            uint32_t DBGRCCNT;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_debug_ep;
+        uint32_t DBGEPCNT;
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_sync_ecpri;
+        struct {
+            uint32_t DRVSTATE;
+            uint32_t MEMCFGADDR;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_ul_dma;
+        struct {
+            uint32_t ULDMA_TIMEOUT_FINISHED[4];
+            uint32_t ULDMA_TIMEOUT_ERROR[4];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cahce_line_dl_dma;
+        struct {
+            uint32_t DLDMA_TIMEOUT_FINISHED[4];
+            uint32_t DLDMA_TIMEOUT_ERROR[4];
+        };
+    };
+} PC802_BAR_t;
+
+#define PC802_DEVEN             (offsetof(PC802_BAR_t,   DEVEN))
+#define PC802_DEVRDY            (offsetof(PC802_BAR_t,   DEVRDY))
+#define PC802_DBAL              (offsetof(PC802_BAR_t,   DBAL))
+#define PC802_DBAH              (offsetof(PC802_BAR_t,   DBAH))
+
+#define PC802_TDNUM(n)          (offsetof(PC802_BAR_t, TDNUM[0]) + sizeof(uint32_t) * (n))
+#define PC802_TRCCNT(n)         (offsetof(PC802_BAR_t, TRCCNT[0]) + sizeof(uint32_t) * (n))
+#define PC802_TEPCNT(n)         (offsetof(PC802_BAR_t, TEPCNT[0]) + sizeof(uint32_t) * (n))
+
+#define PC802_RDNUM(n)          (offsetof(PC802_BAR_t, RDNUM[0]) + sizeof(uint32_t) * (n))
+#define PC802_RRCCNT(n)         (offsetof(PC802_BAR_t, RRCCNT[0]) + sizeof(uint32_t) * (n))
+#define PC802_REPCNT(n)         (offsetof(PC802_BAR_t, REPCNT[0]) + sizeof(uint32_t) * (n))
+
+
+#define NPU_CACHE_LINE_SZ   64
+
+typedef struct stPC802_Descriptor_t{
+    uint64_t phy_addr;  // pointer to start physical address of a buffer in NPU memory
+    uint32_t length;    // length of content to be sent in bytes
+    uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
+    uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
+} PC802_Descriptor_t;
+
+struct stPC802_EP_Counter_Mirror_t {
+    union {
+        PC802_CacheLine_t   cache_line_tepcnt;
+        volatile uint32_t TEPCNT[MAX_DL_CH_NUM];
+    };
+    union {
+        PC802_CacheLine_t   cache_line_repcnt;
+        volatile uint32_t REPCNT[MAX_UL_CH_NUM];
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
-typedef struct pc802_mem_block PC802_Mem_Block_t;
 
-PC802_BAR_t * pc802_get_BAR(uint16_t port_id);
+typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
-int pc802_get_socket_id(uint16_t port_id);
+typedef struct PC802_Descs_t {
+    PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
+    PC802_Descriptor_t  ul[MAX_UL_CH_NUM][MAX_DESC_NUM];
+    PC802_EP_Counter_Mirror_t  mr;
+} PC802_Descs_t;
 
-char * picocom_pc802_version(void);
+static inline uint32_t get_dl_desc_offset(uint32_t ch, uint32_t idx)
+{
+    return (ch * MAX_DESC_NUM + idx) * sizeof(PC802_Descriptor_t);
+}
 
-/**
-* @brief Create control queues for Rx
-*
-* @param[in] port_id PC802 chip number,   start with 0
-* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
-* @param[in] block_size memory block size in byte (buffer header + message body)
-* @param[in] block_num number of memory blocks in the pool of the queue
-* @param[in] nb_desc number of message descriptors, should be less than block_num
-* @return returns 0 if open success, or else return error
-*/
-int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc);
+static inline uint32_t get_ul_desc_offset(uint32_t ch, uint32_t idx)
+{
+    return (MAX_DL_CH_NUM * MAX_DESC_NUM + ch * MAX_DESC_NUM + idx) * sizeof(PC802_Descriptor_t);
+}
 
-/**
-* @brief Create control queues for Tx
-*
-* @param[in] port_id PC802 chip number,   start with 0
-* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
-* @param[in] block_size memory block size in byte (buffer header + message body)
-* @param[in] block_num number of memory blocks in the pool of the queue
-* @param[in] nb_desc number of message descriptors, should be less than block_num
-* @return returns 0 if open success, or else return error
-*/
-int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc);
+static inline uint32_t get_ep_counter_mirror_offset(void)
+{
+    return (MAX_DL_CH_NUM + MAX_UL_CH_NUM) * MAX_DESC_NUM * sizeof(PC802_Descriptor_t);
+}
 
-/**
-* @brief Allocated one message memory from current block in used for tx.
-*
-* @param[in] port_id PC802 chip number,start with 0
-* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
-* @return return pointer to message body, Null when failure
-*/
-PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id);
-void pc802_free_mem_block(PC802_Mem_Block_t *mblk);
+static inline int isPowerOf2(uint32_t n)
+{
+    return n && !(n & (n - 1));
+}
 
-/**
-* @brief Allocated one message memory from current block in used for rx.
-*
-* @param[in] port_id PC802 chip number,start with 0
-* @param[in] queue_id Queue Number for non-ethernet traffic, start with 1
-* @param[in] rx_blks input+output, pointers to message body
-* @param[in] nb_blks input, maximum number of messages
-* @return return received message numbers
-*/
-uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
-    PC802_Mem_Block_t **rx_blks, uint16_t nb_blks);
-uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
-    PC802_Mem_Block_t **tx_blks, uint16_t nb_blks);
+#define  DBLOG(format, ...) \
+    printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
 
-uint64_t *pc802_get_debug_mem(uint16_t port_id);
-void pc802_access_ep_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum, uint32_t cmd);
-void pc802_show_pcie_counter(uint16_t port_id);
-void pc802_show_tx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
-void pc802_show_rx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
-void pc802_show_tx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
-void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter);
+struct PC802_BAR_Ext_t {
+    union {
+        uint32_t _a0[16];
+        struct {
+            volatile uint32_t MB_EPCNT;
+            uint32_t MB_COMMAND;
+            uint32_t MB_ARGS[14];
+        };
+    };
+    union {
+        uint32_t _a1[8];
+        struct {
+            uint32_t MB_RCCNT;
+            uint32_t MB_RESULT;
+        };
+    };
+} __attribute__((__aligned__(32)));
 
-int pc802_download_boot_image(uint16_t port_id);
-int pc802_check_dma_timeout(uint16_t port);
-int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
-uint32_t pc802_vec_read(uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
-uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
+typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
 
 #endif /* _PC802_ETHDEV_H_ */
