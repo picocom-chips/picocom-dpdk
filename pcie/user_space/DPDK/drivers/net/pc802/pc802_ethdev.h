@@ -189,9 +189,6 @@ static inline int isPowerOf2(uint32_t n)
     return n && !(n & (n - 1));
 }
 
-#define  DBLOG(format, ...) \
-    printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
-
 struct PC802_BAR_Ext_t {
     union {
         uint32_t _a0[16];
