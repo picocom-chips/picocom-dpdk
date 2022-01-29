@@ -17,7 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'PCOMware NPU Driver'
+project = 'PCOMware_NPU_Driver_User_Guides'
 copyright = '2021, Picocom'
 author = 'Picocom'
 
