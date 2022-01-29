@@ -31,6 +31,27 @@
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802    0x1001
 
+static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
+{
+    __asm__ volatile ("" : : : "memory");
+    *addr = value;
+    return;
+}
+
+#define PC802_WRITE_REG(reg, value) \
+    pc802_write_reg((volatile uint32_t *)&(reg), (value))
+
+static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
+{
+    uint32_t val;
+    val = *addr;
+    __asm__ volatile ("" : : : "memory");
+    return val;
+}
+
+#define PC802_READ_REG(reg) \
+    pc802_read_reg((volatile uint32_t *)&(reg))
+
 static PC802_BAR_t *gbar;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {

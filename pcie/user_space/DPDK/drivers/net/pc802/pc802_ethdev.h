@@ -8,24 +8,6 @@
 
 #include "pc802_common.h"
 
-static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
-{
-    __asm__ volatile ("" : : : "memory");
-    *addr = value;
-    return;
-}
-
-static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
-{
-    uint32_t val;
-    val = *addr;
-    __asm__ volatile ("" : : : "memory");
-    return val;
-}
-
-#define PC802_WRITE_REG(reg, value) \
-    pc802_write_reg((volatile uint32_t *)&(reg), (value))
-
 struct pc802_mem_block {
     struct pc802_mem_block *next;
     struct pc802_mem_block **first;
@@ -36,9 +18,6 @@ struct pc802_mem_block {
     uint8_t  eop;
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
-
-#define PC802_READ_REG(reg) \
-    pc802_read_reg((volatile uint32_t *)&(reg))
 
 PC802_BAR_t * pc802_get_BAR(uint16_t port_id);
 
