@@ -30,7 +30,8 @@
 #include "pc802_ethdev.h"
 
 #define PCI_VENDOR_PICOCOM          0x1EC4
-#define PCI_DEVICE_PICOCOM_PC802    0x1001
+#define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
+#define PCI_DEVICE_PICOCOM_PC802    0x0802
 
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
@@ -57,6 +58,7 @@ static PC802_BAR_t *gbar;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
+    { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802_OLD) },
     { .vendor_id = 0, /* sentinel */ },
 };
 
