@@ -29,15 +29,10 @@ typedef struct PC802_BAR_t {
         PC802_CacheLine_t _cahce_line;
         struct {
             uint32_t DEVEN;
+            uint32_t DEVRDY;
             uint32_t DBAL;
             uint32_t DBAH;
             uint32_t ULDMAN;
-        };
-    };
-    union {
-        PC802_CacheLine_t _cahce_line_devrdy;
-        struct {
-            uint32_t DEVRDY;
         };
     };
     union {
