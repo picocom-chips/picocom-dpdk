@@ -1540,7 +1540,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     pc802_download_boot_image(data->port_id);
 
-    bar->BOOTRCCNT = 0xFFFFFFFF;
     DBLOG("Wait for DEVRDY = 2 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
@@ -1645,7 +1644,32 @@ static int pc802_download_boot_image(uint16_t port)
             usleep(1);
         printf("BAR->BOOTRCCNT = %u  Finish downloading %u bytes\n", bar->BOOTRCCNT, N);
         N = 0;
+        if (*BOOTEPCNT == 8) {
+            printf("Finish dowloading SSBL !\n");
+            *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
+            break;
+        }
     } while (1);
+
+    while (*BOOTEPCNT != 0); //wait SSBL clear BOOTEPCNT
+    *BOOTRCCNT = 0; //sync with SSBL
+    usleep(1000); // wait 1s to assure PC802 detect BOOTRCCNT=0
+
+    printf("Begin to download the 3rd stage image !\n");
+    do {
+        N = fread(pimg, 1, tsize, fp);
+        if (N < 4) {
+            *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
+            break;
+        }
+        rte_wmb();
+        (*BOOTRCCNT)++;
+        while(*BOOTRCCNT != *BOOTEPCNT)
+            usleep(1);
+        printf("BAR->BOOTRCCNT = %u  Finish downloading %u bytes\n", bar->BOOTRCCNT, N);
+        N = 0;
+    } while (1);
+    printf("Finish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
     fclose(fp);
