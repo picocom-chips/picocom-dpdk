@@ -1624,9 +1624,9 @@ static int pc802_download_boot_image(uint16_t port)
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
-    FILE *fp = fopen("PC802.img", "rb");
+    FILE *fp = fopen("pc802.img", "rb");
     if (NULL==fp) {
-        DBLOG("Failed to open PC802.img .\n");
+        DBLOG("Failed to open pc802.img .\n");
         return -1;
     }
 
