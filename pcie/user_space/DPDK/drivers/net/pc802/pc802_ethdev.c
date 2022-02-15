@@ -248,9 +248,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         mblk->first = &rxq->mpool.first;
         mblk->alloced = 0;
         rxq->mpool.first = mblk;
-        DBLOG("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+        DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
             queue_id, k, mz->iova, mz->addr);
-        DBLOG("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+        DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
             queue_id, k, mblk->buf_phy_addr, &mblk[1]);
     }
 
@@ -263,7 +263,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxep->mblk->alloced = 1;
         rxdp->phy_addr = rxep->mblk->buf_phy_addr;
         rxdp->length = 0;
-        DBLOG("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
+        DBLOG_INFO("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
         rxep++;
         rxdp++;
     }
@@ -329,9 +329,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         mblk->first = &txq->mpool.first;
         mblk->alloced = 0;
         txq->mpool.first = mblk;
-        DBLOG("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+        DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
             queue_id, k, mz->iova, mz->addr);
-        DBLOG("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+        DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
             queue_id, k, mblk->buf_phy_addr, &mblk[1]);
     }
 
