@@ -201,7 +201,7 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize)
 int pcxxCtrlSend(const char* buf, uint32_t bufLen)
 {
     uint32_t ret;
-    RTE_ASSERT(0 == (bufLen & 3));
+    //RTE_ASSERT(0 == (bufLen & 3));
     if (NULL == pccxxWriteHandle[PCXX_CTRL]) {
         ctrl_length += bufLen;
         return 0;
