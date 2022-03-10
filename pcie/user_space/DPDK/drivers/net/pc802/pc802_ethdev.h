@@ -76,6 +76,7 @@ typedef struct PC802_BAR_t {
 		struct {
 			uint32_t BOOTEPCNT;
 			uint32_t BOOTERROR;
+            uint32_t BOOTDEBUG;
 		};
     };
     union {

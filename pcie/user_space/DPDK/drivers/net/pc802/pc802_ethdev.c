@@ -185,6 +185,7 @@ static int pc802_download_boot_image(uint16_t port);
 static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(    uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
+static void pc802_monitor_pcie_trace(PC802_BAR_t *bar);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1038,6 +1039,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
+        pc802_monitor_pcie_trace(bar);
     } while (3 != devRdy);
     DBLOG("DEVEN = 1, DEVRDY = 3\n");
 
@@ -1467,6 +1469,21 @@ static const struct rte_eth_link pmd_link = {
         .link_autoneg = ETH_LINK_FIXED,
 };
 
+static void pc802_monitor_pcie_trace(PC802_BAR_t *bar)
+{
+    static uint32_t v = 0;
+    volatile uint32_t dv;
+    uint16_t fileNo, lineNo;
+
+    dv = bar->BOOTDEBUG;
+    if (dv != v) {
+        fileNo = (dv >> 16) & 0xFFFF;
+        lineNo = dv & 0xFFFF;
+        printf("PC802_PCIE_TRACE: FileNo = %5u  LineNo = %5u\n", fileNo, lineNo);
+        v = dv;
+    }
+}
+
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1521,6 +1538,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 	DBLOG("Wait for DEVRDY = 2 !\n");
         do {
             devRdy = PC802_READ_REG(bar->DEVRDY);
+            pc802_monitor_pcie_trace(bar);
         } while (2 != devRdy);
         DBLOG("PC802 bootworker has done: DEVEN = 0, DEVRDY = 2\n");
         return 0;
@@ -1529,6 +1547,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("Wait for DEVRDY = 1 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
+        pc802_monitor_pcie_trace(bar);
     } while (1 != devRdy);
     DBLOG("DEVEN = 0, DEVRDY = 1\n");
 
@@ -1543,6 +1562,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("Wait for DEVRDY = 2 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
+        pc802_monitor_pcie_trace(bar);
     } while (2 != devRdy);
     DBLOG("DEVEN = 0, DEVRDY = 2\n");
 
