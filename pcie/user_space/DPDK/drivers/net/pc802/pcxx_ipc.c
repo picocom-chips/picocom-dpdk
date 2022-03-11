@@ -221,6 +221,7 @@ int pcxxCtrlRecv(void)
     uint32_t rLen = 0;
     uint32_t offset;
     int ret;
+    static uint32_t ctrlCnt = 0;
 
     if (NULL == rx_ctrl_buf) {
         num_rx = pc802_rx_mblk_burst(0, QID_CTRL, &mblk_ctrl, 1);
@@ -244,7 +245,11 @@ int pcxxCtrlRecv(void)
         }
     }
     uint32_t _len = mblk_ctrl->pkt_length;
+    if (ctrlCnt < 100) {
+        printf("Rx-Ctrl[%2u].pkt_length = %u\n", ctrlCnt, _len);
+    }
     offset = 0;
+    uint32_t subCnt = 0;
     while (_len > 0) {
         if (NULL == pccxxReadHandle[PCXX_CTRL])
             break;
@@ -253,9 +258,15 @@ int pcxxCtrlRecv(void)
             break;
         rLen = ret;
         RTE_ASSERT(0 == (rLen & 3));
+        RTE_ASSERT(rLen <= _len);
         _len -= rLen;
         offset += rLen;
+        subCnt++;
+        if (subCnt > 5) {
+            printf("Number of Sub Ctrl msgs[%2u] = %u > 5\n", ctrlCnt, subCnt);
+        }
     }
+    ctrlCnt++;
 
     RTE_ASSERT(0 == _len);
 
