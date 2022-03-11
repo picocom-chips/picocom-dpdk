@@ -1917,7 +1917,7 @@ static void * pc802_tracer(void *data)
             epcnt = ext->TRACE_EPCNT[core].v;
             rccnt = ext->TRACE_RCCNT[core];
             while (rccnt != epcnt) {
-                idx = ext->TRACE_RCCNT[core] & (PC802_TRACE_FIFO_SIZE - 1);
+                idx = rccnt & (PC802_TRACE_FIFO_SIZE - 1);
                 trc_data = ext->TRACE_DATA[core].d[idx];
                 handle_trace_data(core, trc_data);
                 rccnt++;
