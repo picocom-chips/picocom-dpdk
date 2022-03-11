@@ -1906,12 +1906,23 @@ static void * pc802_tracer(void *data)
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
-    uint32_t rccnt, epcnt;
+    uint32_t rccnt;
+    volatile uint32_t rccnt0;
+    volatile uint32_t epcnt;
     struct timespec req;
 
     req.tv_sec = 0;
-    req.tv_nsec = 1000;
+    req.tv_nsec = 50;
 
+    while (1) {
+        epcnt = ext->TRACE_EPCNT[0].v;
+        rccnt0 = ext->TRACE_RCCNT[0];
+        if ((0 == epcnt) && (0 == rccnt0))
+            break;
+        nanosleep(&req, NULL);
+    }
+
+    req.tv_nsec = 1000;
     while (1) {
         for (core = 0; core < 32; core++) {
             epcnt = ext->TRACE_EPCNT[core].v;
