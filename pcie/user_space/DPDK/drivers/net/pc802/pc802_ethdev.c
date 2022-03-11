@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 #include <pthread.h>
 
 #include <rte_common.h>
@@ -185,7 +186,7 @@ static int pc802_download_boot_image(uint16_t port);
 static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(    uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
-static void pc802_monitor_pcie_trace(PC802_BAR_t *bar);
+static void * pc802_tracer(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1039,7 +1040,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-        pc802_monitor_pcie_trace(bar);
     } while (3 != devRdy);
     DBLOG("DEVEN = 1, DEVRDY = 3\n");
 
@@ -1469,21 +1469,6 @@ static const struct rte_eth_link pmd_link = {
         .link_autoneg = ETH_LINK_FIXED,
 };
 
-static void pc802_monitor_pcie_trace(PC802_BAR_t *bar)
-{
-    static uint32_t v = 0;
-    volatile uint32_t dv;
-    uint16_t fileNo, lineNo;
-
-    dv = bar->BOOTDEBUG;
-    if (dv != v) {
-        fileNo = (dv >> 16) & 0xFFFF;
-        lineNo = dv & 0xFFFF;
-        printf("PC802_PCIE_TRACE: FileNo = %5u  LineNo = %5u\n", fileNo, lineNo);
-        v = dv;
-    }
-}
-
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1515,6 +1500,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
+    pthread_t tid;
+    pthread_create(&tid, NULL, pc802_tracer, NULL);
+
     const struct rte_memzone *mz;
     uint32_t tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
@@ -1538,7 +1526,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 	DBLOG("Wait for DEVRDY = 2 !\n");
         do {
             devRdy = PC802_READ_REG(bar->DEVRDY);
-            pc802_monitor_pcie_trace(bar);
         } while (2 != devRdy);
         DBLOG("PC802 bootworker has done: DEVEN = 0, DEVRDY = 2\n");
         return 0;
@@ -1547,7 +1534,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("Wait for DEVRDY = 1 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-        pc802_monitor_pcie_trace(bar);
     } while (1 != devRdy);
     DBLOG("DEVEN = 0, DEVRDY = 1\n");
 
@@ -1562,7 +1548,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("Wait for DEVRDY = 2 !\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-        pc802_monitor_pcie_trace(bar);
     } while (2 != devRdy);
     DBLOG("DEVEN = 0, DEVRDY = 2\n");
 
@@ -1749,7 +1734,7 @@ int pc802_check_dma_timeout(uint16_t port)
     return 0;
 }
 
-#define PC802_BAR_EXT_OFFSET  (6 * 1024)
+#define PC802_BAR_EXT_OFFSET  (4 * 1024)
 
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
 {
@@ -1906,5 +1891,42 @@ uint32_t pc802_vec_read(uint32_t file_id, uint32_t offset, uint32_t address, uin
 uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
 {
     return handle_vec_dump(file_id, address, length);
+}
+
+static inline void handle_trace_data(uint32_t core, uint32_t tdata)
+{
+    printf("PC802-TRACE[%2u]: 0x%08X\n", core, tdata);
+}
+
+static void * pc802_tracer(void *data)
+{
+    data = data;
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+
+    uint32_t core;
+    uint32_t idx;
+    uint32_t trc_data;
+    uint32_t rccnt, epcnt;
+    struct timespec req;
+
+    req.tv_sec = 0;
+    req.tv_nsec = 1000;
+
+    while (1) {
+        for (core = 0; core < 32; core++) {
+            epcnt = ext->TRACE_EPCNT[core].v;
+            rccnt = ext->TRACE_RCCNT[core];
+            while (rccnt != epcnt) {
+                idx = ext->TRACE_RCCNT[core] & (PC802_TRACE_FIFO_SIZE - 1);
+                trc_data = ext->TRACE_DATA[core].d[idx];
+                handle_trace_data(core, trc_data);
+                rccnt++;
+            }
+            rte_wmb();
+            ext->TRACE_RCCNT[core] = rccnt;
+        }
+        nanosleep(&req, NULL);
+    }
+    return NULL;
 }
 

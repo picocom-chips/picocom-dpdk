@@ -190,6 +190,17 @@ static inline int isPowerOf2(uint32_t n)
     return n && !(n & (n - 1));
 }
 
+typedef union TraceEpCnt_u {
+    uint32_t _d[8];
+    volatile uint32_t v;
+} TraceEpCnt_u;
+
+#define PC802_TRACE_FIFO_SIZE   16
+
+typedef struct {
+    uint32_t d[PC802_TRACE_FIFO_SIZE];
+} TraceData_t;
+
 struct PC802_BAR_Ext_t {
     union {
         uint32_t _a0[16];
@@ -206,6 +217,9 @@ struct PC802_BAR_Ext_t {
             uint32_t MB_RESULT;
         };
     };
+    uint32_t TRACE_RCCNT[32];
+    volatile TraceEpCnt_u TRACE_EPCNT[32];
+    TraceData_t TRACE_DATA[32];
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
