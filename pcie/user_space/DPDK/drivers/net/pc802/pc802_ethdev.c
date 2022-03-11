@@ -1893,9 +1893,9 @@ uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
     return handle_vec_dump(file_id, address, length);
 }
 
-static inline void handle_trace_data(uint32_t core, uint32_t tdata)
+static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
-    printf("PC802-TRACE[%2u]: 0x%08X\n", core, tdata);
+    printf("PC802-TRACE[%2u][%5u]: 0x%08X\n", core, rccnt, tdata);
 }
 
 static void * pc802_tracer(void *data)
@@ -1930,7 +1930,7 @@ static void * pc802_tracer(void *data)
             while (rccnt != epcnt) {
                 idx = rccnt & (PC802_TRACE_FIFO_SIZE - 1);
                 trc_data = ext->TRACE_DATA[core].d[idx];
-                handle_trace_data(core, trc_data);
+                handle_trace_data(core, rccnt, trc_data);
                 rccnt++;
             }
             rte_wmb();
