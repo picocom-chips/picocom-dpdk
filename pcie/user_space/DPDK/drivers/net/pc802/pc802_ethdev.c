@@ -233,6 +233,8 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
             sizeof (rxq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
+        DBLOG("ERROR: fail to zmalloc size = %lu for Port %hu Rx queue %hu\n",
+            sizeof (rxq->sw_ring[0]) * nb_desc, port_id, queue_id);
         return -ENOMEM;
     }
 
@@ -241,8 +243,11 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d_%4d",
               dev->data->port_id, queue_id, k);
         mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
-        if (mz == NULL)
+        if (mz == NULL) {
+            DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
+                block_size, port_id, queue_id, k);
             return -ENOMEM;
+        }
         mblk = (PC802_Mem_Block_t *)mz->addr;
         mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
         mblk->pkt_length = 0;
@@ -314,6 +319,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if ((txq->sw_ring = rte_zmalloc("txq->sw_ring",
             sizeof (txq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
+        DBLOG("ERROR: fail to zmalloc size = %lu for Port %hu Tx queue %hu\n",
+            sizeof (txq->sw_ring[0]) * nb_desc, port_id, queue_id);
         return -ENOMEM;
     }
 
@@ -322,8 +329,11 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         snprintf(z_name, sizeof(z_name), "PC802Tx_%2d_%2d_%4d",
               dev->data->port_id, queue_id, k);
         mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
-        if (mz == NULL)
+        if (mz == NULL) {
+            DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Tx queue %hu block %u\n",
+                block_size, port_id, queue_id, k);
             return -ENOMEM;
+        }
         mblk = (PC802_Mem_Block_t *)mz->addr;
         mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
         mblk->pkt_length = 0;
@@ -660,6 +670,8 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
     if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
             sizeof (rxq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
+        DBLOG("Fail to zmalloc size = %lu for eth Rx queue %hu\n",
+            sizeof(rxq->sw_ring[0]) * nb_desc, queue_idx);
         pc802_rx_queue_release(rxq);
         return -ENOMEM;
     }
@@ -771,6 +783,8 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
     if ((txq->sw_ring = rte_zmalloc("txq->sw_ring",
             sizeof(txq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
+        DBLOG("Fail to zmalloc size = %lu for eth Tx queue %hu\n",
+            sizeof(txq->sw_ring[0]) * nb_desc, queue_idx);
         pc802_tx_queue_release(txq);
         return -ENOMEM;
     }
@@ -920,6 +934,8 @@ pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
         if (mbuf == NULL) {
             PMD_INIT_LOG(ERR, "RX mbuf alloc failed "
                      "queue_id=%hu", rxq->queue_id);
+            DBLOG("ERROR: RX mbuf alloc failed "
+                     "queue_id=%hu for desc %u\n", rxq->queue_id, i);
             return -ENOMEM;
         }
 
@@ -1018,9 +1034,12 @@ eth_pc802_start(struct rte_eth_dev *dev)
     DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     socket_id = dev->device->numa_node;
-    mz = rte_memzone_reserve_aligned("PC802DBG", ((uint32_t)160 << 20), socket_id, RTE_MEMZONE_IOVA_CONTIG, 64);
-    if (mz == NULL)
+    uint32_t tsize = ((uint32_t)160 << 20);
+    mz = rte_memzone_reserve_aligned("PC802DBG", tsize, socket_id, RTE_MEMZONE_IOVA_CONTIG, 64);
+    if (mz == NULL) {
+        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
+    }
     adapter->dbg_rccnt = 0;
     adapter->dbg = mz->addr;
     haddr = (uint32_t)(mz->iova >> 32);
@@ -1162,6 +1181,10 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
                    (unsigned) rxq->port_id,
                    (unsigned) rxq->queue_id);
             rte_eth_devices[rxq->port_id].data->rx_mbuf_alloc_failed++;
+            DBLOG("ERROR: RX mbuf alloc failed port_id=%u "
+                   "queue_id=%u",
+                   (unsigned) rxq->port_id,
+                   (unsigned) rxq->queue_id);
             break;
         }
 
@@ -1507,8 +1530,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
             RTE_MEMZONE_IOVA_CONTIG, 64);
-    if (mz == NULL)
+    if (mz == NULL) {
+        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
+    }
     memset(mz->addr, 0, tsize);
     adapter->pDescs = (PC802_Descs_t *)mz->addr;
     adapter->descs_phy_addr = mz->iova;
@@ -1625,6 +1650,10 @@ static int pc802_download_boot_image(uint16_t port)
     int socket_id = pc802_get_socket_id(port);
     mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 64);
+    if (NULL == mz) {
+        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
+        return -ENOMEM;
+    }
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
