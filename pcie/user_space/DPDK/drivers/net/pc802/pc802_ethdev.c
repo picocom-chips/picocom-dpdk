@@ -1934,7 +1934,6 @@ static void * pc802_tracer(void *data)
     uint32_t idx;
     uint32_t trc_data;
     uint32_t rccnt;
-    volatile uint32_t rccnt0;
     volatile uint32_t epcnt;
     struct timespec req;
 
