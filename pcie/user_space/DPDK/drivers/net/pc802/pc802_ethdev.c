@@ -1018,7 +1018,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     socket_id = dev->device->numa_node;
-    mz = rte_memzone_reserve_aligned("PC802DBG", ((uint32_t)160 << 20), socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+    mz = rte_memzone_reserve_aligned("PC802DBG", ((uint32_t)160 << 20), socket_id, RTE_MEMZONE_IOVA_CONTIG, 64);
     if (mz == NULL)
         return -ENOMEM;
     adapter->dbg_rccnt = 0;
@@ -1506,7 +1506,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     const struct rte_memzone *mz;
     uint32_t tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
-            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+            RTE_MEMZONE_IOVA_CONTIG, 64);
     if (mz == NULL)
         return -ENOMEM;
     memset(mz->addr, 0, tsize);
@@ -1624,7 +1624,7 @@ static int pc802_download_boot_image(uint16_t port)
     uint32_t tsize = 64 * 1024;
     int socket_id = pc802_get_socket_id(port);
     mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
-            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+            RTE_MEMZONE_IOVA_CONTIG, 64);
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
