@@ -1898,6 +1898,33 @@ static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tda
     printf("PC802-TRACE[%2u][%5u]: 0x%08X\n", core, rccnt, tdata);
 }
 
+static uint32_t init_pc802_tracer(void)
+{
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    volatile uint32_t rccnt;
+    volatile uint32_t epcnt;
+    uint32_t core;
+
+    epcnt = ext->TRACE_EPCNT[0].v;
+    if (epcnt > PC802_TRACE_FIFO_SIZE)
+        return 0;
+
+    rccnt = ext->TRACE_RCCNT[0];
+    if (rccnt > 0)
+        return 0;
+
+    for (core = 1; core < 32; core++) {
+        epcnt = ext->TRACE_EPCNT[core].v;
+        if (epcnt > 0)
+            return 0;
+
+        rccnt = ext->TRACE_RCCNT[core];
+        if (rccnt > 0)
+            return 0;
+    }
+    return 1;
+}
+
 static void * pc802_tracer(void *data)
 {
     data = data;
@@ -1912,12 +1939,10 @@ static void * pc802_tracer(void *data)
     struct timespec req;
 
     req.tv_sec = 0;
-    req.tv_nsec = 50;
+    req.tv_nsec = 10;
 
     while (1) {
-        epcnt = ext->TRACE_EPCNT[0].v;
-        rccnt0 = ext->TRACE_RCCNT[0];
-        if ((0 == epcnt) && (0 == rccnt0))
+        if (init_pc802_tracer())
             break;
         nanosleep(&req, NULL);
     }
