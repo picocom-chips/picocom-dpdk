@@ -1643,7 +1643,6 @@ static int pc802_download_boot_image(uint16_t port)
         printf("PC802 ELF image has already been downloaded and is running !\n");
         return 0;
     }
-    printf("Begin test_boot_download !\n");
     *BOOTRCCNT = 0;
     const struct rte_memzone *mz;
     uint32_t tsize = 64 * 1024;
@@ -1667,7 +1666,8 @@ static int pc802_download_boot_image(uint16_t port)
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    uint32_t N;
+    uint32_t N, sum;
+    sum = 0;
     do {
         N = fread(pimg, 1, tsize, fp);
         if (N < 4)
@@ -1676,10 +1676,11 @@ static int pc802_download_boot_image(uint16_t port)
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        printf("BAR->BOOTRCCNT = %u  Finish downloading %u bytes\n", bar->BOOTRCCNT, N);
+        sum += N;
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
         if (*BOOTEPCNT == 8) {
-            printf("Finish dowloading SSBL !\n");
+            printf("\nFinish dowloading SSBL !\n");
             *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
             break;
         }
@@ -1690,6 +1691,7 @@ static int pc802_download_boot_image(uint16_t port)
     usleep(1000); // wait 1s to assure PC802 detect BOOTRCCNT=0
 
     printf("Begin to download the 3rd stage image !\n");
+    sum = 0;
     do {
         N = fread(pimg, 1, tsize, fp);
         if (N < 4) {
@@ -1700,10 +1702,11 @@ static int pc802_download_boot_image(uint16_t port)
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        printf("BAR->BOOTRCCNT = %u  Finish downloading %u bytes\n", bar->BOOTRCCNT, N);
+        sum += N;
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
     } while (1);
-    printf("Finish downloading the 3rd stage image !\n");
+    printf("\nFinish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
     fclose(fp);
