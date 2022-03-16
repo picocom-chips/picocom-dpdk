@@ -46,7 +46,6 @@ optional_flags = [
         'PCLMUL',
         'RDRND',
         'RDSEED',
-        'VPCLMULQDQ',
 ]
 foreach f:optional_flags
     if cc.get_define('__@0@__'.format(f), args: machine_args) == '1'
