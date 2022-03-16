@@ -1041,7 +1041,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     socket_id = dev->device->numa_node;
     uint32_t tsize = ((uint32_t)160 << 20);
-    mz = rte_memzone_reserve_aligned("PC802DBG", tsize, socket_id, RTE_MEMZONE_IOVA_CONTIG, 64);
+    mz = rte_memzone_reserve_aligned("PC802DBG", tsize, socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
     if (mz == NULL) {
         DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
@@ -1535,7 +1535,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     const struct rte_memzone *mz;
     uint32_t tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
-            RTE_MEMZONE_IOVA_CONTIG, 64);
+            RTE_MEMZONE_IOVA_CONTIG, 0x10000);
     if (mz == NULL) {
         DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
