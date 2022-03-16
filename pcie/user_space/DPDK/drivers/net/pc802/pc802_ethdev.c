@@ -287,6 +287,8 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
     PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
 
+    DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
+        port_id, queue_id, block_size, block_num, nb_desc);
     return 0;
 }
 
@@ -366,6 +368,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
     PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
 
+    DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
+        port_id, queue_id, block_size, block_num, nb_desc);
     return 0;
 }
 
@@ -692,6 +696,7 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
 
     dev->data->rx_queues[queue_idx] = rxq;
     //pc802_reset_rx_queue(rxq);
+    DBLOG("Succeed: port = %1u queue = %1u nb_desc = %u\n", rxq->port_id, queue_idx, nb_desc);
     return 0;
 }
 
@@ -806,6 +811,7 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
     pc802_reset_tx_queue(txq);
 
     dev->data->tx_queues[queue_idx] = txq;
+    DBLOG("Succeed: port = %1u queue = %1u nb_desc = %u\n", txq->port_id, queue_idx, nb_desc);
     return 0;
 }
 
