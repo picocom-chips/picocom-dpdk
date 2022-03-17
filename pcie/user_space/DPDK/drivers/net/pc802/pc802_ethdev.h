@@ -192,7 +192,10 @@ static inline int isPowerOf2(uint32_t n)
 
 typedef union TraceEpCnt_u {
     uint32_t _d[8];
-    volatile uint32_t v;
+    struct {
+        volatile uint32_t v;
+        volatile uint32_t s;
+    };
 } TraceEpCnt_u;
 
 #define PC802_TRACE_FIFO_SIZE   16

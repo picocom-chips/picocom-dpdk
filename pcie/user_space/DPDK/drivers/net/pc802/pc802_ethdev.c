@@ -1943,15 +1943,9 @@ static uint32_t init_pc802_tracer(void)
     volatile uint32_t epcnt;
     uint32_t core;
 
-    epcnt = ext->TRACE_EPCNT[0].v;
-    if (epcnt > PC802_TRACE_FIFO_SIZE)
+    if (ext->TRACE_EPCNT[0].s > 0)
         return 0;
-
-    rccnt = ext->TRACE_RCCNT[0];
-    if (rccnt > 0)
-        return 0;
-
-    for (core = 1; core < 32; core++) {
+    for (core = 0; core < 32; core++) {
         epcnt = ext->TRACE_EPCNT[core].v;
         if (epcnt > 0)
             return 0;
@@ -1960,6 +1954,8 @@ static uint32_t init_pc802_tracer(void)
         if (rccnt > 0)
             return 0;
     }
+    ext->TRACE_EPCNT[0].s = 1;
+
     return 1;
 }
 
