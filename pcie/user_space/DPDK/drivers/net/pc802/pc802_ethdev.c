@@ -1943,8 +1943,6 @@ static uint32_t init_pc802_tracer(void)
     volatile uint32_t epcnt;
     uint32_t core;
 
-    if (ext->TRACE_EPCNT[0].s > 0)
-        return 0;
     for (core = 0; core < 32; core++) {
         epcnt = ext->TRACE_EPCNT[core].v;
         if (epcnt > 0)
@@ -1955,7 +1953,7 @@ static uint32_t init_pc802_tracer(void)
             return 0;
     }
     ext->TRACE_EPCNT[0].s = 1;
-
+    DBLOG("Succeed checking mini trace initialization !\n");
     return 1;
 }
 

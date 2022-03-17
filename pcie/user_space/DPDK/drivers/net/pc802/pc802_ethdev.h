@@ -194,7 +194,7 @@ typedef union TraceEpCnt_u {
     uint32_t _d[8];
     struct {
         volatile uint32_t v;
-        volatile uint32_t s;
+        uint32_t s;
     };
 } TraceEpCnt_u;
 
