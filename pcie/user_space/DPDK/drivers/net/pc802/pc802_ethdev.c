@@ -1943,6 +1943,8 @@ static uint32_t init_pc802_tracer(void)
     volatile uint32_t epcnt;
     volatile uint32_t sync;
     uint32_t core;
+    uint32_t v;
+    struct timespec req;
 
     sync = PC802_READ_REG(ext->TRACE_EPCNT[0].s);
     if (sync > 0)
@@ -1956,7 +1958,18 @@ static uint32_t init_pc802_tracer(void)
         if (rccnt > 0)
             return 0;
     }
-    PC802_WRITE_REG(ext->TRACE_EPCNT[0].s, 1);
+    DBLOG("Succeed dectecting mini trace zeros !\n");
+    rte_mb();
+
+    req.tv_sec = 0;
+    req.tv_nsec = 1000;
+    v = 1;
+    do {
+        PC802_WRITE_REG(ext->TRACE_EPCNT[0].s, v++);
+        nanosleep(&req, NULL);
+        rte_mb();
+        sync = PC802_READ_REG(ext->TRACE_EPCNT[0].s);
+    } while (0 == sync);
     DBLOG("Succeed checking mini trace initialization !\n");
     return 1;
 }
