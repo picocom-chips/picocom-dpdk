@@ -193,7 +193,7 @@ static inline int isPowerOf2(uint32_t n)
 typedef union TraceEpCnt_u {
     uint32_t _d[8];
     struct {
-        volatile uint32_t v;
+        uint32_t v;
         uint32_t s;
     };
 } TraceEpCnt_u;
@@ -221,7 +221,7 @@ struct PC802_BAR_Ext_t {
         };
     };
     uint32_t TRACE_RCCNT[32];
-    volatile TraceEpCnt_u TRACE_EPCNT[32];
+    TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
 } __attribute__((__aligned__(32)));
 

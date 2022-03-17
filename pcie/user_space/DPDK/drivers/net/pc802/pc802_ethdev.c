@@ -1941,8 +1941,12 @@ static uint32_t init_pc802_tracer(void)
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
     volatile uint32_t rccnt;
     volatile uint32_t epcnt;
+    volatile uint32_t sync;
     uint32_t core;
 
+    sync = PC802_READ_REG(ext->TRACE_RCCNT[0].s);
+    if (sync > 0)
+        return 0;
     for (core = 0; core < 32; core++) {
         epcnt = ext->TRACE_EPCNT[core].v;
         if (epcnt > 0)
@@ -1952,7 +1956,7 @@ static uint32_t init_pc802_tracer(void)
         if (rccnt > 0)
             return 0;
     }
-    ext->TRACE_EPCNT[0].s = 1;
+    PC802_WRITE_REG(ext->TRACE_EPCNT[0].s, 1);
     DBLOG("Succeed checking mini trace initialization !\n");
     return 1;
 }
