@@ -18,6 +18,8 @@
 
 #define PC802_CACHE_LINE_SZ 32
 
+#define PC802_DEBUG_BUF_SIZE    (160 * 1024 * 1024)
+
 struct PC802_CacheLine_t{
     uint32_t _a[8];
 } __attribute__((__aligned__(PC802_CACHE_LINE_SZ)));
@@ -210,7 +212,8 @@ struct PC802_BAR_Ext_t {
         struct {
             volatile uint32_t MB_EPCNT;
             uint32_t MB_COMMAND;
-            uint32_t MB_ARGS[14];
+            uint32_t VEC_EPCNT;
+            uint32_t MB_ARGS[8];
         };
     };
     union {
@@ -218,6 +221,10 @@ struct PC802_BAR_Ext_t {
         struct {
             uint32_t MB_RCCNT;
             uint32_t MB_RESULT;
+            uint32_t VEC_RCCNT;
+            uint32_t VEC_BUFSIZE;
+            uint32_t VEC_BUFADDRL;
+            uint32_t VEC_BUFADDRH;
         };
     };
     uint32_t TRACE_RCCNT[32];

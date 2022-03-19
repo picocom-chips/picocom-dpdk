@@ -173,6 +173,8 @@ struct pc802_adapter {
     uint8_t stopped;
 
     uint64_t *dbg;
+    uint32_t dgb_phy_addrL;
+    uint32_t dgb_phy_addrH;
     uint32_t dbg_rccnt;
 };
 
@@ -1015,8 +1017,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //uint32_t *speeds;
     //int num_speeds;
     //bool autoneg;
-    int socket_id;
-    const struct rte_memzone *mz;
 
     PMD_INIT_FUNC_TRACE();
 
@@ -1039,22 +1039,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PC802_WRITE_REG(bar->DBAH, haddr);
     DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
-    socket_id = dev->device->numa_node;
-    uint32_t tsize = ((uint32_t)160 << 20);
-    mz = rte_memzone_reserve_aligned("PC802DBG", tsize, socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
-    if (mz == NULL) {
-        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
-        return -ENOMEM;
-    }
-    adapter->dbg_rccnt = 0;
-    adapter->dbg = mz->addr;
-    haddr = (uint32_t)(mz->iova >> 32);
-    laddr = (uint32_t)mz->iova;
-    PC802_WRITE_REG(bar->DBGRCAL, laddr);
-    PC802_WRITE_REG(bar->DBGRCAH, haddr);
-    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
-    DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
-
     volatile uint32_t devRdy;
 
     usleep(1000);
@@ -1072,9 +1056,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
     macAddrL = PC802_READ_REG(bar->MACADDRL);
     adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
     adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
-
-    pthread_t tid;
-    pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
 
     PMD_INIT_LOG(DEBUG, "<<");
 
@@ -1529,11 +1510,28 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
+    int socket_id = eth_dev->device->numa_node;
+    uint32_t tsize = PC802_DEBUG_BUF_SIZE;
+    const struct rte_memzone *mz;
+
+    mz = rte_memzone_reserve_aligned("PC802DBG", tsize, socket_id, RTE_MEMZONE_IOVA_CONTIG, 0x10000);
+    if (mz == NULL) {
+        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
+        return -ENOMEM;
+    }
+    adapter->dbg_rccnt = 0;
+    adapter->dbg = mz->addr;
+    adapter->dgb_phy_addrH = (uint32_t)(mz->iova >> 32);
+    adapter->dgb_phy_addrL = (uint32_t)mz->iova;
+    PC802_WRITE_REG(bar->DBGRCAL, adapter->dgb_phy_addrL);
+    PC802_WRITE_REG(bar->DBGRCAH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
+    DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
+
     pthread_t tid;
     pthread_create(&tid, NULL, pc802_tracer, NULL);
 
-    const struct rte_memzone *mz;
-    uint32_t tsize = sizeof(PC802_Descs_t);
+    tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
             RTE_MEMZONE_IOVA_CONTIG, 0x10000);
     if (mz == NULL) {
@@ -1554,7 +1552,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT);
     DBLOG("BOOTEPCNT = 0x%08X\n", BOOTEPCNT);
     if (0xFFFFFFFF == BOOTEPCNT) {
-	DBLOG("Wait for DEVRDY = 2 !\n");
+	    DBLOG("Wait for DEVRDY = 2 !\n");
         do {
             devRdy = PC802_READ_REG(bar->DEVRDY);
         } while (2 != devRdy);
@@ -1575,6 +1573,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              pci_dev->id.device_id);
 
     pc802_download_boot_image(data->port_id);
+
+    pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
 
     DBLOG("Wait for DEVRDY = 2 !\n");
     do {
@@ -1786,23 +1786,25 @@ static void * pc802_process_phy_test_vectors(void *data)
 {
     data = data;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    uint32_t MB_RCCNT;
     volatile uint32_t MB_EPCNT;
     uint32_t re = 1;
 
+    MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
     while (1) {
-        MB_EPCNT = ext->MB_EPCNT;
-        if (MB_EPCNT == ext->MB_RCCNT) {
+        do {
             usleep(10);
-            continue;
-        }
+            MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
+        } while (MB_EPCNT == MB_RCCNT);
         if (ext->MB_COMMAND == 12) {
             re = handle_vec_read(ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
         } else if (ext->MB_COMMAND == 13) {
             re = handle_vec_dump(ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
         }
-        ext->MB_RESULT = (0 == re);
-        rte_wmb();
-        ext->MB_RCCNT++;
+        PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
+        PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
+        MB_RCCNT++;
+        PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
     }
     return NULL;
 }
@@ -1860,7 +1862,7 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
         // Increment line count
         line++;
     }
-    pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
+    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
     fclose(fh_vector);
 
@@ -1868,6 +1870,24 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
         DBLOG("ERROR: EOF! of %s", file_name);
         return -5;
     }
+
+    struct rte_eth_dev *dev = &rte_eth_devices[0];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+    assert(length <= PC802_DEBUG_BUF_SIZE);
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
+    uint32_t vec_rccnt;
+    volatile uint32_t vec_epcnt;
+    vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+    vec_rccnt++;
+    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
+    do {
+        usleep(1);
+        vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
+    } while (vec_epcnt != vec_rccnt);
 
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
@@ -1899,8 +1919,24 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
         return -3;
     }
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(0);
-    pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_UPLINK);
+    struct rte_eth_dev *dev = &rte_eth_devices[0];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    uint32_t *pd = (uint32_t *)adapter->dbg;
+    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
+    volatile uint32_t vec_epcnt;
+    uint32_t vec_rccnt;
+    vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+    do {
+        usleep(1);
+        vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
+    } while (vec_epcnt == vec_rccnt);
+
+    vec_rccnt++;
+    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
 
     // Parse the file
     DBLOG("Dumping to file %s\n", file_name);
