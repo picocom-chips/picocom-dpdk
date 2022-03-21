@@ -234,4 +234,71 @@ struct PC802_BAR_Ext_t {
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
 
+#define MB_NUM_ARGS              8
+#define MB_NUM_HANDLERS          8
+#define MB_HANDSHAKE_HOST_LEGACY 0xBEEFBEEF
+#define MB_HANDSHAKE_HOST_RINGS  0xCAFECAFE
+#define MB_HANDSHAKE_CPU         0xF00DF00D
+#define MB_HANDSHAKE_READY       0xDEADDEAD
+
+typedef enum {
+    MB_EMPTY=0,                 //  0 - Idle, no action to perform
+    MB_PRINTF,                  //  1 - Semi-hosted printf function
+    MB_SIM_STOP,                //  2 - Stop simulation with exit code (0 - ok, 1+ - error)
+    MB_RUN_TESTCASE,            //  3 - Trigger a testcase scenario
+    MB_READ_REGISTER,           //  4 - Perform a word read operation
+    MB_WRITE_REGISTER,          //  5 - Perform a word write operation
+    MB_CONTROL_CPU,             //  6 - Control CPU features (like caching)
+    MB_RUN_SYS_CRG,             //  7 - Trigger system CRG configuration
+    MB_RUN_GRAPH_DEMO_TESTCASE, //  8 - Trigger graph demo test sequence
+    MB_RUN_LPDDR4_TESTCASE,     //  9 - Trigger LPDDR4 test sequence
+    MB_TG_LOAD,                 // 10 - Trigger task graph load (host side)
+    MB_TG_CHECK,                // 11 - Trigger task graph check (host side)
+    MB_VEC_READ,                // 12 - Trigger vector read (host side)
+    MB_VEC_DUMP,                // 13 - Trigger vector dump (host side)
+    MB_ATLL_ALLOC,              // 14 - ATLL allocate
+    MB_ATLL_RECV_END,           // 15 - ATLL receive
+    MB_ATLL_SEND,               // 16 - ATLL transmit
+    MB_CACHE_WRITEBACK,         // 17 - Trigger cache writeback
+    MB_CACHE_INVALIDATE,        // 18 - Trigger cache invalidation
+    MB_CACHE_FLUSH,             // 19 - Trigger cache flush
+    MB_PING,                    // 20 - Keepalive test (returns arg 0)
+    MB_IRQ_CONTROL,             // 21 - Control IRQ handling
+    MB_IRQ_CAUGHT,              // 22 - Notify interrupt was caught
+    MB_CRC32,                   // 23 - Calculate crc32
+    GPIO_CTRL,                  // 24 - Access and control GPIO
+    VIC_TIMER,                  // 25 - Access and control the XC12 VIC's timer
+    ANALYTICS,                  // 26
+    MB_VEC_BIN_READ,            // 27 - Trigger binary file read (host side)
+    MB_VEC_BIN_DUMP,            // 28 - Trigger binary file dump (host side)
+    MB_RPC_CALL,                // 29 - Trigger RPC call
+    MB_DDR_RUNNING,             // 30 - Notify host DDR is running
+} mailbox_action_t;
+
+typedef struct {
+    mailbox_action_t action;                 // 0x00
+    uint32_t         num_args;               // 0x04
+    uint32_t         retval;                 // 0x08
+    uint32_t         error;                  // 0x0C
+    uint32_t         arguments[MB_NUM_ARGS]; // 0x10+
+} magic_mailbox_t;
+
+typedef struct {
+    uint32_t                   handshake;
+    volatile magic_mailbox_t * cpu_to_host;
+    volatile magic_mailbox_t * host_to_cpu;
+    uint32_t                   c2h_ring_count;
+    uint32_t                   h2c_ring_count;
+    uint32_t                   mailbox_size;
+} mailbox_registry_t;
+
+#define MB_MAX_C2H_MAILBOXES 16
+#define MB_MAX_H2C_MAILBOXES 4
+
+typedef struct {
+    volatile mailbox_registry_t m_mailboxes;
+    volatile magic_mailbox_t    m_cpu_to_host[MB_MAX_C2H_MAILBOXES];
+    volatile magic_mailbox_t    m_host_to_cpu[MB_MAX_H2C_MAILBOXES];
+} mailbox_exclusive;
+
 #endif /* _PC802_ETHDEV_H_ */

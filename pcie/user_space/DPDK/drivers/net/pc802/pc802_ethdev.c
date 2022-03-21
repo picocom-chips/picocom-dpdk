@@ -176,6 +176,9 @@ struct pc802_adapter {
     uint32_t dgb_phy_addrL;
     uint32_t dgb_phy_addrH;
     uint32_t dbg_rccnt;
+
+    mailbox_exclusive *mailbox_pfi;
+    mailbox_exclusive *mailbox_ecpri;
 };
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
@@ -189,6 +192,7 @@ static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(    uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_tracer(void *data);
+static void * pc802_mailbox(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1487,6 +1491,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar;
+    pthread_t tid;
 
     data = eth_dev->data;
     data->nb_rx_queues = 1;
@@ -1510,6 +1515,11 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
+    adapter->mailbox_pfi = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x580);
+    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[4].addr + 0x580);
+
+    pthread_create(&tid, NULL, pc802_mailbox, adapter);
+
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
     const struct rte_memzone *mz;
@@ -1528,7 +1538,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
-    pthread_t tid;
     pthread_create(&tid, NULL, pc802_tracer, NULL);
 
     tsize = sizeof(PC802_Descs_t);
@@ -2046,6 +2055,65 @@ static void * pc802_tracer(void *data)
             ext->TRACE_RCCNT[core] = rccnt;
         }
         nanosleep(&req, NULL);
+    }
+    return NULL;
+}
+
+static void handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
+{
+    uint32_t n = *idx;
+    volatile uint32_t action;
+    volatile uint32_t num_args;
+    do {
+        action = PC802_READ_REG(mb[n].action);
+        if (MB_EMPTY != action ) {
+            num_args = PC802_READ_REG(mb[n].num_args);
+            DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
+            DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
+                mb[n].arguments[2], mb[n].arguments[3]);
+            DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
+                mb[n].arguments[6], mb[n].arguments[7]);
+            rte_mb();
+            PC802_WRITE_REG(mb[n].action, MB_EMPTY);
+            n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
+        }
+    } while (MB_EMPTY != action);
+    *idx = n;
+}
+
+static void * pc802_mailbox(void *data)
+{
+    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
+    mailbox_exclusive *mb_pfi = adapter->mailbox_pfi;
+    uint32_t handshake_pfi[16];
+    uint32_t pfi_idx[16];
+    uint32_t core;
+
+    for (core = 0; core < 16; core++) {
+        PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+        handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
+        pfi_idx[core] = 0;
+    }
+    rte_mb();
+
+    while (1) {
+        for (core = 0; core < 16; core++) {
+            if (MB_HANDSHAKE_CPU == handshake_pfi[core]) {
+                handle_mailbox(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core);
+            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_pfi[core]) {
+                handshake_pfi[core] = PC802_READ_REG(mb_pfi[core].m_mailboxes.handshake);
+                if (0 == handshake_pfi[core]) {
+                    DBLOG("Reset PFI mailbox[%u] !\n", core);
+                    PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+                    handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
+                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_pfi[core]) {
+                } else if (MB_HANDSHAKE_CPU == handshake_pfi[core]) {
+                    DBLOG("PFI mailbox[%u] finish hand-shaking !\n",core);
+                } else {
+                    DBLOG("ERROR: PFI mailbox[%u].handshake = 0x%08X\n", core, handshake_pfi[core]);
+                }
+            }
+        }
     }
     return NULL;
 }
