@@ -2064,7 +2064,7 @@ static void * pc802_tracer(void *data)
 #define PFI_CLM_START   0x03000000
 static char *pfi_img;
 
-char *mb_get_string(uint32_t addr, uint32_t core)
+static char *mb_get_string(uint32_t addr, uint32_t core)
 {
     if (core >= 16)
         return NULL;
@@ -2080,7 +2080,7 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     char *ps = &str[0];
     uint32_t arg_idx = 1;
     char *sub_str;
-    uint32_t i, j;
+    uint32_t j;
 
     ps += sprintf(ps, "[CPU %2u] PRINTF: ", core);
     while (*arg0) {
@@ -2108,6 +2108,7 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
         }
     }
     *ps = 0;
+    assert(arg_idx == num_args);
     printf("%s", str);
     return;
 }
@@ -2149,7 +2150,7 @@ static void * pc802_mailbox(void *data)
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);
     FILE *fp = fopen("pfi_str.img", "rb");
-    fread(pfi_img, 1, PFI_IMG_SIZE, fp);
+    assert(PFI_IMG_SIZE == fread(pfi_img, 1, PFI_IMG_SIZE, fp));
     fclose(fp);
 
     for (core = 0; core < 16; core++) {
