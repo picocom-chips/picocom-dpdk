@@ -276,7 +276,7 @@ typedef enum {
 } mailbox_action_t;
 
 typedef struct {
-    mailbox_action_t action;                 // 0x00
+    uint32_t         action;                 // 0x00
     uint32_t         num_args;               // 0x04
     uint32_t         retval;                 // 0x08
     uint32_t         error;                  // 0x0C
@@ -285,8 +285,8 @@ typedef struct {
 
 typedef struct {
     uint32_t                   handshake;
-    volatile magic_mailbox_t * cpu_to_host;
-    volatile magic_mailbox_t * host_to_cpu;
+    uint32_t                  ptr_cpu_to_host;
+    uint32_t                   ptr_host_to_cpu;
     uint32_t                   c2h_ring_count;
     uint32_t                   h2c_ring_count;
     uint32_t                   mailbox_size;
@@ -296,9 +296,9 @@ typedef struct {
 #define MB_MAX_H2C_MAILBOXES 4
 
 typedef struct {
-    volatile mailbox_registry_t m_mailboxes;
-    volatile magic_mailbox_t    m_cpu_to_host[MB_MAX_C2H_MAILBOXES];
-    volatile magic_mailbox_t    m_host_to_cpu[MB_MAX_H2C_MAILBOXES];
+    mailbox_registry_t m_mailboxes;
+    magic_mailbox_t    m_cpu_to_host[MB_MAX_C2H_MAILBOXES];
+    magic_mailbox_t    m_host_to_cpu[MB_MAX_H2C_MAILBOXES];
 } mailbox_exclusive;
 
 #endif /* _PC802_ETHDEV_H_ */
