@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <pthread.h>
+#include <ctype.h>
 
 #include <rte_common.h>
 #include <rte_interrupts.h>
@@ -2059,6 +2060,58 @@ static void * pc802_tracer(void *data)
     return NULL;
 }
 
+#define PFI_IMG_SIZE    (3*1024*1024)
+#define PFI_CLM_START   0x03000000
+static char *pfi_img;
+
+char *mb_get_string(uint32_t addr, uint32_t core)
+{
+    if (core >= 16)
+        return NULL;
+    return pfi_img + (addr - PFI_CLM_START);
+}
+
+static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
+{
+    uint32_t num_args = PC802_READ_REG(mb->num_args);
+    char str[2048];
+    char formatter[16];
+    char *arg0 = mb_get_string(mb->arguments[0], core);
+    char *ps = &str[0];
+    uint32_t arg_idx = 1;
+    char *sub_str;
+    uint32_t i, j;
+
+    ps += sprintf(ps, "[CPU %2u] PRINTF: ", core);
+    while (*arg0) {
+        if (*arg0 == '%') {
+            formatter[0] = '%';
+            arg0++;
+            j = 1;
+            do {
+                assert(j < 15);
+                formatter[j] = *arg0++;
+                if (isalpha(formatter[j])) {
+                    formatter[j+1] = 0;
+                    break;
+                }
+                j++;
+            } while (1);
+            if (formatter[j] == 's') {
+                sub_str = mb_get_string(mb->arguments[arg_idx++], core);
+                ps += sprintf(ps, formatter, sub_str);
+            } else {
+                ps += sprintf(ps, formatter, mb->arguments[arg_idx++]);
+            }
+        } else {
+            *ps++ = *arg0++;
+        }
+    }
+    *ps = 0;
+    printf("%s", str);
+    return;
+}
+
 static void handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
     uint32_t n = *idx;
@@ -2067,12 +2120,16 @@ static void handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
     do {
         action = PC802_READ_REG(mb[n].action);
         if (MB_EMPTY != action ) {
-            num_args = PC802_READ_REG(mb[n].num_args);
-            DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
-            DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
-                mb[n].arguments[2], mb[n].arguments[3]);
-            DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
-                mb[n].arguments[6], mb[n].arguments[7]);
+            if (MB_PRINTF == action) {
+                handle_mb_printf(&mb[n], core);
+            } else {
+                num_args = PC802_READ_REG(mb[n].num_args);
+                DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
+                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
+                    mb[n].arguments[2], mb[n].arguments[3]);
+                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
+                    mb[n].arguments[6], mb[n].arguments[7]);
+            }
             rte_mb();
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
@@ -2088,6 +2145,12 @@ static void * pc802_mailbox(void *data)
     uint32_t handshake_pfi[16];
     uint32_t pfi_idx[16];
     uint32_t core;
+
+    pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
+    assert(NULL != pfi_img);
+    FILE *fp = fopen("pfi_str.img", "rb");
+    fread(pfi_img, 1, PFI_IMG_SIZE, fp);
+    fclose(fp);
 
     for (core = 0; core < 16; core++) {
         PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
