@@ -2064,11 +2064,19 @@ static void * pc802_tracer(void *data)
 #define PFI_CLM_START   0x03000000
 static char *pfi_img;
 
+#define ECPRI_IMG_SIZE    0x1C0000
+#define ECPRI_CLM_START   0x03000000
+static char *ecpri_img;
+
 static char *mb_get_string(uint32_t addr, uint32_t core)
 {
-    if (core >= 16)
+    if (core < 16) {
+        return pfi_img + (addr - PFI_CLM_START);
+    } else if (core < 32) {
+        return ecpri_img + (addr - ECPRI_CLM_START);
+    } else {
         return NULL;
-    return pfi_img + (addr - PFI_CLM_START);
+    }
 }
 
 static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
@@ -2143,8 +2151,11 @@ static void * pc802_mailbox(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     mailbox_exclusive *mb_pfi = adapter->mailbox_pfi;
+    mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
     uint32_t handshake_pfi[16];
     uint32_t pfi_idx[16];
+    uint32_t handshake_ecpri[16];
+    uint32_t ecpri_idx[16];
     uint32_t core;
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
@@ -2153,10 +2164,20 @@ static void * pc802_mailbox(void *data)
     assert(PFI_IMG_SIZE == fread(pfi_img, 1, PFI_IMG_SIZE, fp));
     fclose(fp);
 
+    ecpri_img = rte_zmalloc("ECPRI_STR_IMG", ECPRI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
+    assert(NULL != ecpri_img);
+    fp = fopen("ecpri_str.img", "rb");
+    assert(ECPRI_IMG_SIZE == fread(ecpri_img, 1, ECPRI_IMG_SIZE, fp));
+    fclose(fp);
+
     for (core = 0; core < 16; core++) {
         PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
         handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
         pfi_idx[core] = 0;
+
+        PC802_WRITE_REG(mb_ecpri[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+        handshake_ecpri[core] = MB_HANDSHAKE_HOST_RINGS;
+        ecpri_idx[core] = 0;
     }
     rte_mb();
 
@@ -2175,6 +2196,23 @@ static void * pc802_mailbox(void *data)
                     DBLOG("PFI mailbox[%u] finish hand-shaking !\n",core);
                 } else {
                     DBLOG("ERROR: PFI mailbox[%u].handshake = 0x%08X\n", core, handshake_pfi[core]);
+                }
+            }
+        }
+        for (core = 0; core < 16; core++) {
+            if (MB_HANDSHAKE_CPU == handshake_ecpri[core]) {
+                handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
+            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_ecpri[core]) {
+                handshake_ecpri[core] = PC802_READ_REG(mb_ecpri[core].m_mailboxes.handshake);
+                if (0 == handshake_ecpri[core]) {
+                    DBLOG("Reset eCPRI mailbox[%u] !\n", core);
+                    PC802_WRITE_REG(mb_ecpri[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+                    handshake_ecpri[core] = MB_HANDSHAKE_HOST_RINGS;
+                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_ecpri[core]) {
+                } else if (MB_HANDSHAKE_CPU == handshake_ecpri[core]) {
+                    DBLOG("eCPRI mailbox[%u] finish hand-shaking !\n",core);
+                } else {
+                    DBLOG("ERROR: eCPRI mailbox[%u].handshake = 0x%08X\n", core, handshake_ecpri[core]);
                 }
             }
         }
