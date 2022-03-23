@@ -285,7 +285,7 @@ typedef struct {
 
 typedef struct {
     uint32_t                   handshake;
-    uint32_t                  ptr_cpu_to_host;
+    uint32_t                   ptr_cpu_to_host;
     uint32_t                   ptr_host_to_cpu;
     uint32_t                   c2h_ring_count;
     uint32_t                   h2c_ring_count;

@@ -1516,8 +1516,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
-    adapter->mailbox_pfi = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x580);
-    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[4].addr + 0x580);
+    adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x0180000 + 0x580);
+    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x1180000 + 0x580);
 
     pthread_create(&tid, NULL, pc802_mailbox, adapter);
 
@@ -2151,9 +2151,9 @@ static void * pc802_mailbox(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     mailbox_exclusive *mb_pfi = adapter->mailbox_pfi;
-    mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
     uint32_t handshake_pfi[16];
     uint32_t pfi_idx[16];
+    mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
     uint32_t handshake_ecpri[16];
     uint32_t ecpri_idx[16];
     uint32_t core;
@@ -2203,6 +2203,7 @@ static void * pc802_mailbox(void *data)
                 }
             }
         }
+
         for (core = 0; core < 16; core++) {
             if (MB_HANDSHAKE_CPU == handshake_ecpri[core]) {
                 handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
@@ -2220,6 +2221,7 @@ static void * pc802_mailbox(void *data)
                 }
             }
         }
+
         nanosleep(&req, NULL);
     }
     return NULL;
