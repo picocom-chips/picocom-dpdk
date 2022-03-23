@@ -2181,6 +2181,10 @@ static void * pc802_mailbox(void *data)
     }
     rte_mb();
 
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 1000;
+
     while (1) {
         for (core = 0; core < 16; core++) {
             if (MB_HANDSHAKE_CPU == handshake_pfi[core]) {
@@ -2216,6 +2220,7 @@ static void * pc802_mailbox(void *data)
                 }
             }
         }
+        nanosleep(&req, NULL);
     }
     return NULL;
 }
