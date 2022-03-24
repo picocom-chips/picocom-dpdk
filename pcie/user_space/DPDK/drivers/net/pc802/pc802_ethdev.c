@@ -1986,11 +1986,11 @@ static uint32_t init_pc802_tracer(void)
     if (sync > 0)
         return 0;
     for (core = 0; core < 32; core++) {
-        epcnt = ext->TRACE_EPCNT[core].v;
+        epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
         if (epcnt > 0)
             return 0;
 
-        rccnt = ext->TRACE_RCCNT[core];
+        rccnt = PC802_READ_REG(ext->TRACE_RCCNT[core]);
         if (rccnt > 0)
             return 0;
     }
