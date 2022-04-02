@@ -1516,8 +1516,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
-    adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x0180000 + 0x580);
-    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x1180000 + 0x580);
+    adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x580);
+    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[3].addr + 0x580);
 
     pthread_create(&tid, NULL, pc802_mailbox, adapter);
 
