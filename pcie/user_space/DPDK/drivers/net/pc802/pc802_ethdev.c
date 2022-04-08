@@ -1987,44 +1987,6 @@ static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tda
     printf("PC802-TRACE[%2u][%5u]: 0x%08X\n", core, rccnt, tdata);
 }
 
-static uint32_t init_pc802_tracer(void)
-{
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
-    volatile uint32_t rccnt;
-    volatile uint32_t epcnt;
-    volatile uint32_t sync;
-    uint32_t core;
-    uint32_t v;
-    struct timespec req;
-
-    sync = PC802_READ_REG(ext->TRACE_EPCNT[0].s);
-    if (sync > 0)
-        return 0;
-    for (core = 0; core < 32; core++) {
-        epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
-        if (epcnt > 0)
-            return 0;
-
-        rccnt = PC802_READ_REG(ext->TRACE_RCCNT[core]);
-        if (rccnt > 0)
-            return 0;
-    }
-    DBLOG("Succeed dectecting mini trace zeros !\n");
-    rte_mb();
-
-    req.tv_sec = 0;
-    req.tv_nsec = 1000;
-    v = 1;
-    do {
-        PC802_WRITE_REG(ext->TRACE_EPCNT[0].s, v++);
-        nanosleep(&req, NULL);
-        rte_mb();
-        sync = PC802_READ_REG(ext->TRACE_EPCNT[0].s);
-    } while (0 == sync);
-    DBLOG("Succeed checking mini trace initialization !\n");
-    return 1;
-}
-
 static void * pc802_tracer(void *data)
 {
     data = data;
@@ -2038,14 +2000,6 @@ static void * pc802_tracer(void *data)
     struct timespec req;
 
     req.tv_sec = 0;
-    req.tv_nsec = 10;
-
-    while (1) {
-        if (init_pc802_tracer())
-            break;
-        nanosleep(&req, NULL);
-    }
-
     req.tv_nsec = 1000;
     while (1) {
         for (core = 0; core < 32; core++) {
