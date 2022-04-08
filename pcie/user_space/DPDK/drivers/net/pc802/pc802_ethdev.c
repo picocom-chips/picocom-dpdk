@@ -180,6 +180,7 @@ struct pc802_adapter {
 
     mailbox_exclusive *mailbox_pfi;
     mailbox_exclusive *mailbox_ecpri;
+    mailbox_exclusive *mailbox_dsp[3];
 };
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
@@ -1493,6 +1494,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar;
     pthread_t tid;
+    uint32_t dsp;
 
     data = eth_dev->data;
     data->nb_rx_queues = 1;
@@ -1518,6 +1520,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
     adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x580);
+    for (dsp = 0; dsp < 3; dsp++) {
+        adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
+    }
 
     pthread_create(&tid, NULL, pc802_mailbox, adapter);
 
@@ -2068,12 +2073,17 @@ static char *pfi_img;
 #define ECPRI_CLM_START   0x03000000
 static char *ecpri_img;
 
+#define DSP_IMG_SIZE    (1024*1024+256*1024)
+static char *dsp_img[3];
+
 static char *mb_get_string(uint32_t addr, uint32_t core)
 {
     if (core < 16) {
         return pfi_img + (addr - PFI_CLM_START);
     } else if (core < 32) {
         return ecpri_img + (addr - ECPRI_CLM_START);
+    } else if (core < 35) {
+        return dsp_img[core - 32] + addr;
     } else {
         return NULL;
     }
@@ -2157,6 +2167,10 @@ static void * pc802_mailbox(void *data)
     uint32_t handshake_ecpri[16];
     uint32_t ecpri_idx[16];
     uint32_t core;
+    char dsp_filename[32];
+    mailbox_exclusive *mb_dsp[3];
+    uint32_t handshake_dsp[3];
+    uint32_t dsp_idx[3];
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);
@@ -2170,6 +2184,15 @@ static void * pc802_mailbox(void *data)
     assert(ECPRI_IMG_SIZE == fread(ecpri_img, 1, ECPRI_IMG_SIZE, fp));
     fclose(fp);
 
+    for (core = 0; core < 3; core++) {
+        snprintf(dsp_filename, sizeof(dsp_filename), "dsp_str_%1u.img", core);
+        dsp_img[core] = rte_zmalloc(dsp_filename, DSP_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
+        assert(NULL != dsp_img[core]);
+        fp = fopen(dsp_filename, "rb");
+        assert(DSP_IMG_SIZE == fread(dsp_img[core], 1, DSP_IMG_SIZE, fp));
+        fclose(fp);
+    }
+
     for (core = 0; core < 16; core++) {
         PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
         handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
@@ -2178,6 +2201,12 @@ static void * pc802_mailbox(void *data)
         PC802_WRITE_REG(mb_ecpri[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
         handshake_ecpri[core] = MB_HANDSHAKE_HOST_RINGS;
         ecpri_idx[core] = 0;
+    }
+    for (core = 0; core < 3; core++) {
+        mb_dsp[core] = adapter->mailbox_dsp[core];
+        PC802_WRITE_REG(mb_dsp[core]->m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+        handshake_dsp[core] = MB_HANDSHAKE_HOST_RINGS;
+        dsp_idx[core] = 0;
     }
     rte_mb();
 
@@ -2218,6 +2247,24 @@ static void * pc802_mailbox(void *data)
                     DBLOG("eCPRI mailbox[%u] finish hand-shaking !\n",core);
                 } else {
                     DBLOG("ERROR: eCPRI mailbox[%u].handshake = 0x%08X\n", core, handshake_ecpri[core]);
+                }
+            }
+        }
+
+        for (core = 0; core < 3; core++) {
+            if (MB_HANDSHAKE_CPU == handshake_dsp[core]) {
+                handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_dsp[core]) {
+                handshake_dsp[core] = PC802_READ_REG(mb_dsp[core]->m_mailboxes.handshake);
+                if (0 == handshake_dsp[core]) {
+                    DBLOG("Reset DSP mailbox[%u] !\n", core);
+                    PC802_WRITE_REG(mb_dsp[core]->m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
+                    handshake_dsp[core] = MB_HANDSHAKE_HOST_RINGS;
+                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_dsp[core]) {
+                } else if (MB_HANDSHAKE_CPU == handshake_dsp[core]) {
+                    DBLOG("DSP mailbox[%u] finish hand-shaking !\n",core);
+                } else {
+                    DBLOG("ERROR: DSP mailbox[%u].handshake = 0x%08X\n", core, handshake_dsp[core]);
                 }
             }
         }
