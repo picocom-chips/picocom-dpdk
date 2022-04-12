@@ -1519,7 +1519,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
     adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
-    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + 0x580);
+    adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
     for (dsp = 0; dsp < 3; dsp++) {
         adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
     }
