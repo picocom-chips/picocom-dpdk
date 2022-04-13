@@ -1984,7 +1984,7 @@ uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
 
 static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
-    printf("PC802-TRACE[%2u][%5u]: 0x%08X\n", core, rccnt, tdata);
+    printf("PC802-TRACE[%2u][%5u] = 0x%08X = %u\n", core, rccnt, tdata, tdata);
 }
 
 static void * pc802_tracer(void *data)
