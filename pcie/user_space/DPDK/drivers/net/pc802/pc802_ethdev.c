@@ -1995,24 +1995,26 @@ static void * pc802_tracer(void *data)
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
-    uint32_t rccnt;
+    uint32_t rccnt[32];
     volatile uint32_t epcnt;
     struct timespec req;
+
+    for (core = 0; core < 32; core++)
+        rccnt[core] = 0;
 
     req.tv_sec = 0;
     req.tv_nsec = 1000;
     while (1) {
         for (core = 0; core < 32; core++) {
-            epcnt = ext->TRACE_EPCNT[core].v;
-            rccnt = ext->TRACE_RCCNT[core];
-            while (rccnt != epcnt) {
-                idx = rccnt & (PC802_TRACE_FIFO_SIZE - 1);
-                trc_data = ext->TRACE_DATA[core].d[idx];
-                handle_trace_data(core, rccnt, trc_data);
-                rccnt++;
+            epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
+            while (rccnt[core] != epcnt) {
+                idx = rccnt[core] & (PC802_TRACE_FIFO_SIZE - 1);
+                trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
+                handle_trace_data(core, rccnt[core], trc_data);
+                rccnt[core]++;
             }
             rte_wmb();
-            ext->TRACE_RCCNT[core] = rccnt;
+            PC802_WRITE_REG(ext->TRACE_RCCNT[core], rccnt[core]);
         }
         nanosleep(&req, NULL);
     }
