@@ -2034,13 +2034,44 @@ static char *ecpri_img;
 #define DSP_IMG_SIZE    (1024*1024+256*1024)
 static char *dsp_img[3];
 
+static uint32_t max_pfi_str_addr = 0;
+static uint32_t min_pfi_str_addr = 0xFFFFFFFF;
+static uint32_t max_ecpri_str_addr = 0;
+static uint32_t min_ecpri_str_addr = 0xFFFFFFFF;
+static uint32_t max_dsp_str_addr[3] = {0, 0, 0};
+static uint32_t min_dsp_str_addr[3] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+
 static char *mb_get_string(uint32_t addr, uint32_t core)
 {
     if (core < 16) {
+        if (addr > max_pfi_str_addr) {
+            DBLOG("PFI new Max string addr = 0x%08X\n", addr);
+            max_pfi_str_addr = addr;
+        }
+        if (addr < min_pfi_str_addr) {
+            DBLOG("PFI new Min string addr = 0x%08X\n", addr);
+            min_pfi_str_addr = addr;
+        }
         return pfi_img + (addr - PFI_CLM_START);
     } else if (core < 32) {
+        if (addr > max_ecpri_str_addr) {
+            DBLOG("eCPRI new Max string addr = 0x%08X\n", addr);
+            max_ecpri_str_addr = addr;
+        }
+        if (addr < min_ecpri_str_addr) {
+            DBLOG("eCPRI new Min string addr = 0x%08X\n", addr);
+            min_ecpri_str_addr = addr;
+        }
         return ecpri_img + (addr - ECPRI_CLM_START);
     } else if (core < 35) {
+        if (addr > max_dsp_str_addr[core - 32]) {
+            DBLOG("DSP[%1u] new Max string addr = 0x%08X\n", core - 32, addr);
+            max_dsp_str_addr[core - 32] = addr;
+        }
+        if (addr < min_dsp_str_addr[core - 32]) {
+            DBLOG("DSP[%1u] new Min string addr = 0x%08X\n", core - 32, addr);
+            min_dsp_str_addr[core - 32] = addr;
+        }
         return dsp_img[core - 32] + addr;
     } else {
         return NULL;
