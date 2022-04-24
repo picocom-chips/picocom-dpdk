@@ -2150,16 +2150,15 @@ static void * pc802_mailbox(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     mailbox_exclusive *mb_pfi = adapter->mailbox_pfi;
-    uint32_t handshake_pfi[16];
     uint32_t pfi_idx[16];
     mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
-    uint32_t handshake_ecpri[16];
     uint32_t ecpri_idx[16];
     uint32_t core;
     char dsp_filename[32];
     mailbox_exclusive *mb_dsp[3];
-    uint32_t handshake_dsp[3];
     uint32_t dsp_idx[3];
+    volatile uint32_t handshake;
+    PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);
@@ -2183,79 +2182,34 @@ static void * pc802_mailbox(void *data)
     }
 
     for (core = 0; core < 16; core++) {
-        PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-        handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
         pfi_idx[core] = 0;
-
-        PC802_WRITE_REG(mb_ecpri[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-        handshake_ecpri[core] = MB_HANDSHAKE_HOST_RINGS;
         ecpri_idx[core] = 0;
     }
     for (core = 0; core < 3; core++) {
         mb_dsp[core] = adapter->mailbox_dsp[core];
-        PC802_WRITE_REG(mb_dsp[core]->m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-        handshake_dsp[core] = MB_HANDSHAKE_HOST_RINGS;
         dsp_idx[core] = 0;
     }
-    rte_mb();
 
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 1000;
 
+    do {
+        nanosleep(&req, NULL);
+        handshake = PC802_READ_REG(bar0->MB_HANDSHAKE);
+    } while (MB_HANDSHAKE_CPU != handshake);
+
     while (1) {
         for (core = 0; core < 16; core++) {
-            if (MB_HANDSHAKE_CPU == handshake_pfi[core]) {
-                handle_mailbox(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core);
-            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_pfi[core]) {
-                handshake_pfi[core] = PC802_READ_REG(mb_pfi[core].m_mailboxes.handshake);
-                if (0 == handshake_pfi[core]) {
-                    DBLOG("Reset PFI mailbox[%u] !\n", core);
-                    PC802_WRITE_REG(mb_pfi[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-                    handshake_pfi[core] = MB_HANDSHAKE_HOST_RINGS;
-                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_pfi[core]) {
-                } else if (MB_HANDSHAKE_CPU == handshake_pfi[core]) {
-                    DBLOG("PFI mailbox[%u] finish hand-shaking !\n",core);
-                } else {
-                    DBLOG("ERROR: PFI mailbox[%u].handshake = 0x%08X\n", core, handshake_pfi[core]);
-                }
-            }
+            handle_mailbox(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core);
         }
 
         for (core = 0; core < 16; core++) {
-            if (MB_HANDSHAKE_CPU == handshake_ecpri[core]) {
-                handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
-            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_ecpri[core]) {
-                handshake_ecpri[core] = PC802_READ_REG(mb_ecpri[core].m_mailboxes.handshake);
-                if (0 == handshake_ecpri[core]) {
-                    DBLOG("Reset eCPRI mailbox[%u] !\n", core);
-                    PC802_WRITE_REG(mb_ecpri[core].m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-                    handshake_ecpri[core] = MB_HANDSHAKE_HOST_RINGS;
-                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_ecpri[core]) {
-                } else if (MB_HANDSHAKE_CPU == handshake_ecpri[core]) {
-                    DBLOG("eCPRI mailbox[%u] finish hand-shaking !\n",core);
-                } else {
-                    DBLOG("ERROR: eCPRI mailbox[%u].handshake = 0x%08X\n", core, handshake_ecpri[core]);
-                }
-            }
+            handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
         }
 
         for (core = 0; core < 3; core++) {
-            if (MB_HANDSHAKE_CPU == handshake_dsp[core]) {
-                handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
-            } else if (MB_HANDSHAKE_HOST_RINGS == handshake_dsp[core]) {
-                handshake_dsp[core] = PC802_READ_REG(mb_dsp[core]->m_mailboxes.handshake);
-                if (0 == handshake_dsp[core]) {
-                    DBLOG("Reset DSP mailbox[%u] !\n", core);
-                    PC802_WRITE_REG(mb_dsp[core]->m_mailboxes.handshake, MB_HANDSHAKE_HOST_RINGS);
-                    handshake_dsp[core] = MB_HANDSHAKE_HOST_RINGS;
-                } else if (MB_HANDSHAKE_HOST_RINGS == handshake_dsp[core]) {
-                } else if (MB_HANDSHAKE_CPU == handshake_dsp[core]) {
-                    DBLOG("DSP mailbox[%u] finish hand-shaking !\n",core);
-                } else {
-                    DBLOG("ERROR: DSP mailbox[%u].handshake = 0x%08X\n", core, handshake_dsp[core]);
-                }
-            }
+            handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
         }
 
         nanosleep(&req, NULL);
