@@ -1527,13 +1527,12 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
-    if (NULL != pci_dev->mem_resource[1].addr) {
+    if ((0 != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
         adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
         for (dsp = 0; dsp < 3; dsp++) {
             adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
         }
-
         pthread_create(&tid, NULL, pc802_mailbox, adapter);
     } else {
         PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
@@ -1560,7 +1559,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
-    pthread_create(&tid, NULL, pc802_tracer, adapter);
+    if (0 != pc802_log_get_level(PC802_LOG_EVENT)) {
+        pthread_create(&tid, NULL, pc802_tracer, adapter);
+    }
 
     tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
@@ -1586,7 +1587,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     pc802_download_boot_image(data->port_id);
 
-    pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
+    if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
+        pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
+    }
 
     return 0;
 }
@@ -1997,7 +2000,7 @@ uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
 
 static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
-    printf("PC802-TRACE[%2u][%5u] = 0x%08X = %u\n", core, rccnt, tdata, tdata);
+    PC802_LOG( core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
 }
 
 static void * pc802_tracer(void *data)
@@ -2005,7 +2008,7 @@ static void * pc802_tracer(void *data)
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
-
+    int num = 0;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
@@ -2026,6 +2029,7 @@ static void * pc802_tracer(void *data)
     } while (dev_rdy < 2);
 
     while (1) {
+        num = 0;
         for (core = 0; core < 32; core++) {
             epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
             while (rccnt[core] != epcnt) {
@@ -2033,11 +2037,15 @@ static void * pc802_tracer(void *data)
                 trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
                 handle_trace_data(core, rccnt[core], trc_data);
                 rccnt[core]++;
+                num++;
             }
             rte_wmb();
             PC802_WRITE_REG(ext->TRACE_RCCNT[core], rccnt[core]);
         }
-        nanosleep(&req, NULL);
+        if ( 0 == num ) {
+            pc802_log_flush();
+            nanosleep(&req, NULL);
+        }
     }
     return NULL;
 }
@@ -2108,7 +2116,7 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "[CPU %2u] PRINTF: ", core);
+    ps += sprintf(ps, "PRINTF: ");
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
@@ -2135,7 +2143,7 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     }
     *ps = 0;
     assert(arg_idx == num_args);
-    printf("%s", str);
+    PC802_LOG( core, RTE_LOG_INFO, "%s", str );
     return;
 }
 

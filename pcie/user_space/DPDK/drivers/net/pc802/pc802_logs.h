@@ -5,7 +5,14 @@
 #ifndef _PC802_LOGS_H_
 #define _PC802_LOGS_H_
 
+#include <syslog.h>
 #include <rte_log.h>
+
+enum PC802_LOG_TYPE {
+	PC802_LOG_EVENT,
+	PC802_LOG_PRINT,
+	PC802_LOG_VEC
+};
 
 extern int pc802_logtype_init;
 #define PMD_INIT_LOG(level, fmt, args...) \
@@ -43,6 +50,17 @@ extern int pc802_logtype_driver;
 #define PMD_DRV_LOG(level, fmt, args...) \
 	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
 
+extern const char* pc802_core_name[];
+void pc802_log( uint32_t core, const char *format, ... );
+int  pc802_log_get_level( int type );
+void pc802_log_set_core( uint32_t core, bool flag);
+void pc802_log_change_core( uint32_t core );
+void pc802_log_flush(void);
+#define PC802_LOG( core, type, fmt, args...) \
+	do { \
+		syslog( type, "%s " fmt, pc802_core_name[core], ## args); \
+		pc802_log( core, "%s " fmt, pc802_core_name[core], ## args); \
+	}while (0)
 
 /* log init function shared by e1000 and igb drivers */
 void pc802_init_log(void);
