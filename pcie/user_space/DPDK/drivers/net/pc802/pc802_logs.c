@@ -87,8 +87,6 @@ static void pc802_log_flag_show(void) {
 	for( i=32; i<35; i++ )
 		printf( "%2c ", pc802_logflag_core&((uint64_t)1<<i)?'*':' ' );
 	printf( "\nCTRL ALL    [ Z ]\n");
-	printf( "Log level:EVENT=%d,PRINTF=%d,VEC=%d\n",
-		pc802_log_get_level(PC802_LOG_EVENT),pc802_log_get_level(PC802_LOG_PRINT),pc802_log_get_level(PC802_LOG_VEC));
 }
 
 void pc802_log_set_core( uint32_t core, bool flag) {
@@ -170,7 +168,6 @@ int pc802_log_get_level( int type ) {
 
 void pc802_init_log(void) {
 	if (!pc802_log_initialized) {
-
 		log_stream = fopencookie(NULL, "w+", log_func);
 		if ( NULL==log_stream )
 			return;
@@ -185,8 +182,7 @@ void pc802_init_log(void) {
 		//if (pc802_event_type >= 0)
 		//	rte_log_set_level(pc802_event_type, RTE_LOG_DEBUG);
 		pc802_print_type = rte_log_register("pc802.printf");
-		pc802_vec_type = rte_log_register("pc802.printf");
-		pc802_log_flag_show();
+		pc802_vec_type = rte_log_register("pc802.vec");
 		pc802_log_initialized = 1;
 	}
 }

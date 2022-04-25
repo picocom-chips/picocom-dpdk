@@ -1527,7 +1527,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
-    if ((0 != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
+    printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
+        pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
+
+    if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
         adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
         for (dsp = 0; dsp < 3; dsp++) {
@@ -1559,7 +1562,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
-    if (0 != pc802_log_get_level(PC802_LOG_EVENT)) {
+    if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
         pthread_create(&tid, NULL, pc802_tracer, adapter);
     }
 
