@@ -1046,17 +1046,26 @@ eth_pc802_start(struct rte_eth_dev *dev)
     DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     volatile uint32_t devRdy;
+    volatile uint32_t drv_state;
 
     usleep(1000);
     rte_wmb();
     PC802_WRITE_REG(bar->ULDMAN, 4);
     DBLOG("Set UL DMA Count = 4\n");
-    PC802_WRITE_REG(bar->DEVEN, 1);
 
+    DBLOG("Waiting for PC802 boot(devRdy=5) ...\n");
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (3 != devRdy);
-    DBLOG("DEVEN = 1, DEVRDY = 3\n");
+    } while (devRdy < 5);
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
+
+    PC802_WRITE_REG(bar->DEVEN, 1);
+
+    DBLOG("Waiting for PC802 boot(devRdy=3) ...\n");
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while ((drv_state < 2) || (devRdy < 3));
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
 
     volatile uint32_t macAddrL;
     macAddrL = PC802_READ_REG(bar->MACADDRL);
@@ -1569,25 +1578,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DEVEN, 0);
     usleep(1000);
 
-    volatile uint32_t BOOTEPCNT;
-    volatile uint32_t devRdy;
-    BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT);
-    DBLOG("BOOTEPCNT = 0x%08X\n", BOOTEPCNT);
-    if (0xFFFFFFFF == BOOTEPCNT) {
-	    DBLOG("Wait for DEVRDY = 2 !\n");
-        do {
-            devRdy = PC802_READ_REG(bar->DEVRDY);
-        } while (2 != devRdy);
-        DBLOG("PC802 bootworker has done: DEVEN = 0, DEVRDY = 2\n");
-        return 0;
-    }
-
-    DBLOG("Wait for DEVRDY = 1 !\n");
-    do {
-        devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (1 != devRdy);
-    DBLOG("DEVEN = 0, DEVRDY = 1\n");
-
     adapter->started = 1;
 
     PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
@@ -1597,12 +1587,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
-
-    DBLOG("Wait for DEVRDY = 2 !\n");
-    do {
-        devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (2 != devRdy);
-    DBLOG("DEVEN = 0, DEVRDY = 2\n");
 
     return 0;
 }
@@ -1665,12 +1649,21 @@ static int pc802_download_boot_image(uint16_t port)
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
     volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
+    volatile uint32_t devRdy;
 
-    printf("Begin pc802_download_boot_image,  port = %hu\n", port);
+    DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
-        printf("PC802 ELF image has already been downloaded and is running !\n");
+        DBLOG("PC802 ELF image has already been downloaded and is running !\n");
         return 0;
     }
+
+    DBLOG("Wait for BOOTING DEVRDY 1 ...\n");
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (devRdy<1);
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download ssbl(port=%hu) ...\n",
+        PC802_READ_REG(bar->DRVSTATE), devRdy, port );
+
     *BOOTRCCNT = 0;
     const struct rte_memzone *mz;
     uint32_t tsize = 64 * 1024;
@@ -1684,9 +1677,9 @@ static int pc802_download_boot_image(uint16_t port)
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
-    FILE *fp = fopen("pc802.img", "rb");
+    FILE *fp = fopen("/lib/firmware/pico/pc802.ssbl", "rb");
     if (NULL==fp) {
-        DBLOG("Failed to open pc802.img .\n");
+        DBLOG("Failed to open pc802.ssbl .\n");
         return -1;
     }
 
@@ -1707,23 +1700,35 @@ static int pc802_download_boot_image(uint16_t port)
         sum += N;
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
-        if (*BOOTEPCNT == 8) {
-            printf("\nFinish dowloading SSBL !\n");
-            *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
-            break;
-        }
     } while (1);
 
-    while (*BOOTEPCNT != 0); //wait SSBL clear BOOTEPCNT
-    *BOOTRCCNT = 0; //sync with SSBL
-    usleep(1000); // wait 1s to assure PC802 detect BOOTRCCNT=0
+    *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
+    fclose(fp);
+    DBLOG("Finish dowloading SSBL !\n");
 
-    printf("Begin to download the 3rd stage image !\n");
+    DBLOG("Waiting for PC802 SSBL boot(DEVRDY=2) ...\n");
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (devRdy<2);
+    *BOOTRCCNT = 0x0;
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
+
+    do {
+        devRdy = PC802_READ_REG(bar->DEVRDY);
+    } while (devRdy<3);
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download application(port=%hu) ... \n",
+        PC802_READ_REG(bar->DRVSTATE), devRdy, port );
+
+    fp = fopen("/lib/firmware/pico/pc802.img", "rb");
+    if (NULL==fp) {
+        DBLOG("Failed to open pc802.img .\n");
+        return -1;
+    }
+
     sum = 0;
     do {
         N = fread(pimg, 1, tsize, fp);
         if (N < 4) {
-            *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
             break;
         }
         rte_wmb();
@@ -1734,12 +1739,13 @@ static int pc802_download_boot_image(uint16_t port)
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
     } while (1);
+    *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
     fclose(fp);
 
-    printf("Finish WEAK test_boot_download !\n");
+    printf("Finish pc802 download image !\n");
     return 0;
 }
 
