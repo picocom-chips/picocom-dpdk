@@ -1526,6 +1526,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         }
 
         pthread_create(&tid, NULL, pc802_mailbox, adapter);
+    } else {
+        PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
+        PC802_WRITE_REG(bar->MB_DSP_DIS, 0x7);
+        rte_wmb();
     }
 
     int socket_id = eth_dev->device->numa_node;

@@ -93,6 +93,8 @@ typedef struct PC802_BAR_t {
         struct {
             uint32_t DBGRCAL;
             uint32_t DBGRCAH;
+            uint32_t MB_ANDES_DIS;
+            uint32_t MB_DSP_DIS;
         };
     };
     union {
