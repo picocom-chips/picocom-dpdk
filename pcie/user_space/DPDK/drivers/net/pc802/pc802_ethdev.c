@@ -1551,7 +1551,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
-    pthread_create(&tid, NULL, pc802_tracer, NULL);
+    pthread_create(&tid, NULL, pc802_tracer, adapter);
 
     tsize = sizeof(PC802_Descs_t);
     mz = rte_memzone_reserve_aligned("PC802_DESCS_MR", tsize, eth_dev->data->numa_node,
@@ -1996,7 +1996,8 @@ static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tda
 
 static void * pc802_tracer(void *data)
 {
-    data = data;
+    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
+    PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
 
     uint32_t core;
@@ -2004,6 +2005,7 @@ static void * pc802_tracer(void *data)
     uint32_t trc_data;
     uint32_t rccnt[32];
     volatile uint32_t epcnt;
+    volatile uint32_t dev_rdy;
     struct timespec req;
 
     for (core = 0; core < 32; core++)
@@ -2011,6 +2013,12 @@ static void * pc802_tracer(void *data)
 
     req.tv_sec = 0;
     req.tv_nsec = 1000;
+
+    do {
+        nanosleep(&req, NULL);
+        dev_rdy = PC802_READ_REG(bar0->DEVRDY);
+    } while (dev_rdy < 2);
+
     while (1) {
         for (core = 0; core < 32; core++) {
             epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
