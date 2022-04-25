@@ -1530,6 +1530,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
         PC802_WRITE_REG(bar->MB_DSP_DIS, 0x7);
         rte_wmb();
+        DBLOG("WARN: No PCIe based printf output !\n");
     }
 
     int socket_id = eth_dev->device->numa_node;
