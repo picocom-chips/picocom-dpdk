@@ -2223,7 +2223,7 @@ static void * pc802_mailbox(void *data)
     mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
     uint32_t ecpri_idx[16];
     uint32_t core;
-    char dsp_filename[32];
+    char dsp_filename[256];
     mailbox_exclusive *mb_dsp[3];
     uint32_t dsp_idx[3];
     volatile uint32_t handshake;
