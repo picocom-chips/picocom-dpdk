@@ -2055,10 +2055,17 @@ static void * pc802_tracer(void *data)
 
 #define PFI_IMG_SIZE    (3*1024*1024)
 #define PFI_CLM_START   0x03000000
+#define PFI_CLM_SIZE    (3*1024*1024)
+
 static char *pfi_img;
 
 #define ECPRI_IMG_SIZE    0x1C0000
 #define ECPRI_CLM_START   0x03000000
+#define ECPRI_CIM_START   ECPRI_CLM_START
+#define ECPRI_CIM_SIZE    (256*1024)
+#define ECPRI_CDM_START   0x03100000
+#define ECPRI_CDM_SIZE    (768*1024)
+
 static char *ecpri_img;
 
 #define DSP_IMG_SIZE    (1024*1024+256*1024)
@@ -2071,6 +2078,32 @@ static uint32_t min_ecpri_str_addr = 0xFFFFFFFF;
 static uint32_t max_dsp_str_addr[3] = {0, 0, 0};
 static uint32_t min_dsp_str_addr[3] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
 
+static char *unknown_pfi_str = "Unknown PFI String ";
+static char *unknown_ecpri_str = "Unknown eCPRI String ";
+static char *unknown_dsp_str[3] =
+    {"Unknown DSP 0 String ", "Unknown DSP 1 String ", "Unknown DSP 2 String "};
+
+static int check_pfi_string_range(uint32_t addr)
+{
+    if ((PFI_CLM_START <= addr) && (addr < PFI_CLM_START + PFI_CLM_SIZE))
+        return 1;
+    return 0;
+}
+
+static int check_ecpri_string_range(uint32_t addr)
+{
+    if ((ECPRI_CIM_START <= addr) && (addr < ECPRI_CIM_START + ECPRI_CIM_SIZE))
+        return 1;
+    if ((ECPRI_CDM_START <= addr) && (addr < ECPRI_CDM_START + ECPRI_CDM_SIZE))
+        return 1;
+    return 0;
+}
+
+static int check_dsp_string_range(uint32_t addr)
+{
+    return (addr < 1024*1024);
+}
+
 static char *mb_get_string(uint32_t addr, uint32_t core)
 {
     if (core < 16) {
@@ -2082,7 +2115,9 @@ static char *mb_get_string(uint32_t addr, uint32_t core)
             DBLOG("PFI new Min string addr = 0x%08X\n", addr);
             min_pfi_str_addr = addr;
         }
-        return pfi_img + (addr - PFI_CLM_START);
+        if (check_pfi_string_range(addr))
+            return pfi_img + (addr - PFI_CLM_START);
+        return unknown_pfi_str;
     } else if (core < 32) {
         if (addr > max_ecpri_str_addr) {
             DBLOG("eCPRI new Max string addr = 0x%08X\n", addr);
@@ -2092,7 +2127,9 @@ static char *mb_get_string(uint32_t addr, uint32_t core)
             DBLOG("eCPRI new Min string addr = 0x%08X\n", addr);
             min_ecpri_str_addr = addr;
         }
-        return ecpri_img + (addr - ECPRI_CLM_START);
+        if (check_ecpri_string_range(addr))
+            return ecpri_img + (addr - ECPRI_CLM_START);
+        return unknown_ecpri_str;
     } else if (core < 35) {
         if (addr > max_dsp_str_addr[core - 32]) {
             DBLOG("DSP[%1u] new Max string addr = 0x%08X\n", core - 32, addr);
@@ -2102,7 +2139,9 @@ static char *mb_get_string(uint32_t addr, uint32_t core)
             DBLOG("DSP[%1u] new Min string addr = 0x%08X\n", core - 32, addr);
             min_dsp_str_addr[core - 32] = addr;
         }
-        return dsp_img[core - 32] + addr;
+        if (check_dsp_string_range(addr))
+            return dsp_img[core - 32] + addr;
+        return unknown_dsp_str[core - 32];
     } else {
         return NULL;
     }
