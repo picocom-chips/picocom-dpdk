@@ -2192,18 +2192,18 @@ static void * pc802_mailbox(void *data)
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);
-    FILE *fp = fopen("pfi_str.img", "rb");
+    FILE *fp = fopen("/lib/firmware/pico/pfi_str.img", "rb");
     assert(PFI_IMG_SIZE == fread(pfi_img, 1, PFI_IMG_SIZE, fp));
     fclose(fp);
 
     ecpri_img = rte_zmalloc("ECPRI_STR_IMG", ECPRI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != ecpri_img);
-    fp = fopen("ecpri_str.img", "rb");
+    fp = fopen("/lib/firmware/pico/ecpri_str.img", "rb");
     assert(ECPRI_IMG_SIZE == fread(ecpri_img, 1, ECPRI_IMG_SIZE, fp));
     fclose(fp);
 
     for (core = 0; core < 3; core++) {
-        snprintf(dsp_filename, sizeof(dsp_filename), "dsp_str_%1u.img", core);
+        snprintf(dsp_filename, sizeof(dsp_filename), "/lib/firmware/pico/dsp_str_%1u.img", core);
         dsp_img[core] = rte_zmalloc(dsp_filename, DSP_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
         assert(NULL != dsp_img[core]);
         fp = fopen(dsp_filename, "rb");
