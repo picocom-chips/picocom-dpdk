@@ -1528,12 +1528,16 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
     memset(&bar[1], 0, pci_dev->mem_resource[0].len - sizeof(bar[0]));
-    rte_wmb();
+    rte_mb();
 
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
 
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
+        memset(pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len);
+        memset(pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len);
+        rte_mb();
+
         adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
         adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
         for (dsp = 0; dsp < 3; dsp++) {
