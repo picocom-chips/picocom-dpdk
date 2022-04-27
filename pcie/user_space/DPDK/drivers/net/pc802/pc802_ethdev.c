@@ -2033,11 +2033,6 @@ static void * pc802_tracer(void *data)
     req.tv_sec = 0;
     req.tv_nsec = 1000;
 
-    do {
-        nanosleep(&req, NULL);
-        dev_rdy = PC802_READ_REG(bar0->DEVRDY);
-    } while (dev_rdy < 2);
-
     while (1) {
         num = 0;
         for (core = 0; core < 32; core++) {
@@ -2269,11 +2264,6 @@ static void * pc802_mailbox(void *data)
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 1000;
-
-    do {
-        nanosleep(&req, NULL);
-        handshake = PC802_READ_REG(bar0->MB_HANDSHAKE);
-    } while (MB_HANDSHAKE_CPU != handshake);
 
     while (1) {
         for (core = 0; core < 16; core++) {
