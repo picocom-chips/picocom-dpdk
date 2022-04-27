@@ -170,6 +170,7 @@ struct pc802_adapter {
     struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
     struct pc802_rx_queue  rxq[MAX_UL_CH_NUM];
     struct rte_ether_addr eth_addr;
+    uint16_t port_id;
     uint8_t started;
     uint8_t stopped;
 
@@ -191,8 +192,8 @@ struct pc802_adapter {
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
 static int pc802_download_boot_image(uint16_t port);
 static void * pc802_process_phy_test_vectors(void *data);
-static uint32_t handle_vec_read(    uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
-static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length);
+static uint32_t handle_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
+static uint32_t handle_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_tracer(void *data);
 static void * pc802_mailbox(void *data);
 
@@ -1511,6 +1512,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     data->dev_link = pmd_link;
     data->mac_addrs = &adapter->eth_addr;
 
+    adapter->port_id = data->port_id;
     adapter->eth_addr.addr_bytes[0] = 0x8C;
     adapter->eth_addr.addr_bytes[1] = 0x1F;
     adapter->eth_addr.addr_bytes[2] = 0x64;
@@ -1598,7 +1600,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
-        pthread_create(&tid, NULL, pc802_process_phy_test_vectors, NULL);
+        pthread_create(&tid, NULL, pc802_process_phy_test_vectors, adapter);
     }
 
     return 0;
@@ -1825,8 +1827,8 @@ static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
 
 static void * pc802_process_phy_test_vectors(void *data)
 {
-    data = data;
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     uint32_t MB_RCCNT;
     volatile uint32_t MB_EPCNT;
     uint32_t re = 1;
@@ -1838,9 +1840,9 @@ static void * pc802_process_phy_test_vectors(void *data)
             MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
         } while (MB_EPCNT == MB_RCCNT);
         if (ext->MB_COMMAND == 12) {
-            re = handle_vec_read(ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
+            re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
         } else if (ext->MB_COMMAND == 13) {
-            re = handle_vec_dump(ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
+            re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
         }
         PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
         PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
@@ -1850,7 +1852,7 @@ static void * pc802_process_phy_test_vectors(void *data)
     return NULL;
 }
 
-static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+static uint32_t handle_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
@@ -1881,7 +1883,7 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(0);
+    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
 
     while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
         // Trim trailing newlines
@@ -1912,10 +1914,10 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
         return -5;
     }
 
-    struct rte_eth_dev *dev = &rte_eth_devices[0];
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
     PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
     assert(length <= PC802_DEBUG_BUF_SIZE);
@@ -1937,7 +1939,7 @@ static uint32_t handle_vec_read(uint32_t file_id, uint32_t offset, uint32_t addr
 // -----------------------------------------------------------------------------
 // handle_vec_dump: Handle task vector dump requests
 // -----------------------------------------------------------------------------
-static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
+static uint32_t handle_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
@@ -1960,10 +1962,10 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
         return -3;
     }
 
-    struct rte_eth_dev *dev = &rte_eth_devices[0];
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     uint32_t *pd = (uint32_t *)adapter->dbg;
     PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
     PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
@@ -1998,14 +2000,14 @@ static uint32_t handle_vec_dump(uint32_t file_id, uint32_t address, uint32_t len
     return 0;
 }
 
-uint32_t pc802_vec_read(uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
-    return handle_vec_read(file_id, offset, address, length);
+    return handle_vec_read(port_id, file_id, offset, address, length);
 }
 
-uint32_t pc802_vec_dump(uint32_t file_id, uint32_t address, uint32_t length)
+uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
-    return handle_vec_dump(file_id, address, length);
+    return handle_vec_dump(port_id, file_id, address, length);
 }
 
 static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tdata)
@@ -2016,15 +2018,13 @@ static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tda
 static void * pc802_tracer(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
-    PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(0);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     int num = 0;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
     uint32_t rccnt[32];
     volatile uint32_t epcnt;
-    volatile uint32_t dev_rdy;
     struct timespec req;
 
     for (core = 0; core < 32; core++)
@@ -2228,8 +2228,6 @@ static void * pc802_mailbox(void *data)
     char dsp_filename[256];
     mailbox_exclusive *mb_dsp[3];
     uint32_t dsp_idx[3];
-    volatile uint32_t handshake;
-    PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);

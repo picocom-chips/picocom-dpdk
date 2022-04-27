@@ -657,7 +657,7 @@ static void cmd_vec_read_parsed(void *parsed_result,
                 __attribute__((unused)) void *data)
 {
     struct cmd_vec_read_result *res = parsed_result;
-    pc802_vec_read(res->file_id, res->offset, res->pc802_address, res->length);
+    pc802_vec_read(0, res->file_id, res->offset, res->pc802_address, res->length);
 }
 
 cmdline_parse_inst_t vec_read = {
@@ -699,7 +699,7 @@ static void cmd_vec_dump_parsed(void *parsed_result,
                 __attribute__((unused)) void *data)
 {
     struct cmd_vec_dump_result *res = parsed_result;
-    pc802_vec_dump(res->file_id, res->pc802_address, res->length);
+    pc802_vec_dump(0, res->file_id, res->pc802_address, res->length);
 }
 
 cmdline_parse_inst_t vec_dump = {
