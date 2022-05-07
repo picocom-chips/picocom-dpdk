@@ -67,7 +67,7 @@ void pcxxCtrlClose(void)
 int pcxxOamOpen(const pcxxInfo_s* info)
 {
     if (openOamState != 0) {
-        printf("open Ctrl State = %d \n", openOamState);
+        printf("open Oam State = %d \n", openOamState);
         return -1;
     }
 

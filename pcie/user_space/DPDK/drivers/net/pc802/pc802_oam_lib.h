@@ -34,6 +34,7 @@ typedef enum{
     ECPRI_DU_KPIS_GET_REQ,
     ECPRI_DU_KPIS_GET_RSP,
     ECPRI_TEST_NTFY,
+    ECPRI_ERROR_IND,
 }EcpriOamType_e;
 
 typedef struct{
@@ -115,6 +116,12 @@ typedef struct{
 }EcpriPerfKpis_t;
 
 typedef struct{
+    uint16_t err_code;	            //0-255	Error code defined in Table 4 31
+    uint16_t body_size;             //0-65535	The number of bytes in the body
+    uint8_t req_body[0];		    //The body of the original request
+}OamErrorInd_t;
+
+typedef struct{
     uint16_t MsgId;
     uint16_t MsgSize;
 }OamSubMessageHeader_t;
@@ -130,6 +137,7 @@ typedef struct{
         EcpriDuInternalCfg_t    du_int_cfg;
         EcpriDuCfg_t            du_cfg;
         EcpriPerfKpis_t         kpis;
+        OamErrorInd_t           result;
         uint8_t kpi_rpt_flag;
     }u;
 }OamSubMessage_t;
