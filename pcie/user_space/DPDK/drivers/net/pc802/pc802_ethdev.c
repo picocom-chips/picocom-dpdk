@@ -1495,6 +1495,18 @@ static const struct rte_eth_link pmd_link = {
         .link_autoneg = ETH_LINK_FIXED,
 };
 
+static void pc802_bar_memset(uint32_t *p, uint32_t c, uint32_t u32_cnt)
+{
+    volatile uint32_t *s;
+    s = (volatile uint32_t *)p;
+    while (u32_cnt > 0) {
+        pc802_write_reg(s, c);
+        s++;
+        u32_cnt--;
+    }
+    return;
+}
+
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1529,15 +1541,21 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
-    memset(&bar[1], 0, pci_dev->mem_resource[0].len - sizeof(bar[0]));
+    DBLOG("PC802_BAR[0].vaddr = %p\n", pci_dev->mem_resource[0].addr);
+    pc802_bar_memset((uint32_t *)&bar[1], 0, (pci_dev->mem_resource[0].len - sizeof(bar[0])) / sizeof(uint32_t));
+    DBLOG("Finish clearing reset of BAR 0\n");
     rte_mb();
 
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
 
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
-        memset(pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len);
-        memset(pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len);
+        DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
+        pc802_bar_memset((uint32_t *)pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len / sizeof(uint32_t));
+        DBLOG("Finish clearing BAR 1\n");
+        DBLOG("PC802_BAR[2].vaddr = %p\n", pci_dev->mem_resource[2].addr);
+        pc802_bar_memset((uint32_t *)pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len / sizeof(uint32_t));
+        DBLOG("Finish clearing BAR 2\n");
         rte_mb();
 
         adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
