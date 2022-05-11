@@ -13,6 +13,7 @@ apps = [
         'test-fib',
         'test-flow-perf',
         'test-pc802',
+        'test-pc802-perf',
         'test-pipeline',
         'test-pmd',
         'test-regex',
