@@ -19,9 +19,15 @@
 #include <rte_debug.h>
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
+#include <rte_version.h>
 #include <rte_ether.h>
+#if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
 #include <ethdev_driver.h>
 #include <ethdev_pci.h>
+#else
+#include <rte_ethdev_driver.h>
+#include <rte_ethdev_pci.h>
+#endif
 #include <rte_memory.h>
 #include <rte_eal.h>
 #include <rte_malloc.h>

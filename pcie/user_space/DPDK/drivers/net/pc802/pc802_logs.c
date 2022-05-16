@@ -6,7 +6,12 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <syslog.h>
+#include <rte_version.h>
+#if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
 #include <eal_log.h>
+#else
+#include <rte_log.h>
+#endif
 #include <rte_atomic.h>
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
