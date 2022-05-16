@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <syslog.h>
 #include <rte_version.h>
+#define __RTE_VERSION RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR, RTE_VER_RELEASE)
 #if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
 #include <eal_log.h>
 #else

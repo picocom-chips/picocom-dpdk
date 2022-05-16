@@ -20,6 +20,7 @@
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
 #include <rte_version.h>
+#define __RTE_VERSION RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR, RTE_VER_RELEASE)
 #include <rte_ether.h>
 #if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
 #include <ethdev_driver.h>
