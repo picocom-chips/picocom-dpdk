@@ -1071,6 +1071,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     DBLOG("Waiting for PC802 boot(devRdy=3) ...\n");
     do {
+        drv_state = PC802_READ_REG(bar->DRVSTATE);
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while ((drv_state < 2) || (devRdy < 3));
     DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
