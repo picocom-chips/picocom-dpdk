@@ -49,27 +49,27 @@ typedef struct{
     uint32_t pEcpriNtfyBuf;
     uint32_t pEcpriReqBuf;
     uint32_t om_msg_id;
-}BasicCfg_t;
+}BasicCfg_t __attribute__((__aligned__(1)));
 
 typedef struct EcpriPtpCfg_t{
     uint8_t ptp_enable:1;// 1: enable 0: disable
     uint8_t ptp_step_mode:1;// 1: 1step 0: 2 step
     uint8_t ecpri_step_mode:1;// 1: 1step 0: 2 step
     uint8_t ptp_domain;
-}EcpriPtpCfg_t;
+}EcpriPtpCfg_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint8_t isStaticComp;
     uint8_t method;
     uint8_t comIqWidth;
     uint8_t decomIqWidth;
-}EcpriCompMethodCfg_t;
+}EcpriCompMethodCfg_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint32_t eth_pkt_size;
     uint16_t maxTxPacketSize;
     uint32_t maxTxLateThreshold;
-}EcpriTxRxCfg_t;
+}EcpriTxRxCfg_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint8_t ru_id;
@@ -83,20 +83,20 @@ typedef struct{
     uint32_t T1amin_up;
     uint32_t T1amax_up;
     uint8_t ru_mac[ETH_MAC_ADDR_LEN];
-}EcpriRuCfg_t;
+}EcpriRuCfg_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint8_t pipeline_mode;          //0:non-pipeline,1:pipeline
     uint8_t m_role;                 //1--du 0--ru
     uint8_t outgoing_core_cnt;
     uint8_t ingoing_core_cnt;
-}EcpriDuInternalCfg_t;
+}EcpriDuInternalCfg_t __attribute__((__aligned__(1)));
 
 typedef struct EcpriDuCfg{
     uint8_t ru_cnt;
     uint8_t du_mac[ETH_MAC_ADDR_LEN];
     uint16_t vlan_id;
-}EcpriDuCfg_t;
+}EcpriDuCfg_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint64_t m_rx_total;
@@ -113,18 +113,18 @@ typedef struct{
     uint64_t m_rx_pkt_dupl;         //optional
     uint64_t m_tx_total;
     uint64_t m_tx_total_c;
-}EcpriPerfKpis_t;
+}EcpriPerfKpis_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint16_t err_code;	            //0-255	Error code defined in Table 4 31
     uint16_t body_size;             //0-65535	The number of bytes in the body
     uint8_t req_body[0];		    //The body of the original request
-}OamErrorInd_t;
+}OamErrorInd_t __attribute__((__aligned__(1)));
 
 typedef struct{
     uint16_t MsgId;
     uint16_t MsgSize;
-}OamSubMessageHeader_t;
+}OamSubMessageHeader_t __attribute__((__aligned__(1)));
 
 typedef struct{
     OamSubMessageHeader_t Head;
@@ -139,8 +139,8 @@ typedef struct{
         EcpriPerfKpis_t         kpis;
         OamErrorInd_t           result;
         uint8_t kpi_rpt_flag;
-    }u;
-}OamSubMessage_t;
+    }u __attribute__((__aligned__(1)));
+}OamSubMessage_t __attribute__((__aligned__(1)));
 
 typedef int32_t (*PC802_OAM_CALLBACK_FUNTION)( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num );
 

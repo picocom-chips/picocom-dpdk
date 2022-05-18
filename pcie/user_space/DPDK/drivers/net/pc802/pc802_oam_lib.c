@@ -194,6 +194,9 @@ static uint32_t pc802_oam_recv( const char* buf, uint32_t payloadSize )
 
     switch (mbuf->pkt_type)
     {
+        case OamMsgType_Log:
+        case OamMsgType_Trace:
+            break;
         case OamMsgType_Memdump:
             break;
         default:
