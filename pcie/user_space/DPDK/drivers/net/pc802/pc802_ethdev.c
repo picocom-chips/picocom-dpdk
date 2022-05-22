@@ -204,6 +204,18 @@ static uint32_t handle_vec_dump(uint16_t port, uint32_t file_id, uint32_t addres
 static void * pc802_tracer(void *data);
 static void * pc802_mailbox(void *data);
 
+static int pc802_thread_setname(const char *name)
+{
+    int ret;
+    pthread_t thread_id;
+    char truncated[16];
+
+    thread_id = pthread_self();
+    strlcpy(truncated, name, sizeof(truncated));
+    ret = pthread_setname_np(thread_id, truncated);
+    return ret;
+}
+
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
@@ -1859,6 +1871,8 @@ static void * pc802_process_phy_test_vectors(void *data)
     volatile uint32_t MB_EPCNT;
     uint32_t re = 1;
 
+    pc802_thread_setname("PC802-VEC");
+
     MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
     while (1) {
         do {
@@ -2052,6 +2066,8 @@ static void * pc802_tracer(void *data)
     uint32_t rccnt[32];
     volatile uint32_t epcnt;
     struct timespec req;
+
+    pc802_thread_setname("PC802-TRACE");
 
     for (core = 0; core < 32; core++)
         rccnt[core] = 0;
@@ -2254,6 +2270,8 @@ static void * pc802_mailbox(void *data)
     char dsp_filename[256];
     mailbox_exclusive *mb_dsp[3];
     uint32_t dsp_idx[3];
+
+    pc802_thread_setname("PC802-MB");
 
     pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
     assert(NULL != pfi_img);
