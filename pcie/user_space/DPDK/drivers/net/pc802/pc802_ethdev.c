@@ -1067,6 +1067,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     volatile uint32_t devRdy;
     volatile uint32_t drv_state;
+    uint32_t old_devRdy, old_drv_state;
 
     usleep(1000);
     rte_wmb();
@@ -1077,7 +1078,10 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (devRdy < 5);
-    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
+    old_drv_state = PC802_READ_REG(bar->DRVSTATE);
+    old_devRdy = devRdy;
+    DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
+        PC802_READ_REG(bar->BOOTERROR));
 
     PC802_WRITE_REG(bar->DEVEN, 1);
 
@@ -1085,8 +1089,13 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         drv_state = PC802_READ_REG(bar->DRVSTATE);
         devRdy = PC802_READ_REG(bar->DEVRDY);
+        if ((drv_state != old_drv_state) || (devRdy != old_devRdy)) {
+            DBLOG("DRVSTATE=%u, DEVRDY=%u\n", drv_state, devRdy);
+            old_devRdy = devRdy;
+            old_drv_state = drv_state;
+        }
     } while ((drv_state < 2) || (devRdy < 3));
-    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
+    DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", drv_state, devRdy);
 
     volatile uint32_t macAddrL;
     macAddrL = PC802_READ_REG(bar->MACADDRL);
