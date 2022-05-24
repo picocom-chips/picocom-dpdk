@@ -1076,6 +1076,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     DBLOG("Waiting for PC802 boot(devRdy=5) ...\n");
     do {
+        usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (devRdy < 5);
     old_drv_state = PC802_READ_REG(bar->DRVSTATE);
@@ -1087,6 +1088,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     DBLOG("Waiting for PC802 boot(devRdy=3) ...\n");
     do {
+        usleep(1);
         drv_state = PC802_READ_REG(bar->DRVSTATE);
         devRdy = PC802_READ_REG(bar->DEVRDY);
         if ((drv_state != old_drv_state) || (devRdy != old_devRdy)) {
@@ -1721,6 +1723,7 @@ static int pc802_download_boot_image(uint16_t port)
 
     DBLOG("Wait for BOOTING DEVRDY 1 ...\n");
     do {
+        usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (devRdy<1);
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download ssbl(port=%hu) ...\n",
@@ -1776,6 +1779,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
 
     do {
+        usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (devRdy<3);
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download application(port=%hu) ... \n",
