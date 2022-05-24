@@ -1086,7 +1086,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     PC802_WRITE_REG(bar->DEVEN, 1);
 
-    DBLOG("Waiting for PC802 boot(devRdy=3) ...\n");
+    DBLOG("Waiting for PC802 boot(DRVSTATE=3) ...\n");
     do {
         usleep(1);
         drv_state = PC802_READ_REG(bar->DRVSTATE);
@@ -1096,7 +1096,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
             old_devRdy = devRdy;
             old_drv_state = drv_state;
         }
-    } while ((drv_state != 3) || (devRdy != 3));
+    } while (drv_state != 3);
     DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", drv_state, devRdy);
 
     volatile uint32_t macAddrL;
