@@ -93,13 +93,13 @@ int pc802_oam_send_msg( _UNUSED_ uint16_t port_id, const OamSubMessage_t **sub_m
     for ( i=0; i<msg_num; i++ ){
         sub = NULL;
         pcxxOamAlloc( (char **)&sub, &len );
-        if ( NULL==sub || len<sub_msg[i]->Head.MsgSize ){
-            printf( "Not enough space(%u) for message(%d:%d)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize );
+        if ( NULL==sub || len<sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) ){
+            printf( "Not enough space(%u) for message(%d:%d)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
             pthread_mutex_unlock(&lock);
             return -1;
         }
-        memcpy( (void*)sub, (const void *)(sub_msg[i]), sub_msg[i]->Head.MsgSize );
-        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize );
+        memcpy( (void*)sub, (const void *)(sub_msg[i]), sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
+        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
         msg->Head.SubMsgNum++;
     }
 
@@ -163,7 +163,7 @@ static uint32_t pc802_process_oam_msg( uint16_t port_id, const OamMessage_t *msg
     len -= sizeof(OamMessageHeader_t);
     cur = msg->SubMsg;
     for ( i=0; (i<msg->Head.SubMsgNum)&&(len>sizeof(OamSubMessageHeader_t)); i++ ) {
-        if ( len<cur->Head.MsgSize )
+        if ( len<cur->Head.MsgSize+sizeof(OamSubMessageHeader_t) )
             break;
         sub_index = cur->Head.MsgId-BASIC_CFG_GET_REQ;
         cb_fun = sub_index<ARRAY_SIZE(gSubCbInfo)?gSubCbInfo[sub_index].fun:NULL;
@@ -171,8 +171,8 @@ static uint32_t pc802_process_oam_msg( uint16_t port_id, const OamMessage_t *msg
             cb_fun( gSubCbInfo[sub_index].arg, port_id, &cur, 1 );
         else
             sub[sub_num++] = cur;
-        len -= cur->Head.MsgSize;
-        cur = (const OamSubMessage_t *)((const char *)cur+cur->Head.MsgSize);
+        len -= cur->Head.MsgSize+sizeof(OamSubMessageHeader_t);
+        cur = (const OamSubMessage_t *)((const char *)cur+cur->Head.MsgSize+sizeof(OamSubMessageHeader_t));
     }
 
     cb_fun = gOamCbInfo.fun;

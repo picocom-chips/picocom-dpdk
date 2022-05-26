@@ -394,12 +394,12 @@ static int send_test_msg(const OamSubMessage_t *sub_msg)
     msg->Head.MsgType = PICO_OAM_MSG;
     msg->Head.SubMsgNum = 1;
 
-    memcpy(msg->SubMsg, sub_msg, sub_msg->Head.MsgSize);
+    memcpy(msg->SubMsg, sub_msg, sub_msg->Head.MsgSize+sizeof(OamSubMessageHeader_t));
 
-    end = (uint32_t *)((char *)msg->SubMsg + sub_msg->Head.MsgSize);
+    end = (uint32_t *)((char *)msg->SubMsg + sub_msg->Head.MsgSize+sizeof(OamSubMessageHeader_t));
     *end = OAM_END_FLAG;
 
-    mbuf->pkt_length = sub_msg->Head.MsgSize + sizeof(OamMessage_t);
+    mbuf->pkt_length = sub_msg->Head.MsgSize+sizeof(OamSubMessageHeader_t) + sizeof(OamMessage_t);
     mbuf->pkt_type = 0xa5;
     mbuf->eop = 1;
     pc802_tx_mblk_burst(0, PC802_TRAFFIC_OAM, &mbuf, 1);
@@ -425,7 +425,7 @@ static int case310(void)
 #if 1
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.Head.MsgId=BASIC_CFG_GET_RSP;
-    rsp_msg.Head.MsgSize=sizeof(OamErrorInd_t)+sizeof(OamSubMessageHeader_t);
+    rsp_msg.Head.MsgSize=sizeof(OamErrorInd_t);
     rsp_msg.u.result.err_code = 0;
 #endif
     int ret = -1;
@@ -442,7 +442,7 @@ static int case310(void)
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = BASIC_CFG_GET_REQ;
-    sub_msg.Head.MsgSize = sizeof(BasicCfg_t)+sizeof(OamSubMessageHeader_t);
+    sub_msg.Head.MsgSize = sizeof(BasicCfg_t);
     sub_msg.u.basic_cfg.pcie_enable = 1;
     sub_msg.u.basic_cfg.eth_type = 1;
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
