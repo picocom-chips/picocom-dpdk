@@ -11,7 +11,6 @@
 #include <cmdline.h>
 
 #include <rte_pmd_pc802.h>
-
 #include <pc802_oam_lib.h>
 #include <semaphore.h>
 #include <cmdline_parse_etheraddr.h>
@@ -81,7 +80,7 @@ cmdline_parse_inst_t run_test_case = {
         },
 };
 
-#define SEND_TEST_MSG 1
+#define SEND_TEST_MSG 0
 
 #if SEND_TEST_MSG
 
@@ -148,9 +147,6 @@ static void rsp_msg_test(uint16_t MsgId)
     rsp_msg.u.result.err_code = 0;
     send_test_msg(&rsp_msg);    //for test
 }
-
-
-
 #endif
 
 
@@ -184,7 +180,7 @@ static int32_t oam_set_ecpri_tx_rx_cfg_rsp( void *arg, uint16_t port_id, const O
     return 0;
 }
 
-static int set_ecpri_tx_rx_cfg_handler(uint32_t eth_pkt_size, uint16_t maxTxPacketSize, uint32_t maxTxLateThreshold)
+static int set_ecpri_tx_rx_cfg_handler(uint32_t maxTxLateThreshold)
 {
     oam_decode_data obj;
     OamSubMessage_t sub_msg;
@@ -198,8 +194,6 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t eth_pkt_size, uint16_t maxTxPack
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = TX_RX_SET_REQ;
     sub_msg.Head.MsgSize = sizeof(EcpriTxRxCfg_t);
-    sub_msg.u.tx_rx_cfg.eth_pkt_size = eth_pkt_size;
-    sub_msg.u.tx_rx_cfg.maxTxPacketSize = maxTxPacketSize;
     sub_msg.u.tx_rx_cfg.maxTxLateThreshold = maxTxLateThreshold;
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
@@ -230,8 +224,6 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t eth_pkt_size, uint16_t maxTxPack
 
 struct cmd_ecpri_tx_rx_cfg {
     cmdline_fixed_string_t ecpri_tx_rx_cfg;
-    uint32_t eth_pkt_size;
-    uint16_t maxTxPacketSize;
     uint32_t maxTxLateThreshold;
 };
 
@@ -240,26 +232,20 @@ static void cmd_set_ecpri_tx_rx_cfg_parsed(void *parsed,
                 __attribute__((unused)) void *data)
 {
     struct cmd_ecpri_tx_rx_cfg *cfg = (struct cmd_ecpri_tx_rx_cfg *)parsed;
-    set_ecpri_tx_rx_cfg_handler(cfg->eth_pkt_size, cfg->maxTxPacketSize, cfg->maxTxLateThreshold);
+    set_ecpri_tx_rx_cfg_handler(cfg->maxTxLateThreshold);
 }
 
 cmdline_parse_token_string_t cmd_set_ecpri_tx_rx_cfg =
     TOKEN_STRING_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, ecpri_tx_rx_cfg, "set ecpri tx rx cfg");
-cmdline_parse_token_num_t cmd_set_ecpri_tx_rx_cfg_eth_pkt_size =
-    TOKEN_NUM_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, eth_pkt_size, RTE_UINT32);
-cmdline_parse_token_num_t cmd_set_ecpri_tx_rx_cfg_maxTxPacketSize =
-    TOKEN_NUM_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, maxTxPacketSize, RTE_UINT16);
 cmdline_parse_token_num_t cmd_set_ecpri_tx_rx_cfg_maxTxLateThreshold =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, maxTxLateThreshold, RTE_UINT32);
 
 cmdline_parse_inst_t set_ecpri_tx_rx_cfg = {
     .f = cmd_set_ecpri_tx_rx_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri tx rx cfg <eth_pkt_size> <maxTxPacketSize> <maxTxLateThreshold>",
+    .help_str = "set ecpri tx rx cfg <maxTxLateThreshold>",
     .tokens = {
 	(void*) &cmd_set_ecpri_tx_rx_cfg,
-        (void *)&cmd_set_ecpri_tx_rx_cfg_eth_pkt_size,
-        (void *)&cmd_set_ecpri_tx_rx_cfg_maxTxPacketSize,
         (void *)&cmd_set_ecpri_tx_rx_cfg_maxTxLateThreshold,
         NULL,
         },
@@ -301,7 +287,6 @@ static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = PTP_SET_REQ;
     sub_msg.Head.MsgSize = sizeof(EcpriPtpCfg_t);
-    sub_msg.Head.MsgSize += 2;   //for test 
     sub_msg.u.ptp_cfg.ptp_domain = ptp_domain;
     sub_msg.u.ptp_cfg.ptp_enable = ptp_enable;
     sub_msg.u.ptp_cfg.ptp_step_mode = ptp_step_mode;
@@ -373,8 +358,6 @@ cmdline_parse_inst_t set_ecpri_ptp_cfg = {
         NULL,
         },
 };
-
-
 
 /* oam set ecpri ru cfg*/
 static int32_t oam_set_ecpri_ru_cfg_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num )
@@ -539,7 +522,6 @@ cmdline_parse_inst_t set_ecpri_ru_cfg = {
 /*oam set ecpri du cfg*/
 static int32_t oam_set_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num )
 {
-
     uint32_t size = 0;
 
     if(msg_num > 1)
@@ -560,7 +542,7 @@ static int32_t oam_set_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamS
     return 0;
 }
 
-static int set_ecpri_du_cfg_handler(uint8_t ru_cnt, uint16_t vlan_id, uint8_t *addr_bytes)
+static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t vlan_id, uint8_t *addr_bytes)
 {
     oam_decode_data obj;
     OamSubMessage_t sub_msg;
@@ -576,6 +558,7 @@ static int set_ecpri_du_cfg_handler(uint8_t ru_cnt, uint16_t vlan_id, uint8_t *a
     sub_msg.Head.MsgSize += 2; // for test
     sub_msg.u.du_cfg.ru_cnt = ru_cnt;
     sub_msg.u.du_cfg.vlan_id = vlan_id;
+    sub_msg.u.du_cfg.cp_enable = cp_enable;
     memcpy(sub_msg.u.du_cfg.du_mac, addr_bytes, ETH_MAC_ADDR_LEN);
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
@@ -605,9 +588,10 @@ static int set_ecpri_du_cfg_handler(uint8_t ru_cnt, uint16_t vlan_id, uint8_t *a
 
 struct cmd_ecpri_du_cfg {
     cmdline_fixed_string_t ecpri_du_cfg;
+    uint8_t cp_enable;
     uint8_t ru_cnt;
-    struct rte_ether_addr mac_addr;
     uint16_t vlan_id;
+    struct rte_ether_addr mac_addr;
 };
 
 static void cmd_set_ecpri_du_cfg_parsed(void *parsed,
@@ -615,27 +599,30 @@ static void cmd_set_ecpri_du_cfg_parsed(void *parsed,
                 __attribute__((unused)) void *data)
 {
     struct cmd_ecpri_du_cfg *cfg = (struct cmd_ecpri_du_cfg *)parsed;
-    set_ecpri_du_cfg_handler(cfg->ru_cnt, cfg->vlan_id, cfg->mac_addr.addr_bytes);
+    set_ecpri_du_cfg_handler(cfg->cp_enable, cfg->ru_cnt, cfg->vlan_id, cfg->mac_addr.addr_bytes);
 }
 
 cmdline_parse_token_string_t cmd_set_ecpri_du_cfg =
     TOKEN_STRING_INITIALIZER(struct cmd_ecpri_du_cfg, ecpri_du_cfg, "set ecpri du cfg");
+cmdline_parse_token_num_t cmd_set_ecpri_du_cfg_cp_enable =
+    TOKEN_NUM_INITIALIZER(struct cmd_ecpri_du_cfg, cp_enable, RTE_UINT8);
 cmdline_parse_token_num_t cmd_set_ecpri_du_cfg_ru_cnt =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_du_cfg, ru_cnt, RTE_UINT8);
-cmdline_parse_token_etheraddr_t cmd_set_ecpri_du_cfg_mac_addr =
-                TOKEN_ETHERADDR_INITIALIZER(struct cmd_ecpri_du_cfg, mac_addr);
 cmdline_parse_token_num_t cmd_set_ecpri_du_cfg_vlan_id =
    TOKEN_NUM_INITIALIZER(struct cmd_ecpri_du_cfg, vlan_id, RTE_UINT16);
+cmdline_parse_token_etheraddr_t cmd_set_ecpri_du_cfg_mac_addr =
+                TOKEN_ETHERADDR_INITIALIZER(struct cmd_ecpri_du_cfg, mac_addr);
 
 cmdline_parse_inst_t set_ecpri_du_cfg = {
     .f = cmd_set_ecpri_du_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri du cfg <ru_cnt> <mac addr> <vlan_id>",
+    .help_str = "set ecpri du cfg <cp_enable> <vlan_id> <ru_cnt> <mac addr>",
     .tokens = {
         (void *)&cmd_set_ecpri_du_cfg,
+        (void *)&cmd_set_ecpri_du_cfg_cp_enable,
+        (void *)&cmd_set_ecpri_du_cfg_vlan_id,
         (void *)&cmd_set_ecpri_du_cfg_ru_cnt,
         (void *)&cmd_set_ecpri_du_cfg_mac_addr,
-        (void *)&cmd_set_ecpri_du_cfg_vlan_id,
         NULL,
         },
 };
@@ -749,7 +736,6 @@ cmdline_parse_inst_t set_comp_method_cfg = {
         NULL,
         },
 };
-
 
 
 /*oam get ecpri comp method cfg*/
@@ -870,6 +856,117 @@ cmdline_parse_inst_t get_comp_method_cfg = {
 
 
 
+/*oam get eth mtu cfg*/
+static int32_t oam_get_eth_mtu_cfg_rsp(void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num)
+{
+    uint32_t size = 0;
+
+    if(msg_num > 1)
+    {
+    	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
+    }
+
+    size = sub_msg[0]->Head.MsgSize;
+    if(size > sizeof(OamSubMessage_t)) 
+    {
+    	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
+	size =  sizeof(OamSubMessage_t);
+    }
+
+    memcpy( &((oam_decode_data *)arg)->msg, sub_msg[0], size);
+    sem_post( &((oam_decode_data *)arg)->sem );
+
+    return 0;
+}
+
+static void eth_mtu_cfg_print(EcpriEthMtuCfg_t *cfg)
+{
+	printf("mtu:		%d\n",  cfg->mtu);
+}
+
+static void get_eth_mtu_cfg_decode_data(OamSubMessage_t *oam)
+{
+
+   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   {
+	printf("get eth mtu cfg %d", oam->u.result.err_code);
+   }
+   else if(oam->Head.MsgId == ETH_MTU_GET_RSP)
+   {
+	eth_mtu_cfg_print(&oam->u.mtu_cfg);
+   }
+   else
+   {
+	printf("Line %d, %s msg id %d error \n", __LINE__, __func__, oam->Head.MsgId);
+   }
+}
+
+static int get_ecpri_eth_mtu_cfg_handler(void)
+{
+    oam_decode_data obj;
+    OamSubMessage_t sub_msg;
+    const OamSubMessage_t *list = &sub_msg;
+    struct timespec ts;
+    
+    sem_init(&obj.sem, 0, 0);
+    pc802_oam_sub_msg_register(ETH_MTU_GET_RSP, oam_get_eth_mtu_cfg_rsp, &obj);
+
+    memset( &sub_msg, 0, sizeof(sub_msg) );
+    sub_msg.Head.MsgId = ETH_MTU_GET_REQ;
+    sub_msg.Head.MsgSize = 0;
+
+    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+
+#if SEND_TEST_MSG
+    OamSubMessage_t rsp_msg = {0};
+    rsp_msg.u.mtu_cfg.mtu = 500;
+    rsp_msg.Head.MsgId = ETH_MTU_GET_RSP;
+    rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriEthMtuCfg_t);
+    send_test_msg(&rsp_msg);    //for test
+#endif
+
+        clock_gettime( CLOCK_REALTIME, &ts );
+        ts.tv_sec += 1;
+        if ( 0 == sem_timedwait(&obj.sem, &ts) ){
+	  get_eth_mtu_cfg_decode_data(&(obj.msg));
+        }
+        else
+            printf( "ETH_MTU_GET_RSP recv timeout!\n" );
+    }
+    else
+        printf( "ETH_MTU_GET_REQ send err!\n" );
+
+    pc802_oam_sub_msg_unregister(ETH_MTU_GET_RSP);
+    sem_destroy(&obj.sem);
+
+    return 0;
+}
+
+struct cmd_read_eth_mtu_cfg {
+    cmdline_fixed_string_t mtu_cfg;
+};
+
+static void cmd_get_ecpri_eth_mtu_cfg_parsed(__attribute__((unused)) void *parsed,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    get_ecpri_eth_mtu_cfg_handler();
+}
+
+cmdline_parse_token_string_t cmd_get_eth_mtu_cfg =
+    TOKEN_STRING_INITIALIZER(struct cmd_read_eth_mtu_cfg, mtu_cfg, "get mtu cfg");
+
+cmdline_parse_inst_t get_eth_mtu_cfg = {
+    .f = cmd_get_ecpri_eth_mtu_cfg_parsed,
+    .data = NULL,
+    .help_str = "get ecpri eth mtu cfg <mtu> ",
+    .tokens = {
+        (void *)&cmd_get_eth_mtu_cfg,
+        NULL,
+        },
+};
+
+
 /*oam get ecpri basic cfg*/
 static int32_t oam_get_ecpri_basic_cfg_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num )
 {
@@ -904,6 +1001,10 @@ static void basic_cfg_print(BasicCfg_t *cfg)
         printf("cur_antenna_cnt:  		%d\n", cfg->cur_antenna_cnt);
 	printf("cur_section_cnt: 		%d\n", cfg->cur_section_cnt);
 	printf("cur_symbol_cnt_per_slot: 	%d\n", cfg->cur_symbol_cnt_per_slot);
+	printf("pipeline_mode: 			%d\n", cfg->pipeline_mode);
+	printf("outgoing_core_cnt: 		%d\n", cfg->outgoing_core_cnt);
+	printf("ingoing_core_cnt: 		%d\n", cfg->ingoing_core_cnt);
+	printf("eth_pkt_size: 			%d\n", cfg->eth_pkt_size);
         printf("pEcpriNtfyBuf: 			%d\n", cfg->pEcpriNtfyBuf);
         printf("pEcpriReqBuf: 			%d\n", cfg->pEcpriReqBuf); 
         printf("om_msg_id:  			%d\n", cfg->om_msg_id);
@@ -952,6 +1053,10 @@ static int get_ecpri_basic_cfg_handler(void)
     rsp_msg.u.basic_cfg.cur_antenna_cnt = 5;
     rsp_msg.u.basic_cfg.cur_section_cnt = 6;
     rsp_msg.u.basic_cfg.cur_symbol_cnt_per_slot = 7;
+    rsp_msg.u.basic_cfg.pipeline_mode = 1;
+    rsp_msg.u.basic_cfg.outgoing_core_cnt = 2;
+    rsp_msg.u.basic_cfg.ingoing_core_cnt = 3;
+    rsp_msg.u.basic_cfg.eth_pkt_size = 4;
     rsp_msg.u.basic_cfg.pEcpriNtfyBuf = 8;
     rsp_msg.u.basic_cfg.pEcpriReqBuf = 9;
     rsp_msg.u.basic_cfg.om_msg_id = 6;
@@ -1029,18 +1134,34 @@ static int32_t oam_get_ecpri_perf_kpis_rsp( void *arg, uint16_t port_id, const O
 
 static void ecpri_kpis_print(EcpriPerfKpis_t *kpis)
 {
-        printf("m_rx_total:                     %ld\n", kpis->m_rx_total);
-        printf("m_rx_on_time:                   %ld\n", kpis->m_rx_on_time);
-        printf("m_rx_total:                     %ld\n", kpis->m_rx_early);
-        printf("m_rx_late:                      %ld\n", kpis->m_rx_late);
-        printf("m_rx_seqid_err:                 %ld\n", kpis->m_rx_seqid_err);
-        printf("m_rx_on_time_c:                 %ld\n", kpis->m_rx_on_time_c);
-	printf("m_rx_early_c:			%ld\n", kpis->m_rx_early_c);   
-	printf("m_rx_late_c:			%ld\n", kpis->m_rx_late_c);   
-	printf("m_rx_seqid_err_c:		%ld\n", kpis->m_rx_seqid_err_c);   
-	printf("m_rx_corrupt:			%ld\n", kpis->m_rx_corrupt);   
-	printf("m_rx_err_drop:			%ld\n", kpis->m_rx_err_drop);   
-	printf("m_rx_pkt_dupl:			%ld\n", kpis->m_rx_pkt_dupl);   
+	printf("m_rx_total_h: 			%d\n", kpis->m_rx_total_h);
+	printf("m_rx_total_l: 			%d\n", kpis->m_rx_total_l);
+	printf("m_rx_on_time_h: 		%d\n", kpis->m_rx_on_time_h);
+	printf("m_rx_on_time_l: 		%d\n", kpis->m_rx_on_time_l);
+	printf("m_rx_early_h: 			%d\n", kpis->m_rx_early_h);
+	printf("m_rx_early_l: 			%d\n", kpis->m_rx_early_l);
+	printf("m_rx_late_h: 			%d\n", kpis->m_rx_late_h);
+	printf("m_rx_late_l: 			%d\n", kpis->m_rx_late_l);
+	printf("m_rx_seqid_err_h: 		%d\n", kpis->m_rx_seqid_err_h);
+	printf("m_rx_seqid_err_l: 		%d\n", kpis->m_rx_seqid_err_l);
+	printf("m_rx_on_time_c_h: 		%d\n", kpis->m_rx_on_time_c_h);
+	printf("m_rx_on_time_c_l: 		%d\n", kpis->m_rx_on_time_c_l);
+	printf("m_rx_early_c_h: 		%d\n", kpis->m_rx_early_c_h);
+	printf("m_rx_early_c_l: 		%d\n", kpis->m_rx_early_c_l);
+	printf("m_rx_late_c_h: 			%d\n", kpis->m_rx_late_c_h);
+	printf("m_rx_late_c_l: 			%d\n", kpis->m_rx_late_c_l);
+	printf("m_rx_seqid_err_c_h: 		%d\n", kpis->m_rx_seqid_err_c_h);
+	printf("m_rx_seqid_err_c_l: 		%d\n", kpis->m_rx_seqid_err_c_l);
+	printf("m_rx_corrupt_h: 		%d\n", kpis->m_rx_corrupt_h);
+	printf("m_rx_corrupt_l: 		%d\n", kpis->m_rx_corrupt_l);
+	printf("m_rx_err_drop_h: 		%d\n", kpis->m_rx_err_drop_h);
+	printf("m_rx_err_drop_l: 		%d\n", kpis->m_rx_err_drop_l);
+	printf("m_rx_pkt_dupl_h: 		%d\n", kpis->m_rx_pkt_dupl_h);
+	printf("m_rx_pkt_dupl_l: 		%d\n", kpis->m_rx_pkt_dupl_l);
+	printf("m_tx_total_h: 			%d\n", kpis->m_tx_total_h);
+	printf("m_tx_total_l: 			%d\n", kpis->m_tx_total_l);
+	printf("m_tx_total_c_h: 		%d\n", kpis->m_tx_total_c_h);
+	printf("m_tx_total_c_l: 		%d\n", kpis->m_tx_total_c_l);
 }
 
 
@@ -1079,20 +1200,34 @@ static int get_ecpri_perf_kpis_handler(void)
 
 #if SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
-    rsp_msg.u.kpis.m_rx_total = 9; 
-    rsp_msg.u.kpis.m_rx_on_time = 10;
-    rsp_msg.u.kpis.m_rx_early = 11;
-    rsp_msg.u.kpis.m_rx_late = 12;
-    rsp_msg.u.kpis.m_rx_seqid_err = 0;
-    rsp_msg.u.kpis.m_rx_on_time_c = 13;
-    rsp_msg.u.kpis.m_rx_early_c = 14;
-    rsp_msg.u.kpis.m_rx_late_c = 15;
-    rsp_msg.u.kpis.m_rx_seqid_err_c = 16;
-    rsp_msg.u.kpis.m_rx_corrupt = 17;
-    rsp_msg.u.kpis.m_rx_err_drop = 18;
-    rsp_msg.u.kpis.m_rx_pkt_dupl = 19;
-    rsp_msg.u.kpis.m_tx_total = 23;
-    rsp_msg.u.kpis.m_tx_total_c = 33;
+    rsp_msg.u.kpis.m_rx_total_h = 9; 
+    rsp_msg.u.kpis.m_rx_total_l = 9; 
+    rsp_msg.u.kpis.m_rx_on_time_h = 10;
+    rsp_msg.u.kpis.m_rx_on_time_l = 10;
+    rsp_msg.u.kpis.m_rx_early_h = 11;
+    rsp_msg.u.kpis.m_rx_early_l = 11;
+    rsp_msg.u.kpis.m_rx_late_h = 12;
+    rsp_msg.u.kpis.m_rx_late_l = 12;
+    rsp_msg.u.kpis.m_rx_seqid_err_h = 0;
+    rsp_msg.u.kpis.m_rx_seqid_err_l = 0;
+    rsp_msg.u.kpis.m_rx_on_time_c_h = 13;
+    rsp_msg.u.kpis.m_rx_on_time_c_l = 13;
+    rsp_msg.u.kpis.m_rx_early_c_h = 14;
+    rsp_msg.u.kpis.m_rx_early_c_l = 14;
+    rsp_msg.u.kpis.m_rx_late_c_h = 15;
+    rsp_msg.u.kpis.m_rx_late_c_l = 15;
+    rsp_msg.u.kpis.m_rx_seqid_err_c_h = 16;
+    rsp_msg.u.kpis.m_rx_seqid_err_c_l = 16;
+    rsp_msg.u.kpis.m_rx_corrupt_h = 17;
+    rsp_msg.u.kpis.m_rx_corrupt_l = 17;
+    rsp_msg.u.kpis.m_rx_err_drop_h = 18;
+    rsp_msg.u.kpis.m_rx_err_drop_l = 18;
+    rsp_msg.u.kpis.m_rx_pkt_dupl_h = 19;
+    rsp_msg.u.kpis.m_rx_pkt_dupl_l = 19;
+    rsp_msg.u.kpis.m_tx_total_h = 23;
+    rsp_msg.u.kpis.m_tx_total_l = 23;
+    rsp_msg.u.kpis.m_tx_total_c_h = 33;
+    rsp_msg.u.kpis.m_tx_total_c_l = 33;
     rsp_msg.Head.MsgId = ECPRI_DU_KPIS_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriPerfKpis_t); 
     send_test_msg(&rsp_msg);    //for test
@@ -1140,7 +1275,6 @@ cmdline_parse_inst_t get_ecpri_perf_kpis = {
 };
 
 
-
 /*oam get ecpri du cfg*/
 static int32_t oam_get_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num )
 {
@@ -1166,6 +1300,7 @@ static int32_t oam_get_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamS
 
 static void du_cfg_print(EcpriDuCfg_t *cfg)
 {
+   printf("cp_enable: 		%d\n", cfg->cp_enable);
    printf("vlan_id: 		%d\n", cfg->vlan_id);
    printf("ru_cnt: 		%d\n", cfg->ru_cnt);
    printf("du_mac: 		%02x:%02x:%02x:%02x:%02x:%02x\n", cfg->du_mac[0], cfg->du_mac[1], cfg->du_mac[2], 	\
@@ -1215,6 +1350,7 @@ static int get_ecpri_du_cfg_handler(void)
     rsp_msg.u.du_cfg.du_mac[4] = 0x41;
     rsp_msg.u.du_cfg.du_mac[5] = 0x51;
     rsp_msg.u.du_cfg.vlan_id = 2;
+    rsp_msg.u.du_cfg.cp_enable = 4;
     rsp_msg.Head.MsgId = ECPRI_DU_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriDuCfg_t);
     rsp_msg.Head.MsgSize += 2;  //for test
@@ -1540,8 +1676,6 @@ static int32_t oam_get_ecpri_tx_rx_cfg_rsp( void *arg, uint16_t port_id, const O
 
 static void tx_rx_cfg_print(EcpriTxRxCfg_t * cfg)
 {
-	printf("eth_pkt_size:			%d\n", cfg->eth_pkt_size);
-	printf("maxTxPacketSize:		%d\n", cfg->maxTxPacketSize);
 	printf("maxTxLateThreshold:		%d\n", cfg->maxTxLateThreshold);
 }
 
@@ -1579,8 +1713,6 @@ static int get_ecpri_tx_rx_cfg_handler(void)
 
 #if SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
-    rsp_msg.u.tx_rx_cfg.eth_pkt_size = 50;
-    rsp_msg.u.tx_rx_cfg.maxTxPacketSize = 51;
     rsp_msg.u.tx_rx_cfg.maxTxLateThreshold = 52;
     rsp_msg.Head.MsgId = TX_RX_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriTxRxCfg_t);
@@ -1621,13 +1753,12 @@ cmdline_parse_token_string_t cmd_get_ecpri_tx_rx_cfg =
 cmdline_parse_inst_t get_ecpri_tx_rx_cfg = {
     .f = cmd_get_ecpri_tx_rx_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri tx rx cfg <eth_pkt_size> <maxTxPacketSize> <maxTxLateThreshold>",
+    .help_str = "get ecpri tx rx cfg <maxTxLateThreshold>",
     .tokens = {
 	(void*) &cmd_get_ecpri_tx_rx_cfg,
         NULL,
         },
 };
-
 
 
 /* oam get ecpri ptp cfg*/
@@ -1662,8 +1793,6 @@ static void ptp_cfg_print(EcpriPtpCfg_t *cfg)
         printf("ptp_domain:             	%d\n", cfg->ptp_domain);
 }
 
-
-
 static void get_ecpri_ptp_cfg_decode(OamSubMessage_t *oam)
 {
    if(oam->Head.MsgId == ECPRI_ERROR_IND)
@@ -1679,7 +1808,6 @@ static void get_ecpri_ptp_cfg_decode(OamSubMessage_t *oam)
 	printf("Line %d, %s msg id %d error \n", __LINE__, __func__, oam->Head.MsgId);
    }
 }
-
 
 static int get_ecpri_ptp_cfg_handler(void)
 {
@@ -1705,7 +1833,6 @@ static int get_ecpri_ptp_cfg_handler(void)
     rsp_msg.u.ptp_cfg.ptp_domain = 62;
     rsp_msg.Head.MsgId = PTP_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriPtpCfg_t);
-    rsp_msg.Head.MsgSize += 2;  //for test
     send_test_msg(&rsp_msg);
 #endif
 
@@ -1754,8 +1881,6 @@ cmdline_parse_inst_t get_ecpri_ptp_cfg = {
 #endif 
 
 cmdline_parse_ctx_t main_ctx[] = {
-    (cmdline_parse_inst_t *)&cmd_quit,
-    (cmdline_parse_inst_t *)&run_test_case,
     (cmdline_parse_inst_t *)&set_comp_method_cfg,
     (cmdline_parse_inst_t *)&set_ecpri_du_cfg,
     (cmdline_parse_inst_t *)&set_ecpri_ptp_cfg,
@@ -1763,12 +1888,15 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&set_ecpri_ru_cfg,
     (cmdline_parse_inst_t *)&get_ecpri_basic_cfg,      
     (cmdline_parse_inst_t *)&get_comp_method_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_perf_kpis,
     (cmdline_parse_inst_t *)&get_ecpri_du_cfg,
     (cmdline_parse_inst_t *)&get_ecpri_du_internal_cfg, 
-    (cmdline_parse_inst_t *)&get_ecpri_ru_cfg,
     (cmdline_parse_inst_t *)&get_ecpri_tx_rx_cfg,
     (cmdline_parse_inst_t *)&get_ecpri_ptp_cfg,      
+    (cmdline_parse_inst_t *)&get_eth_mtu_cfg,      
+    (cmdline_parse_inst_t *)&get_ecpri_ru_cfg,
+    (cmdline_parse_inst_t *)&get_ecpri_perf_kpis,
+    (cmdline_parse_inst_t *)&run_test_case,
+    (cmdline_parse_inst_t *)&cmd_quit,
     NULL,
 };
 
