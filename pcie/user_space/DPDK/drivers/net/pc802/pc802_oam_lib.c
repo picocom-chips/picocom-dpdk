@@ -89,12 +89,13 @@ int pc802_oam_send_msg( _UNUSED_ uint16_t port_id, const OamSubMessage_t **sub_m
     msg->Head.StartFlag = OAM_START_FLAG;
     msg->Head.MsgType = PICO_OAM_MSG;
     msg->Head.SubMsgNum = 0;
+    pcxxOamSend( (void*)msg, sizeof(OamMessageHeader_t) );
 
     for ( i=0; i<msg_num; i++ ){
         sub = NULL;
         pcxxOamAlloc( (char **)&sub, &len );
         if ( NULL==sub || len<sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) ){
-            printf( "Not enough space(%u) for message(%d:%d)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
+            printf( "Not enough space(%u) for message(%d:%ld)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
             pthread_mutex_unlock(&lock);
             return -1;
         }
@@ -157,6 +158,17 @@ static uint32_t pc802_process_oam_msg( uint16_t port_id, const OamMessage_t *msg
     uint32_t i = 0;
     uint16_t sub_index = 0;
     PC802_OAM_CALLBACK_FUNTION cb_fun =NULL;
+   
+
+    const uint8_t *p = (const uint8_t *)msg;
+    printf("pc802 recv msg:  len = %d\n", len);
+    for(i = 0; i < len; i++)
+    {
+    	printf("%02x ", p[i]);
+	if((i%8 == 0) && (i != 0))
+	   printf("\n");
+    }
+    printf("\n");
 
     if ( OAM_START_FLAG != msg->Head.StartFlag || len<sizeof(OamMessage_t) )
         return -1;
@@ -191,6 +203,8 @@ static uint32_t pc802_oam_recv( const char* buf, uint32_t payloadSize )
     assert(payloadSize > 0);
     const PC802_Mem_Block_t* mbuf = (const PC802_Mem_Block_t*)(buf - sizeof(PC802_Mem_Block_t));
     const OamMessage_t *msg = (const OamMessage_t*)buf;
+
+
 
     switch (mbuf->pkt_type)
     {

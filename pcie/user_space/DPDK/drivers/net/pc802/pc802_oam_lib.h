@@ -51,11 +51,13 @@ typedef struct{
     uint8_t pipeline_mode;//0:non-pipeline,1:pipeline
     uint8_t outgoing_core_cnt;
     uint8_t ingoing_core_cnt;// maxium 7
+    uint8_t reserved;
     uint32_t eth_pkt_size;
     uint32_t pEcpriNtfyBuf;
     uint32_t pEcpriReqBuf;
     uint32_t om_msg_id;
 }BasicCfg_t;
+
 
 typedef struct EcpriPtpCfg_t{
     uint8_t ptp_enable;// 1: enable 0: disable
@@ -81,6 +83,7 @@ typedef struct{
 
 typedef struct{
     uint8_t ru_id;
+    uint8_t rev0;
     uint16_t s_interval;
     uint32_t Ta4min;
     uint32_t Ta4max;
@@ -91,6 +94,7 @@ typedef struct{
     uint32_t T1amin_up;
     uint32_t T1amax_up;
     uint8_t ru_mac[ETH_MAC_ADDR_LEN];
+    uint16_t rev1;
 }EcpriRuCfg_t;
 
 typedef struct{
@@ -105,6 +109,7 @@ typedef struct EcpriDuCfg{
     uint8_t ru_cnt; // startup required------------------------------------------
     uint8_t du_mac[ETH_MAC_ADDR_LEN];
     uint16_t vlan_id;
+    uint16_t reserved;
 }EcpriDuCfg_t;
 
 typedef struct{

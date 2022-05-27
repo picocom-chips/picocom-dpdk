@@ -80,9 +80,8 @@ cmdline_parse_inst_t run_test_case = {
         },
 };
 
-#define SEND_TEST_MSG 0
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
 
 static int send_test_msg(const OamSubMessage_t *sub_msg)
 {
@@ -167,7 +166,7 @@ static int32_t oam_set_ecpri_tx_rx_cfg_rsp( void *arg, uint16_t port_id, const O
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -198,9 +197,10 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t maxTxLateThreshold)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
         rsp_msg_test(TX_RX_SET_RSP);
 #endif
+
 
         clock_gettime( CLOCK_REALTIME, &ts );
         ts.tv_sec += 1;
@@ -261,10 +261,10 @@ static int32_t oam_set_ecpri_ptp_cfg_rsp( void *arg, uint16_t port_id, const Oam
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
-    	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
+    	printf("head msg : msgid = %d size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgId, sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
 	size =  sizeof(OamSubMessage_t);
     }
 
@@ -294,7 +294,7 @@ static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, 
 
     if ( 0== pc802_oam_send_msg(0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
         rsp_msg_test(PTP_SET_RSP);
 #endif
 
@@ -369,7 +369,7 @@ static int32_t oam_set_ecpri_ru_cfg_rsp( void *arg, uint16_t port_id, const OamS
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -409,7 +409,7 @@ static int set_ecpri_ru_cfg_handler(EcpriRuCfg_t *cfg)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
         rsp_msg_test(ECPRI_RU_SET_RSP);
 #endif
 
@@ -529,7 +529,7 @@ static int32_t oam_set_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamS
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -555,7 +555,6 @@ static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_DU_SET_REQ;
     sub_msg.Head.MsgSize = sizeof(EcpriDuCfg_t); 
-    sub_msg.Head.MsgSize += 2; // for test
     sub_msg.u.du_cfg.ru_cnt = ru_cnt;
     sub_msg.u.du_cfg.vlan_id = vlan_id;
     sub_msg.u.du_cfg.cp_enable = cp_enable;
@@ -563,7 +562,7 @@ static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t 
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
         rsp_msg_test(ECPRI_DU_SET_RSP);
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -638,7 +637,7 @@ static int32_t oam_set_ecpri_comp_method_cfg_rsp( void *arg, uint16_t port_id, c
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -671,7 +670,7 @@ static int set_ecpri_comp_method_cfg_handler(uint8_t isStaticComp, uint8_t metho
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
      rsp_msg_test(COMP_METH_SET_RSP);
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -748,7 +747,7 @@ static int32_t oam_get_ecpri_comp_method_cfg_rsp(void *arg, uint16_t port_id, co
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -802,7 +801,7 @@ static int get_ecpri_comp_method_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.comp_method_cfg.isStaticComp = 3;
     rsp_msg.u.comp_method_cfg.method = 1;
@@ -866,7 +865,7 @@ static int32_t oam_get_eth_mtu_cfg_rsp(void *arg, uint16_t port_id, const OamSub
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -917,7 +916,7 @@ static int get_ecpri_eth_mtu_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.mtu_cfg.mtu = 500;
     rsp_msg.Head.MsgId = ETH_MTU_GET_RSP;
@@ -977,7 +976,7 @@ static int32_t oam_get_ecpri_basic_cfg_rsp( void *arg, uint16_t port_id, const O
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1043,7 +1042,7 @@ static int get_ecpri_basic_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.basic_cfg.pcie_enable = 1;
     rsp_msg.u.basic_cfg.eth_type = 1;
@@ -1119,7 +1118,7 @@ static int32_t oam_get_ecpri_perf_kpis_rsp( void *arg, uint16_t port_id, const O
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1198,7 +1197,7 @@ static int get_ecpri_perf_kpis_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.kpis.m_rx_total_h = 9; 
     rsp_msg.u.kpis.m_rx_total_l = 9; 
@@ -1285,7 +1284,7 @@ static int32_t oam_get_ecpri_du_cfg_rsp( void *arg, uint16_t port_id, const OamS
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1340,7 +1339,7 @@ static int get_ecpri_du_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.du_cfg.ru_cnt = 6;
     rsp_msg.u.du_cfg.du_mac[0] = 0x01;
@@ -1353,7 +1352,7 @@ static int get_ecpri_du_cfg_handler(void)
     rsp_msg.u.du_cfg.cp_enable = 4;
     rsp_msg.Head.MsgId = ECPRI_DU_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriDuCfg_t);
-    rsp_msg.Head.MsgSize += 2;  //for test
+    //rsp_msg.Head.MsgSize += 2;  //for test
     send_test_msg(&rsp_msg);    //for test
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -1407,7 +1406,7 @@ static int32_t oam_get_ecpri_du_internal_cfg_rsp( void *arg, uint16_t port_id, c
         printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t))
     {
         printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1460,7 +1459,7 @@ static int get_ecpri_du_internal_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.du_int_cfg.pipeline_mode = 1;
     rsp_msg.u.du_int_cfg.m_role = 1;
@@ -1522,7 +1521,7 @@ static int32_t oam_get_ecpri_ru_cfg_rsp( void *arg, uint16_t port_id, const OamS
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1583,7 +1582,7 @@ static int get_ecpri_ru_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.ru_cfg.ru_id = 1;
     rsp_msg.u.ru_cfg.s_interval = 1;
@@ -1660,7 +1659,7 @@ static int32_t oam_get_ecpri_tx_rx_cfg_rsp( void *arg, uint16_t port_id, const O
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1711,7 +1710,7 @@ static int get_ecpri_tx_rx_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.tx_rx_cfg.maxTxLateThreshold = 52;
     rsp_msg.Head.MsgId = TX_RX_GET_RSP;
@@ -1771,7 +1770,7 @@ static int32_t oam_get_ecpri_ptp_cfg_rsp( void *arg, uint16_t port_id, const Oam
     	printf("port_id = %u, msg_num = %u, Line %d, %s\n", port_id, msg_num,  __LINE__, __func__);
     }
 
-    size = sub_msg[0]->Head.MsgSize;
+    size = sub_msg[0]->Head.MsgSize + sizeof(OamSubMessageHeader_t);
     if(size > sizeof(OamSubMessage_t)) 
     {
     	printf("head msg size = %d, Line %d, %s\n", sub_msg[0]->Head.MsgSize,  __LINE__, __func__);
@@ -1825,7 +1824,7 @@ static int get_ecpri_ptp_cfg_handler(void)
 
     if ( 0== pc802_oam_send_msg(0, &list, 1 ) ) {
 
-#if SEND_TEST_MSG
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.u.ptp_cfg.ptp_enable = 1;
     rsp_msg.u.ptp_cfg.ptp_step_mode = 0;

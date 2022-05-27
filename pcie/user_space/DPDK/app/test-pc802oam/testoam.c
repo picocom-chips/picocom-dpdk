@@ -143,6 +143,7 @@ static int port_init(uint16_t port)
     return 0;
 }
 
+
 static int produce_random_dl_src_data(uint32_t *buf)
 {
     //static uint32_t idx = 0;
@@ -359,7 +360,8 @@ static int case301(void)
     return re;
 }
 
-#if 1
+#ifdef SEND_TEST_MSG 
+
 static int send_test_msg(const OamSubMessage_t *sub_msg)
 {
     typedef enum{
@@ -407,6 +409,7 @@ static int send_test_msg(const OamSubMessage_t *sub_msg)
     return 0;
 }
 #endif
+
 typedef struct {
     sem_t sem;
     OamSubMessage_t msg;
@@ -422,7 +425,7 @@ static int32_t oam_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub
 
 static int case310(void)
 {
-#if 1
+#ifdef SEND_TEST_MSG 
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.Head.MsgId=BASIC_CFG_GET_RSP;
     rsp_msg.Head.MsgSize=sizeof(OamErrorInd_t);
@@ -446,7 +449,7 @@ static int case310(void)
     sub_msg.u.basic_cfg.pcie_enable = 1;
     sub_msg.u.basic_cfg.eth_type = 1;
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
-#if 1
+#ifdef SEND_TEST_MSG 
         send_test_msg( &rsp_msg );    //for test
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -468,11 +471,6 @@ static int case310(void)
     pc802_oam_sub_msg_unregister( BASIC_CFG_GET_RSP );
 
     return ret;
-}
-
-int pc802_test_pcie( int len, int time, int ch, int type )
-{
-    return 0;
 }
 
 extern cmdline_parse_ctx_t main_ctx[];
@@ -536,10 +534,6 @@ static void run_case(int caseNo)
 }
 
 int main_stop = 0;
-
-void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
-{
-}
 
 int main(int argc, char** argv)
 {
