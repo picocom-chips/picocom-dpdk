@@ -2135,9 +2135,9 @@ static uint32_t min_ecpri_str_addr = 0xFFFFFFFF;
 static uint32_t max_dsp_str_addr[3] = {0, 0, 0};
 static uint32_t min_dsp_str_addr[3] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
 
-static char *unknown_pfi_str = "Unknown PFI String ";
-static char *unknown_ecpri_str = "Unknown eCPRI String ";
-static char *unknown_dsp_str[3] =
+static const char *unknown_pfi_str = "Unknown PFI String ";
+static const char *unknown_ecpri_str = "Unknown eCPRI String ";
+static const char *unknown_dsp_str[3] =
     {"Unknown DSP 0 String ", "Unknown DSP 1 String ", "Unknown DSP 2 String "};
 
 static int check_pfi_string_range(uint32_t addr)
@@ -2161,7 +2161,7 @@ static int check_dsp_string_range(uint32_t addr)
     return (addr < 1024*1024);
 }
 
-static char *mb_get_string(uint32_t addr, uint32_t core)
+static const char *mb_get_string(uint32_t addr, uint32_t core)
 {
     if (core < 16) {
         if (addr > max_pfi_str_addr) {
@@ -2209,10 +2209,10 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     uint32_t num_args = PC802_READ_REG(mb->num_args);
     char str[2048];
     char formatter[16];
-    char *arg0 = mb_get_string(mb->arguments[0], core);
+    const char *arg0 = mb_get_string(mb->arguments[0], core);
     char *ps = &str[0];
     uint32_t arg_idx = 1;
-    char *sub_str;
+    const char *sub_str;
     uint32_t j;
 
     ps += sprintf(ps, "PRINTF: ");
@@ -2230,12 +2230,17 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
                 }
                 j++;
             } while (1);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
             if (formatter[j] == 's') {
                 sub_str = mb_get_string(mb->arguments[arg_idx++], core);
-                ps += sprintf(ps, formatter, sub_str);
+                ps += snprintf(ps, sizeof(str), formatter, sub_str);
             } else {
-                ps += sprintf(ps, formatter, mb->arguments[arg_idx++]);
+                ps += snprintf(ps, sizeof(str), formatter, mb->arguments[arg_idx++]);
             }
+#pragma GCC diagnostic pop
+
         } else {
             *ps++ = *arg0++;
         }
