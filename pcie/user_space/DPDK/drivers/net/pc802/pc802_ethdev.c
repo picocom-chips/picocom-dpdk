@@ -1538,6 +1538,78 @@ static void pc802_bar_memset(uint32_t *p, uint32_t c, uint32_t u32_cnt)
     return;
 }
 
+static const cpu_set_t * get_ctrl_cpuset( void )
+{
+    static rte_cpuset_t ctrl_cpuset;
+
+    if ( 0 == CPU_COUNT(&ctrl_cpuset) ) {
+        FILE *fp = NULL;
+        char buffer[128] = {0};
+        int core=0;
+        int min,max;
+        char *ret = NULL;
+
+        fp = popen("cat /sys/devices/system/cpu/present", "r");
+        ret = fgets(buffer, sizeof(buffer), fp);
+        pclose(fp);
+        if ( (ret!=NULL) && (2== sscanf( buffer, "%d-%d", &min, &max )) ) {
+            DBLOG( "cpu present:%d-%d\n", min, max );
+            for( core=min; core<=max; core++ )
+                CPU_SET( core, &ctrl_cpuset );
+        }
+
+        fp = popen("cat /sys/devices/system/cpu/isolated", "r");
+        ret = fgets(buffer, sizeof(buffer), fp);
+        pclose(fp);
+        if ( (ret!=NULL) && (2== sscanf( buffer, "%d-%d", &min, &max )) ) {
+            DBLOG( "cpu isolated:%d-%d\n", min, max );
+            for( core=min; core<=max; core++ )
+                CPU_CLR( core, &ctrl_cpuset );
+        }
+
+        DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
+    }
+
+    return &ctrl_cpuset;
+}
+
+static int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
+		void *(*start_routine)(void *), void *arg)
+{
+	int ret;
+    pthread_attr_t l_attr;
+    const struct sched_param sp = {
+        .sched_priority = sched_get_priority_max(SCHED_OTHER),
+    };
+
+    if ( attr == NULL )
+    {
+        pthread_attr_init(&l_attr);
+        attr = &l_attr;
+        pthread_attr_setschedparam(attr, &sp);
+        pthread_attr_setinheritsched(attr, PTHREAD_EXPLICIT_SCHED);
+    }
+    pthread_attr_setschedpolicy(attr, SCHED_OTHER);
+
+	ret = pthread_create( thread, attr, start_routine, arg );
+	if (ret != 0) {
+        DBLOG( "pthread_create %s fail\n", name );
+		return ret;
+    }
+
+	if (name != NULL) {
+		ret = rte_thread_setname(*thread, name);
+		if (ret < 0)
+			DBLOG( "Cannot set name %s for ctrl thread\n", name );
+	}
+
+	ret = pthread_setaffinity_np(*thread, sizeof(cpu_set_t), get_ctrl_cpuset() );
+	if (ret != 0)
+        DBLOG( "Set affinity for ctrl thread %s fail\n", name );
+
+	return -ret;
+}
+
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1594,7 +1666,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         for (dsp = 0; dsp < 3; dsp++) {
             adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
         }
-        pthread_create(&tid, NULL, pc802_mailbox, adapter);
+        pc802_ctrl_thread_create(&tid, "PC802-MB", NULL, pc802_mailbox, adapter);
     } else {
         PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
         PC802_WRITE_REG(bar->MB_DSP_DIS, 0x7);
@@ -1621,7 +1693,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
-        pthread_create(&tid, NULL, pc802_tracer, adapter);
+        pc802_ctrl_thread_create(&tid, "PC802-TRACE", NULL, pc802_tracer, adapter);
     }
 
     tsize = sizeof(PC802_Descs_t);
@@ -1649,7 +1721,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
-        pthread_create(&tid, NULL, pc802_process_phy_test_vectors, adapter);
+        pc802_ctrl_thread_create(&tid, "PC802-VEC", NULL, pc802_process_phy_test_vectors, adapter);
     }
 
     return 0;
