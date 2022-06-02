@@ -188,7 +188,7 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t maxTxLateThreshold)
 
     sem_init(&obj.sem, 0, 0);
 
-    pc802_oam_sub_msg_register(TX_RX_SET_RSP, oam_set_ecpri_tx_rx_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_set_ecpri_tx_rx_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = TX_RX_SET_REQ;
@@ -216,7 +216,7 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t maxTxLateThreshold)
     else
         printf( "TX_RX_SET_REQ send err!\n" );
 
-    pc802_oam_sub_msg_unregister(TX_RX_SET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -282,7 +282,7 @@ static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, 
     struct timespec ts;
 
     sem_init(&obj.sem, 0, 0);
-    pc802_oam_sub_msg_register(PTP_SET_RSP, oam_set_ecpri_ptp_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_set_ecpri_ptp_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = PTP_SET_REQ;
@@ -312,7 +312,7 @@ static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, 
     else
         printf( "PTP_SET_REQ send err!\n" );
 
-    pc802_oam_sub_msg_unregister(PTP_SET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -390,7 +390,7 @@ static int set_ecpri_ru_cfg_handler(EcpriRuCfg_t *cfg)
     struct timespec ts;
 
     sem_init(&obj.sem, 0, 0);
-    pc802_oam_sub_msg_register(ECPRI_RU_SET_RSP, oam_set_ecpri_ru_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_set_ecpri_ru_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_RU_SET_REQ;
@@ -427,7 +427,7 @@ static int set_ecpri_ru_cfg_handler(EcpriRuCfg_t *cfg)
     else
         printf( "ECPRI_RU_SET_REQ send err!\n" );
 
-    pc802_oam_sub_msg_unregister(ECPRI_RU_SET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -550,7 +550,7 @@ static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t 
     struct timespec ts;
 
     sem_init(&obj.sem, 0, 0);
-    pc802_oam_sub_msg_register(ECPRI_DU_SET_RSP, oam_set_ecpri_du_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_set_ecpri_du_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_DU_SET_REQ;
@@ -579,7 +579,7 @@ static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t 
     else
         printf( "ECPRI_DU_SET_REQ send err!\n" );
 
-    pc802_oam_sub_msg_unregister(ECPRI_DU_SET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -658,7 +658,7 @@ static int set_ecpri_comp_method_cfg_handler(uint8_t isStaticComp, uint8_t metho
     struct timespec ts;
 
     sem_init(&obj.sem, 0, 0);
-    pc802_oam_sub_msg_register(COMP_METH_SET_RSP, oam_set_ecpri_comp_method_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_set_ecpri_comp_method_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = COMP_METH_SET_REQ;
@@ -688,7 +688,7 @@ static int set_ecpri_comp_method_cfg_handler(uint8_t isStaticComp, uint8_t metho
     else
         printf( "COMP_METH_SET_REQ send err!\n" );
 
-    pc802_oam_sub_msg_unregister(COMP_METH_SET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -771,7 +771,7 @@ static void comp_method_cfg_print(EcpriCompMethodCfg_t *cfg)
 static void get_ecpri_comp_method_cfg_decode_data(OamSubMessage_t *oam)
 {
 
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
 	printf("get ecpri comp method %d", oam->u.result.err_code);
    }
@@ -794,6 +794,7 @@ static int get_ecpri_comp_method_cfg_handler(void)
     
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(COMP_METH_GET_RSP, oam_get_ecpri_comp_method_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_comp_method_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = COMP_METH_GET_REQ;
@@ -824,6 +825,7 @@ static int get_ecpri_comp_method_cfg_handler(void)
         printf( "COMP_METH_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(COMP_METH_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -852,8 +854,6 @@ cmdline_parse_inst_t get_comp_method_cfg = {
         NULL,
         },
 };
-
-
 
 /*oam get eth mtu cfg*/
 static int32_t oam_get_eth_mtu_cfg_rsp(void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num)
@@ -886,7 +886,7 @@ static void eth_mtu_cfg_print(EcpriEthMtuCfg_t *cfg)
 static void get_eth_mtu_cfg_decode_data(OamSubMessage_t *oam)
 {
 
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
 	printf("get eth mtu cfg %d", oam->u.result.err_code);
    }
@@ -909,6 +909,7 @@ static int get_ecpri_eth_mtu_cfg_handler(void)
     
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(ETH_MTU_GET_RSP, oam_get_eth_mtu_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_eth_mtu_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ETH_MTU_GET_REQ;
@@ -936,6 +937,7 @@ static int get_ecpri_eth_mtu_cfg_handler(void)
         printf( "ETH_MTU_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(ETH_MTU_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1011,7 +1013,7 @@ static void basic_cfg_print(BasicCfg_t *cfg)
 
 static void get_ecpri_basic_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
 	printf("get ecpri basic cfg %d\n", oam->u.result.err_code);
    }
@@ -1035,6 +1037,7 @@ static int get_ecpri_basic_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(BASIC_CFG_GET_RSP, oam_get_ecpri_basic_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_basic_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = BASIC_CFG_GET_REQ;
@@ -1077,6 +1080,7 @@ static int get_ecpri_basic_cfg_handler(void)
         printf( "BASIC_CFG_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(BASIC_CFG_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1166,7 +1170,7 @@ static void ecpri_kpis_print(EcpriPerfKpis_t *kpis)
 
 static void get_ecpri_kpis_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpri kpis decode %d\n", oam->u.result.err_code);
    }
@@ -1190,6 +1194,7 @@ static int get_ecpri_perf_kpis_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(ECPRI_DU_KPIS_GET_RSP, oam_get_ecpri_perf_kpis_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_perf_kpis_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_DU_KPIS_GET_REQ;
@@ -1244,6 +1249,7 @@ static int get_ecpri_perf_kpis_handler(void)
         printf( "ECPRI_DU_KPIS_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(ECPRI_DU_KPIS_GET_REQ);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1308,7 +1314,7 @@ static void du_cfg_print(EcpriDuCfg_t *cfg)
 
 static void get_ecpri_du_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpr du cfg decode %d\n", oam->u.result.err_code);
    }
@@ -1332,6 +1338,7 @@ static int get_ecpri_du_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(ECPRI_DU_GET_RSP, oam_get_ecpri_du_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_du_cfg_rsp, &obj);
 
     memset(&sub_msg, 0, sizeof(sub_msg));
     sub_msg.Head.MsgId = ECPRI_DU_GET_REQ;
@@ -1367,6 +1374,7 @@ static int get_ecpri_du_cfg_handler(void)
         printf( "ECPRI_DU_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(ECPRI_DU_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1429,7 +1437,7 @@ static void du_internal_cfg_print(EcpriDuInternalCfg_t *cfg)
 
 static void get_ecpri_du_internal_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpri du internal decode %d\n", oam->u.result.err_code);
    }
@@ -1452,6 +1460,7 @@ static int get_ecpri_du_internal_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(ECPRI_DU_LOCAL_GET_RSP, oam_get_ecpri_du_internal_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_du_internal_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_DU_LOCAL_GET_REQ;
@@ -1482,6 +1491,7 @@ static int get_ecpri_du_internal_cfg_handler(void)
         printf( "ECPRI_DU_LOCAL_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(ECPRI_DU_LOCAL_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1552,7 +1562,7 @@ static void ru_cfg_print(EcpriRuCfg_t *cfg)
 
 static void get_ecpri_ru_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpri ru cfg decode %d\n", oam->u.result.err_code);
    }
@@ -1575,6 +1585,7 @@ static int get_ecpri_ru_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(ECPRI_RU_GET_RSP, oam_get_ecpri_ru_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_ru_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = ECPRI_RU_GET_REQ;
@@ -1617,6 +1628,7 @@ static int get_ecpri_ru_cfg_handler(void)
         printf( "ECPRI_RU_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(ECPRI_RU_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1680,7 +1692,7 @@ static void tx_rx_cfg_print(EcpriTxRxCfg_t * cfg)
 
 static void get_ecpri_tx_rx_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpri ru cfg decode %d\n", oam->u.result.err_code);
    }
@@ -1703,6 +1715,7 @@ static int get_ecpri_tx_rx_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(TX_RX_GET_RSP, oam_get_ecpri_tx_rx_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_tx_rx_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = TX_RX_GET_REQ;
@@ -1730,6 +1743,7 @@ static int get_ecpri_tx_rx_cfg_handler(void)
         printf( "TX_RX_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(TX_RX_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;
@@ -1794,7 +1808,7 @@ static void ptp_cfg_print(EcpriPtpCfg_t *cfg)
 
 static void get_ecpri_ptp_cfg_decode(OamSubMessage_t *oam)
 {
-   if(oam->Head.MsgId == ECPRI_ERROR_IND)
+   if(oam->Head.MsgId == ECPRI_ERR_IND)
    {
         printf("get ecpri ru cfg decode %d\n", oam->u.result.err_code);
    }
@@ -1817,6 +1831,7 @@ static int get_ecpri_ptp_cfg_handler(void)
 
     sem_init(&obj.sem, 0, 0);
     pc802_oam_sub_msg_register(PTP_GET_RSP, oam_get_ecpri_ptp_cfg_rsp, &obj);
+    pc802_oam_sub_msg_register(ECPRI_ERR_IND, oam_get_ecpri_ptp_cfg_rsp, &obj);
 
     memset( &sub_msg, 0, sizeof(sub_msg) );
     sub_msg.Head.MsgId = PTP_GET_REQ;
@@ -1847,6 +1862,7 @@ static int get_ecpri_ptp_cfg_handler(void)
         printf("PTP_GET_REQ send err!\n" );
 
     pc802_oam_sub_msg_unregister(PTP_GET_RSP);
+    pc802_oam_sub_msg_unregister(ECPRI_ERR_IND);
     sem_destroy(&obj.sem);
 
     return 0;

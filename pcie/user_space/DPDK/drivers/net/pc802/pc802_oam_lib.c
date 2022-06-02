@@ -160,6 +160,7 @@ static uint32_t pc802_process_oam_msg( uint16_t port_id, const OamMessage_t *msg
     PC802_OAM_CALLBACK_FUNTION cb_fun =NULL;
    
 
+#ifdef RECV_TEST_MSG
     const uint8_t *p = (const uint8_t *)msg;
     printf("pc802 recv msg:  len = %d\n", len);
     for(i = 0; i < len; i++)
@@ -169,6 +170,7 @@ static uint32_t pc802_process_oam_msg( uint16_t port_id, const OamMessage_t *msg
 	   printf("\n");
     }
     printf("\n");
+#endif
 
     if ( OAM_START_FLAG != msg->Head.StartFlag || len<sizeof(OamMessage_t) )
         return -1;
