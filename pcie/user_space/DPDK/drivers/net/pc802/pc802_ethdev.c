@@ -202,6 +202,8 @@ static int pc802_download_boot_image(uint16_t port);
 static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
+static uint32_t handle_ecpri_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
+static uint32_t handle_ecpri_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_tracer(void *data);
 static void * pc802_mailbox(void *data);
 
@@ -1954,26 +1956,45 @@ static void * pc802_process_phy_test_vectors(void *data)
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     uint32_t MB_RCCNT;
+    uint32_t EMB_RCCNT;
     volatile uint32_t MB_EPCNT;
+    volatile uint32_t EMB_EPCNT;
+    volatile uint32_t COMMAND;
     uint32_t re = 1;
 
     pc802_thread_setname("PC802-VEC");
 
     MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
+    EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
     while (1) {
         do {
             usleep(10);
             MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
-        } while (MB_EPCNT == MB_RCCNT);
-        if (ext->MB_COMMAND == 12) {
-            re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
-        } else if (ext->MB_COMMAND == 13) {
-            re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
+            EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
+        } while ((MB_EPCNT == MB_RCCNT) && (EMB_EPCNT == EMB_RCCNT));
+        if (MB_EPCNT != MB_RCCNT) {
+            COMMAND = PC802_READ_REG(ext->MB_COMMAND);
+            if (COMMAND == 12) {
+                re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
+            } else if (COMMAND == 13) {
+                re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
+            }
+            PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
+            PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
+            MB_RCCNT++;
+            PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
         }
-        PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
-        PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
-        MB_RCCNT++;
-        PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
+        if (EMB_EPCNT != EMB_RCCNT) {
+            COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
+            if (COMMAND == 12) {
+                re = handle_ecpri_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
+            } else if (COMMAND == 13) {
+                re = handle_ecpri_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
+            }
+            PC802_WRITE_REG(ext->EMB_RESULT, (0 == re));
+            EMB_RCCNT++;
+            PC802_WRITE_REG(ext->EMB_RCCNT, EMB_RCCNT);
+        }
     }
     return NULL;
 }
@@ -2111,6 +2132,144 @@ static uint32_t handle_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t add
     DBLOG("Dumping to file %s\n", file_name);
     FILE         * fh_vector  = fopen(file_name, "w");
 
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    for (offset = 0; offset < length; offset += 4) {
+      unsigned int mem_data = *pd++;;
+      fprintf(fh_vector, "%08x\n", mem_data);
+    }
+
+    fclose(fh_vector);
+
+    // Print a success message
+    DBLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
+        length, address, file_name);
+
+    return 0;
+}
+
+static uint32_t handle_ecpri_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+{
+    unsigned int end = offset + length;
+    if ((offset & 3) | (length & 3) | (address & 3)) {
+        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+        return -1;
+    }
+
+    // Look for the testcase directory
+    char * tc_dir = getenv("PC802_TEST_VECTOR_DIR");
+    if (tc_dir == NULL) {
+        DBLOG("ERROR: PC802_TEST_VECTOR_DIR was not defined\n");
+        return -2;
+    }
+
+    // Check if the test vector file exists
+    char file_name[2048];
+    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
+    if (access(file_name, F_OK) != 0) {
+        DBLOG("ERROR: Failed to open test vector file %s\n", file_name);
+        return -3;
+    }
+
+    // Parse the file
+    DBLOG("Reading vector file %s\n", file_name);
+    unsigned int   data       = 0;
+    unsigned int   vec_cnt = 0;
+    unsigned int   line = 0;
+    FILE         * fh_vector  = fopen(file_name, "r");
+    char           buffer[2048];
+
+    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
+
+    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+        // Trim trailing newlines
+        buffer[strcspn(buffer, "\r\n")] = 0;
+        if (sscanf(buffer, "%x", &data) == 1) {
+            // In scope
+            if (vec_cnt >= offset && vec_cnt < end) {
+                *pd++ = data;
+            }
+            vec_cnt += 4;
+        } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
+            DBLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
+            return -4;
+        }
+        // already done
+        if (vec_cnt >= end) {
+            break;
+        }
+        // Increment line count
+        line++;
+    }
+    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
+
+    fclose(fh_vector);
+
+    if (vec_cnt < end) {
+        DBLOG("ERROR: EOF! of %s", file_name);
+        return -5;
+    }
+
+    PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    PC802_WRITE_REG(bar->DBGEPADDR, address);
+    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
+    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
+    uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+    RCCNT++;
+    PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
+    volatile uint32_t EPCNT;
+    do {
+        usleep(1);
+        EPCNT = PC802_READ_REG(bar->DBGEPCNT);
+    } while (EPCNT != RCCNT);
+
+    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
+// handle_vec_dump: Handle task vector dump requests
+// -----------------------------------------------------------------------------
+static uint32_t handle_ecpri_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
+{
+    unsigned int offset;
+    if ((length & 3) | (address & 3)) {
+       DBLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
+       return -1;
+    }
+
+    // Look for the testcase directory
+    char * tc_dir = getenv("PC802_VECTOR_DUMP_DIR");
+    if (tc_dir == NULL) {
+        DBLOG("ERROR: PC802_VECTOR_DUMP_DIR was not defined\n");
+        return -2;
+    }
+
+    // Check if the golden vector file exists
+    char file_name[2048];
+    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
+    if (access(tc_dir, F_OK) != 0) {
+        DBLOG("ERROR: Failed to open dump dir %s\n", tc_dir);
+        return -3;
+    }
+
+    PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    PC802_WRITE_REG(bar->DBGEPADDR, address);
+    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
+    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
+    uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+    RCCNT++;
+    PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
+    volatile uint32_t EPCNT;
+    do {
+        usleep(1);
+        EPCNT = PC802_READ_REG(bar->DBGEPCNT);
+    } while (EPCNT != RCCNT);
+
+    // Parse the file
+    DBLOG("Dumping to file %s\n", file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+
+    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
     fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     for (offset = 0; offset < length; offset += 4) {
       unsigned int mem_data = *pd++;;

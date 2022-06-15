@@ -233,6 +233,21 @@ struct PC802_BAR_Ext_t {
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
+    union {
+        uint32_t _e0[16];
+        struct {
+            uint32_t EMB_EPCNT;
+            uint32_t EMB_COMMAND;
+            uint32_t EMB_ARGS[8];
+        };
+    };
+    union {
+        uint32_t _e1[8];
+        struct {
+            uint32_t EMB_RCCNT;
+            uint32_t EMB_RESULT;
+        };
+    };
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
