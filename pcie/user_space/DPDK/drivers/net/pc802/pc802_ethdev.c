@@ -37,6 +37,7 @@
 #include "pc802_logs.h"
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
+#include "pc802_mailbox.h"
 
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
@@ -2182,100 +2183,6 @@ static void * pc802_tracer(void *data)
     return NULL;
 }
 
-#define PFI_IMG_SIZE    (3*1024*1024)
-#define PFI_CLM_START   0x03000000
-#define PFI_CLM_SIZE    (3*1024*1024)
-
-static char *pfi_img;
-
-#define ECPRI_IMG_SIZE    0x1C0000
-#define ECPRI_CLM_START   0x03000000
-#define ECPRI_CIM_START   ECPRI_CLM_START
-#define ECPRI_CIM_SIZE    (256*1024)
-#define ECPRI_CDM_START   0x03100000
-#define ECPRI_CDM_SIZE    (768*1024)
-
-static char *ecpri_img;
-
-#define DSP_IMG_SIZE    (1024*1024+256*1024)
-static char *dsp_img[3];
-
-static uint32_t max_pfi_str_addr = 0;
-static uint32_t min_pfi_str_addr = 0xFFFFFFFF;
-static uint32_t max_ecpri_str_addr = 0;
-static uint32_t min_ecpri_str_addr = 0xFFFFFFFF;
-static uint32_t max_dsp_str_addr[3] = {0, 0, 0};
-static uint32_t min_dsp_str_addr[3] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
-
-static const char *unknown_pfi_str = "Unknown PFI String ";
-static const char *unknown_ecpri_str = "Unknown eCPRI String ";
-static const char *unknown_dsp_str[3] =
-    {"Unknown DSP 0 String ", "Unknown DSP 1 String ", "Unknown DSP 2 String "};
-
-static int check_pfi_string_range(uint32_t addr)
-{
-    if ((PFI_CLM_START <= addr) && (addr < PFI_CLM_START + PFI_CLM_SIZE))
-        return 1;
-    return 0;
-}
-
-static int check_ecpri_string_range(uint32_t addr)
-{
-    if ((ECPRI_CIM_START <= addr) && (addr < ECPRI_CIM_START + ECPRI_CIM_SIZE))
-        return 1;
-    if ((ECPRI_CDM_START <= addr) && (addr < ECPRI_CDM_START + ECPRI_CDM_SIZE))
-        return 1;
-    return 0;
-}
-
-static int check_dsp_string_range(uint32_t addr)
-{
-    return (addr < 1024*1024);
-}
-
-static const char *mb_get_string(uint32_t addr, uint32_t core)
-{
-    if (core < 16) {
-        if (addr > max_pfi_str_addr) {
-            DBLOG("PFI new Max string addr = 0x%08X\n", addr);
-            max_pfi_str_addr = addr;
-        }
-        if (addr < min_pfi_str_addr) {
-            DBLOG("PFI new Min string addr = 0x%08X\n", addr);
-            min_pfi_str_addr = addr;
-        }
-        if (check_pfi_string_range(addr))
-            return pfi_img + (addr - PFI_CLM_START);
-        return unknown_pfi_str;
-    } else if (core < 32) {
-        if (addr > max_ecpri_str_addr) {
-            DBLOG("eCPRI new Max string addr = 0x%08X\n", addr);
-            max_ecpri_str_addr = addr;
-        }
-        if (addr < min_ecpri_str_addr) {
-            DBLOG("eCPRI new Min string addr = 0x%08X\n", addr);
-            min_ecpri_str_addr = addr;
-        }
-        if (check_ecpri_string_range(addr))
-            return ecpri_img + (addr - ECPRI_CLM_START);
-        return unknown_ecpri_str;
-    } else if (core < 35) {
-        if (addr > max_dsp_str_addr[core - 32]) {
-            DBLOG("DSP[%1u] new Max string addr = 0x%08X\n", core - 32, addr);
-            max_dsp_str_addr[core - 32] = addr;
-        }
-        if (addr < min_dsp_str_addr[core - 32]) {
-            DBLOG("DSP[%1u] new Min string addr = 0x%08X\n", core - 32, addr);
-            min_dsp_str_addr[core - 32] = addr;
-        }
-        if (check_dsp_string_range(addr))
-            return dsp_img[core - 32] + addr;
-        return unknown_dsp_str[core - 32];
-    } else {
-        return NULL;
-    }
-}
-
 static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
 {
     uint32_t num_args = PC802_READ_REG(mb->num_args);
@@ -2357,32 +2264,12 @@ static void * pc802_mailbox(void *data)
     mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
     uint32_t ecpri_idx[16];
     uint32_t core;
-    char dsp_filename[256];
     mailbox_exclusive *mb_dsp[3];
     uint32_t dsp_idx[3];
 
     pc802_thread_setname("PC802-MB");
 
-    pfi_img = rte_zmalloc("PFI_STR_IMG", PFI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
-    assert(NULL != pfi_img);
-    FILE *fp = fopen("/lib/firmware/pico/pfi_str.img", "rb");
-    assert(PFI_IMG_SIZE == fread(pfi_img, 1, PFI_IMG_SIZE, fp));
-    fclose(fp);
-
-    ecpri_img = rte_zmalloc("ECPRI_STR_IMG", ECPRI_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
-    assert(NULL != ecpri_img);
-    fp = fopen("/lib/firmware/pico/ecpri_str.img", "rb");
-    assert(ECPRI_IMG_SIZE == fread(ecpri_img, 1, ECPRI_IMG_SIZE, fp));
-    fclose(fp);
-
-    for (core = 0; core < 3; core++) {
-        snprintf(dsp_filename, sizeof(dsp_filename), "/lib/firmware/pico/dsp_str_%1u.img", core);
-        dsp_img[core] = rte_zmalloc(dsp_filename, DSP_IMG_SIZE, RTE_CACHE_LINE_MIN_SIZE);
-        assert(NULL != dsp_img[core]);
-        fp = fopen(dsp_filename, "rb");
-        assert(DSP_IMG_SIZE == fread(dsp_img[core], 1, DSP_IMG_SIZE, fp));
-        fclose(fp);
-    }
+    mb_string_init();
 
     for (core = 0; core < 16; core++) {
         pfi_idx[core] = 0;
@@ -2414,4 +2301,3 @@ static void * pc802_mailbox(void *data)
     }
     return NULL;
 }
-

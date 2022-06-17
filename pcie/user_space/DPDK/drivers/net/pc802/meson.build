@@ -12,6 +12,7 @@ sources = files(
         'pc802_ethdev.c',
         'pc802_logs.c',
         'pcxx_ipc.c',
+        'pc802_mailbox.c'
 )
 
 headers = files(
