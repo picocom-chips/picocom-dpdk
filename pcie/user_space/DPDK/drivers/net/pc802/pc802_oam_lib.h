@@ -108,34 +108,34 @@ typedef struct EcpriDuCfg{
 }EcpriDuCfg_t;
 
 typedef struct{
-	uint32_t m_rx_total_h;
 	uint32_t m_rx_total_l;
-	uint32_t m_rx_on_time_h;
+	uint32_t m_rx_total_h;
 	uint32_t m_rx_on_time_l;
-	uint32_t m_rx_early_h;
+	uint32_t m_rx_on_time_h;
 	uint32_t m_rx_early_l;
-	uint32_t m_rx_late_h;
+	uint32_t m_rx_early_h;
 	uint32_t m_rx_late_l;
-	uint32_t m_rx_seqid_err_h;//optional
+	uint32_t m_rx_late_h;
 	uint32_t m_rx_seqid_err_l;//optional
-	uint32_t m_rx_on_time_c_h;
+	uint32_t m_rx_seqid_err_h;//optional
 	uint32_t m_rx_on_time_c_l;
-	uint32_t m_rx_early_c_h;
+	uint32_t m_rx_on_time_c_h;
 	uint32_t m_rx_early_c_l;
-	uint32_t m_rx_late_c_h;
+	uint32_t m_rx_early_c_h;
 	uint32_t m_rx_late_c_l;
-	uint32_t m_rx_seqid_err_c_h;//optional
+	uint32_t m_rx_late_c_h;
 	uint32_t m_rx_seqid_err_c_l;//optional
-	uint32_t m_rx_corrupt_h;//optional
+	uint32_t m_rx_seqid_err_c_h;//optional
 	uint32_t m_rx_corrupt_l;//optional
-	uint32_t m_rx_err_drop_h;//optional
+	uint32_t m_rx_corrupt_h;//optional
 	uint32_t m_rx_err_drop_l;//optional
-	uint32_t m_rx_pkt_dupl_h;//optional
+	uint32_t m_rx_err_drop_h;//optional
 	uint32_t m_rx_pkt_dupl_l;//optional
-	uint32_t m_tx_total_h;
+	uint32_t m_rx_pkt_dupl_h;//optional
 	uint32_t m_tx_total_l;
-	uint32_t m_tx_total_c_h;
+	uint32_t m_tx_total_h;
 	uint32_t m_tx_total_c_l;
+	uint32_t m_tx_total_c_h;
 }EcpriPerfKpis_t;
 
 typedef struct{

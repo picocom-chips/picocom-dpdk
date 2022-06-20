@@ -1137,36 +1137,77 @@ static int32_t oam_get_ecpri_perf_kpis_rsp( void *arg, uint16_t port_id, const O
 
 static void ecpri_kpis_print(EcpriPerfKpis_t *kpis)
 {
-	printf("m_rx_total_h: 			%d\n", kpis->m_rx_total_h);
-	printf("m_rx_total_l: 			%d\n", kpis->m_rx_total_l);
-	printf("m_rx_on_time_h: 		%d\n", kpis->m_rx_on_time_h);
-	printf("m_rx_on_time_l: 		%d\n", kpis->m_rx_on_time_l);
-	printf("m_rx_early_h: 			%d\n", kpis->m_rx_early_h);
-	printf("m_rx_early_l: 			%d\n", kpis->m_rx_early_l);
-	printf("m_rx_late_h: 			%d\n", kpis->m_rx_late_h);
-	printf("m_rx_late_l: 			%d\n", kpis->m_rx_late_l);
-	printf("m_rx_seqid_err_h: 		%d\n", kpis->m_rx_seqid_err_h);
-	printf("m_rx_seqid_err_l: 		%d\n", kpis->m_rx_seqid_err_l);
-	printf("m_rx_on_time_c_h: 		%d\n", kpis->m_rx_on_time_c_h);
-	printf("m_rx_on_time_c_l: 		%d\n", kpis->m_rx_on_time_c_l);
-	printf("m_rx_early_c_h: 		%d\n", kpis->m_rx_early_c_h);
-	printf("m_rx_early_c_l: 		%d\n", kpis->m_rx_early_c_l);
-	printf("m_rx_late_c_h: 			%d\n", kpis->m_rx_late_c_h);
-	printf("m_rx_late_c_l: 			%d\n", kpis->m_rx_late_c_l);
-	printf("m_rx_seqid_err_c_h: 		%d\n", kpis->m_rx_seqid_err_c_h);
-	printf("m_rx_seqid_err_c_l: 		%d\n", kpis->m_rx_seqid_err_c_l);
-	printf("m_rx_corrupt_h: 		%d\n", kpis->m_rx_corrupt_h);
-	printf("m_rx_corrupt_l: 		%d\n", kpis->m_rx_corrupt_l);
-	printf("m_rx_err_drop_h: 		%d\n", kpis->m_rx_err_drop_h);
-	printf("m_rx_err_drop_l: 		%d\n", kpis->m_rx_err_drop_l);
-	printf("m_rx_pkt_dupl_h: 		%d\n", kpis->m_rx_pkt_dupl_h);
-	printf("m_rx_pkt_dupl_l: 		%d\n", kpis->m_rx_pkt_dupl_l);
-	printf("m_tx_total_h: 			%d\n", kpis->m_tx_total_h);
-	printf("m_tx_total_l: 			%d\n", kpis->m_tx_total_l);
-	printf("m_tx_total_c_h: 		%d\n", kpis->m_tx_total_c_h);
-	printf("m_tx_total_c_l: 		%d\n", kpis->m_tx_total_c_l);
-}
 
+	if(kpis->m_rx_total_h == 0)
+	   printf("m_rx_total:                  %d\n", kpis->m_rx_total_l);
+	else
+	   printf("m_rx_total:                  %d%032d\n", kpis->m_rx_total_h, kpis->m_rx_total_l);
+
+	if(kpis->m_rx_on_time_h == 0)
+	   printf("m_rx_on_time:                %d\n", kpis->m_rx_on_time_l);
+	else
+	   printf("m_rx_on_time:                %d%032d\n", kpis->m_rx_on_time_h, kpis->m_rx_on_time_l);
+
+	if(kpis->m_rx_early_h == 0)
+	   printf("m_rx_early:                  %d\n", kpis->m_rx_early_l);
+	else
+	   printf("m_rx_early:                  %d%032d\n", kpis->m_rx_early_h, kpis->m_rx_early_l);
+
+	if(kpis->m_rx_late_h == 0)
+	   printf("m_rx_late:                   %d\n", kpis->m_rx_late_l);
+	else
+	   printf("m_rx_late:                   %d%032d\n", kpis->m_rx_late_h, kpis->m_rx_late_l);
+
+	if(kpis->m_rx_seqid_err_h == 0)
+	   printf("m_rx_seqid_err:              %d\n", kpis->m_rx_seqid_err_l);
+	else
+	   printf("m_rx_seqid_err:              %d%032d\n", kpis->m_rx_seqid_err_h, kpis->m_rx_seqid_err_l);
+
+	if(kpis->m_rx_on_time_c_h == 0)
+	   printf("m_rx_on_time_c:              %d\n", kpis->m_rx_on_time_c_l);
+	else
+	   printf("m_rx_on_time_c:              %d%032d\n", kpis->m_rx_on_time_c_h, kpis->m_rx_on_time_c_l);
+
+	if(kpis->m_rx_early_c_h == 0)
+	   printf("m_rx_early_c:                %d\n", kpis->m_rx_early_c_l);
+	else
+	   printf("m_rx_early_c:                %d%032d\n", kpis->m_rx_early_c_h, kpis->m_rx_early_c_l);
+
+	if(kpis->m_rx_late_c_h == 0)
+	   printf("m_rx_late_c:                 %d\n", kpis->m_rx_late_c_l);
+	else
+	   printf("m_rx_late_c:                 %d%032d\n", kpis->m_rx_late_c_h, kpis->m_rx_late_c_l);
+
+	if(kpis->m_rx_seqid_err_c_h == 0)
+	   printf("m_rx_seqid_err_c:            %d\n", kpis->m_rx_seqid_err_c_l);
+	else
+	   printf("m_rx_seqid_err_c:            %d%032d\n", kpis->m_rx_seqid_err_c_h, kpis->m_rx_seqid_err_c_l);
+
+	if(kpis->m_rx_corrupt_h == 0)
+	   printf("m_rx_corrupt:                %d\n", kpis->m_rx_corrupt_l);
+	else
+	   printf("m_rx_corrupt:                %d%032d\n", kpis->m_rx_corrupt_h, kpis->m_rx_corrupt_l);
+
+	if(kpis->m_rx_err_drop_h == 0)
+	   printf("m_rx_err_drop:               %d\n", kpis->m_rx_err_drop_l);
+	else
+	   printf("m_rx_err_drop:               %d%032d\n", kpis->m_rx_err_drop_h, kpis->m_rx_err_drop_l);
+
+	if(kpis->m_rx_pkt_dupl_h == 0)
+	   printf("m_rx_pkt_dupl:               %d\n", kpis->m_rx_pkt_dupl_l);
+	else
+	   printf("m_rx_pkt_dupl:               %d%032d\n", kpis->m_rx_pkt_dupl_h, kpis->m_rx_pkt_dupl_l);
+
+	if(kpis->m_tx_total_h == 0)
+	   printf("m_tx_total:                  %d\n", kpis->m_tx_total_l);
+	else
+	   printf("m_tx_total:                  %d%032d\n", kpis->m_tx_total_h, kpis->m_tx_total_l);
+
+	if(kpis->m_tx_total_c_h == 0)
+	   printf("m_tx_total_c:                %d\n", kpis->m_tx_total_c_l);
+	else
+	   printf("m_tx_total_c:                %d%032d\n", kpis->m_tx_total_c_h, kpis->m_tx_total_c_l);
+}
 
 static void get_ecpri_kpis_decode(OamSubMessage_t *oam)
 {
