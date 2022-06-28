@@ -24,6 +24,7 @@ dpdk-devbind.py -s
 export PC802_VECTOR_DUMP_DIR="/opt/picocom/phyCfgs"
 export PC802_TEST_VECTOR_DIR="/opt/picocom/phyCfgs"
 CPUS=`cat /sys/devices/system/cpu/isolated`
+[ -z "$CPUS" ] && echo "Not found isolated core" && exit 0
 
 #run applicable
-[-n $@ ] && $@ -l$CPUS --syslog user --log-level lib.eal:debug
+[[ -n "$@" ]] && $@ -l$CPUS --syslog user --log-level lib.eal:debug

@@ -529,7 +529,7 @@ int main(int argc, char** argv)
 
     port_init(0);
 
-    rte_eal_remote_launch(prompt, NULL, 1);
+    prompt(NULL);
 
     rte_eal_wait_lcore( 1 );
     return 0;
