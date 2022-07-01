@@ -65,6 +65,7 @@ static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
     pc802_read_reg((volatile uint32_t *)&(reg))
 
 static PC802_BAR_t *gbar;
+static int g_debug_flag = 0;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
@@ -199,25 +200,11 @@ struct pc802_adapter {
 
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
 static int pc802_download_boot_image(uint16_t port);
-static void * pc802_process_phy_test_vectors(void *data);
 static uint32_t handle_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_ecpri_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_ecpri_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
-static void * pc802_tracer(void *data);
-static void * pc802_mailbox(void *data);
-
-static int pc802_thread_setname(const char *name)
-{
-    int ret;
-    pthread_t thread_id;
-    char truncated[16];
-
-    thread_id = pthread_self();
-    strlcpy(truncated, name, sizeof(truncated));
-    ret = pthread_setname_np(thread_id, truncated);
-    return ret;
-}
+static void * pc802_debug(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1669,13 +1656,14 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         for (dsp = 0; dsp < 3; dsp++) {
             adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
         }
-        pc802_ctrl_thread_create(&tid, "PC802-MB", NULL, pc802_mailbox, adapter);
+        g_debug_flag |= (1<<PC802_LOG_PRINT);
     } else {
         PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
         PC802_WRITE_REG(bar->MB_DSP_DIS, 0x7);
         rte_wmb();
         DBLOG("WARN: No PCIe based printf output !\n");
     }
+    pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, adapter);
 
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
@@ -1696,7 +1684,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
-        pc802_ctrl_thread_create(&tid, "PC802-TRACE", NULL, pc802_tracer, adapter);
+        g_debug_flag |= (1<<PC802_LOG_EVENT);
     }
 
     tsize = sizeof(PC802_Descs_t);
@@ -1724,7 +1712,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
-        pc802_ctrl_thread_create(&tid, "PC802-VEC", NULL, pc802_process_phy_test_vectors, adapter);
+        g_debug_flag |= (1<<PC802_LOG_VEC);
     }
 
     return 0;
@@ -1951,7 +1939,7 @@ static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
     return ext;
 }
 
-static void * pc802_process_phy_test_vectors(void *data)
+static int pc802_process_phy_test_vectors(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
@@ -1962,41 +1950,37 @@ static void * pc802_process_phy_test_vectors(void *data)
     volatile uint32_t COMMAND;
     uint32_t re = 1;
 
-    pc802_thread_setname("PC802-VEC");
-
     MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
     EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
-    while (1) {
-        do {
-            usleep(10);
-            MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
-            EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
-        } while ((MB_EPCNT == MB_RCCNT) && (EMB_EPCNT == EMB_RCCNT));
-        if (MB_EPCNT != MB_RCCNT) {
-            COMMAND = PC802_READ_REG(ext->MB_COMMAND);
-            if (COMMAND == 12) {
-                re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
-            } else if (COMMAND == 13) {
-                re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
-            }
-            PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
-            PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
-            MB_RCCNT++;
-            PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
+    MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
+    EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
+    if (MB_EPCNT != MB_RCCNT) {
+        COMMAND = PC802_READ_REG(ext->MB_COMMAND);
+        if (COMMAND == 12) {
+            re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
+        } else if (COMMAND == 13) {
+            re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
         }
-        if (EMB_EPCNT != EMB_RCCNT) {
-            COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
-            if (COMMAND == 12) {
-                re = handle_ecpri_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
-            } else if (COMMAND == 13) {
-                re = handle_ecpri_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
-            }
-            PC802_WRITE_REG(ext->EMB_RESULT, (0 == re));
-            EMB_RCCNT++;
-            PC802_WRITE_REG(ext->EMB_RCCNT, EMB_RCCNT);
-        }
+        PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
+        PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
+        MB_RCCNT++;
+        PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
+        return 1;
     }
-    return NULL;
+    if (EMB_EPCNT != EMB_RCCNT) {
+        COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
+        if (COMMAND == 12) {
+            re = handle_ecpri_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
+        } else if (COMMAND == 13) {
+            re = handle_ecpri_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
+        }
+        PC802_WRITE_REG(ext->EMB_RESULT, (0 == re));
+        EMB_RCCNT++;
+        PC802_WRITE_REG(ext->EMB_RCCNT, EMB_RCCNT);
+        return 1;
+    }
+
+    return 0;
 }
 
 static uint32_t handle_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
@@ -2300,46 +2284,31 @@ static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tda
     PC802_LOG( core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
 }
 
-static void * pc802_tracer(void *data)
+static int pc802_tracer(void *data)
 {
+    static uint32_t rccnt[32] = {0};
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     int num = 0;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
-    uint32_t rccnt[32];
     volatile uint32_t epcnt;
-    struct timespec req;
 
-    pc802_thread_setname("PC802-TRACE");
-
-    for (core = 0; core < 32; core++)
-        rccnt[core] = 0;
-
-    req.tv_sec = 0;
-    req.tv_nsec = 1000;
-
-    while (1) {
-        num = 0;
-        for (core = 0; core < 32; core++) {
-            epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
-            while (rccnt[core] != epcnt) {
-                idx = rccnt[core] & (PC802_TRACE_FIFO_SIZE - 1);
-                trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
-                handle_trace_data(core, rccnt[core], trc_data);
-                rccnt[core]++;
-                num++;
-            }
-            rte_wmb();
-            PC802_WRITE_REG(ext->TRACE_RCCNT[core], rccnt[core]);
+    for (core = 0; core < 32; core++) {
+        epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
+        while (rccnt[core] != epcnt) {
+            idx = rccnt[core] & (PC802_TRACE_FIFO_SIZE - 1);
+            trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
+            handle_trace_data(core, rccnt[core], trc_data);
+            rccnt[core]++;
+            num++;
         }
-        if ( 0 == num ) {
-            pc802_log_flush();
-            nanosleep(&req, NULL);
-        }
+        rte_wmb();
+        PC802_WRITE_REG(ext->TRACE_RCCNT[core], rccnt[core]);
     }
-    return NULL;
+
+    return num;
 }
 
 static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
@@ -2389,14 +2358,16 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     return;
 }
 
-static void handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
+static int handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
+    int num = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
     volatile uint32_t num_args;
     do {
         action = PC802_READ_REG(mb[n].action);
         if (MB_EMPTY != action ) {
+            num++;
             if (MB_PRINTF == action) {
                 handle_mb_printf(&mb[n], core);
             } else {
@@ -2413,50 +2384,75 @@ static void handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
         }
     } while (MB_EMPTY != action);
     *idx = n;
+    return num;
 }
 
-static void * pc802_mailbox(void *data)
+static int pc802_mailbox(void *data)
 {
-    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
-    mailbox_exclusive *mb_pfi = adapter->mailbox_pfi;
-    uint32_t pfi_idx[16];
-    mailbox_exclusive *mb_ecpri = adapter->mailbox_ecpri;
-    uint32_t ecpri_idx[16];
+    static struct pc802_adapter *adapter = NULL;
+    static mailbox_exclusive *mb_pfi = NULL;
+    static uint32_t pfi_idx[16];
+    static mailbox_exclusive *mb_ecpri = NULL;
+    static uint32_t ecpri_idx[16];
+    static mailbox_exclusive *mb_dsp[3];
+    static uint32_t dsp_idx[3];
     uint32_t core;
-    mailbox_exclusive *mb_dsp[3];
-    uint32_t dsp_idx[3];
+    int num = 0;
 
-    pc802_thread_setname("PC802-MB");
+    if ( adapter == NULL )
+    {
+        adapter = (struct pc802_adapter *)data;
+        mb_pfi = adapter->mailbox_pfi;
+        mb_ecpri = adapter->mailbox_ecpri;
+        mb_string_init();
 
-    mb_string_init();
+        for (core = 0; core < 16; core++) {
+            pfi_idx[core] = 0;
+            ecpri_idx[core] = 0;
+        }
+        for (core = 0; core < 3; core++) {
+            mb_dsp[core] = adapter->mailbox_dsp[core];
+            dsp_idx[core] = 0;
+        }
+    }
 
     for (core = 0; core < 16; core++) {
-        pfi_idx[core] = 0;
-        ecpri_idx[core] = 0;
-    }
-    for (core = 0; core < 3; core++) {
-        mb_dsp[core] = adapter->mailbox_dsp[core];
-        dsp_idx[core] = 0;
+        num += handle_mailbox(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core);
     }
 
+    for (core = 0; core < 16; core++) {
+        num += handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
+    }
+
+    for (core = 0; core < 3; core++) {
+        num += handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+    }
+
+    return num;
+}
+
+static void * pc802_debug(void *data)
+{
+    int num = 0;
+    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 1000;
 
-    while (1) {
-        for (core = 0; core < 16; core++) {
-            handle_mailbox(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core);
-        }
+    while(1)
+    {
+        num = 0;
+        if (g_debug_flag&(1<<PC802_LOG_EVENT))
+            num += pc802_tracer(adapter);
+        if (g_debug_flag&(1<<PC802_LOG_PRINT))
+            num += pc802_mailbox(adapter);
+        if (g_debug_flag&(1<<PC802_LOG_VEC))
+            num += pc802_process_phy_test_vectors(adapter);
 
-        for (core = 0; core < 16; core++) {
-            handle_mailbox(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16);
+        if ( 0 == num ) {
+            pc802_log_flush();
+            nanosleep(&req, NULL);
         }
-
-        for (core = 0; core < 3; core++) {
-            handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
-        }
-
-        nanosleep(&req, NULL);
     }
     return NULL;
 }
