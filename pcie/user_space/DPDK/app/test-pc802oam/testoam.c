@@ -67,6 +67,8 @@ struct rte_mempool *mpool_pc802_tx;
 
 #define MAX_DATA_BUF_SZ (256*1024)
 
+extern void odu_cmd_main(void); 
+
 typedef union {
     uint32_t _d[MAX_DATA_BUF_SZ / sizeof(uint32_t)];
     struct {
@@ -473,18 +475,12 @@ static int case310(void)
     return ret;
 }
 
-extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
-    struct cmdline *cl;
+
     arg = arg;
 
-    cl = cmdline_stdin_new(main_ctx, "PC802>> ");
-    if (cl == NULL) {
-        return -1;
-    }
-    cmdline_interact(cl);
-    cmdline_stdin_exit(cl);
+    odu_cmd_main();
 
     return 0;
 }
@@ -534,6 +530,7 @@ static void run_case(int caseNo)
 }
 
 int main_stop = 0;
+
 
 int main(int argc, char** argv)
 {

@@ -8,6 +8,7 @@
 #include <cmdline_parse.h>
 #include <cmdline_parse_string.h>
 #include <cmdline_parse_num.h>
+#include <cmdline_socket.h>
 #include <cmdline.h>
 
 #include <rte_pmd_pc802.h>
@@ -17,8 +18,12 @@
 #include <rte_ether.h>
 
 
+
 extern int main_stop;
 extern int pc802_test_pcie( int len, int time, int ch, int type );
+void odu_cmd_main(void);
+
+
 
 struct cmd_quit_result {
     cmdline_fixed_string_t quit;
@@ -236,14 +241,14 @@ static void cmd_set_ecpri_tx_rx_cfg_parsed(void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_set_ecpri_tx_rx_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, ecpri_tx_rx_cfg, "set ecpri tx rx cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, ecpri_tx_rx_cfg, "cfg tx rx");
 cmdline_parse_token_num_t cmd_set_ecpri_tx_rx_cfg_maxTxLateThreshold =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_tx_rx_cfg, maxTxLateThreshold, RTE_UINT32);
 
 cmdline_parse_inst_t set_ecpri_tx_rx_cfg = {
     .f = cmd_set_ecpri_tx_rx_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri tx rx cfg <maxTxLateThreshold>",
+    .help_str = "cfg tx rx <maxTxLateThreshold>",
     .tokens = {
 	(void*) &cmd_set_ecpri_tx_rx_cfg,
         (void *)&cmd_set_ecpri_tx_rx_cfg_maxTxLateThreshold,
@@ -327,7 +332,7 @@ struct cmd_ecpri_ptp_cfg {
 };
 
 cmdline_parse_token_string_t cmd_set_ecpri_ptp_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_ptp_cfg, ptp_cfg, "set ptp cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_ptp_cfg, ptp_cfg, "cfg ptp");
 cmdline_parse_token_num_t cmd_set_ecpri_ptp_enable =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_ptp_cfg, ptp_enable, RTE_UINT8);
 cmdline_parse_token_num_t cmd_set_ptp_step_mode =
@@ -348,7 +353,7 @@ static void cmd_set_ecpri_ptp_cfg_parsed(void *parsed,
 cmdline_parse_inst_t set_ecpri_ptp_cfg = {
     .f = cmd_set_ecpri_ptp_cfg_parsed,
     .data = NULL,
-    .help_str = "set ptp cfg <ptp_enable> <ptp_step_mode> <ecpri_step_mode> <ptp_domain>",
+    .help_str = "cfg ptp <ptp_enable> <ptp_step_mode> <ecpri_step_mode> <ptp_domain>",
     .tokens = {
         (void *)&cmd_set_ecpri_ptp_cfg,
         (void *)&cmd_set_ecpri_ptp_enable,
@@ -473,7 +478,7 @@ static void cmd_set_ecpri_ru_cfg_parsed(void *parsed,
 
 
 cmdline_parse_token_string_t cmd_set_ecpri_ru_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_ru_cfg, ecpri_ru_cfg, "set ecpri ru cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_ru_cfg, ecpri_ru_cfg, "cfg ru");
 cmdline_parse_token_num_t cmd_set_ecpri_ru_cfg_ru_id =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_ru_cfg, ru_id, RTE_UINT8);
 cmdline_parse_token_num_t cmd_set_ecpri_ru_cfg_s_interval =
@@ -500,7 +505,7 @@ cmdline_parse_token_etheraddr_t cmd_set_ecpri_ru_cfg_mac_addr =
 cmdline_parse_inst_t set_ecpri_ru_cfg = {
     .f = cmd_set_ecpri_ru_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri ru cfg <ru_id> <s_interval> <Ta4min> <Ta4max> <T1amin_cp_ul> <T1amax_cp_ul> <T1amin_cp_dl> <T1amax_cp_dl> <T1amin_up> <T1amax_up> <ru_mac>",
+    .help_str = "cfg ru <ru_id> <s_interval> <Ta4min> <Ta4max> <T1amin_cp_ul> <T1amax_cp_ul> <T1amin_cp_dl> <T1amax_cp_dl> <T1amin_up> <T1amax_up> <ru_mac>",
     .tokens = {
         (void *)&cmd_set_ecpri_ru_cfg,
         (void *)&cmd_set_ecpri_ru_cfg_ru_id,
@@ -602,7 +607,7 @@ static void cmd_set_ecpri_du_cfg_parsed(void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_set_ecpri_du_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_du_cfg, ecpri_du_cfg, "set ecpri du cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_du_cfg, ecpri_du_cfg, "cfg du");
 cmdline_parse_token_num_t cmd_set_ecpri_du_cfg_cp_enable =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_du_cfg, cp_enable, RTE_UINT8);
 cmdline_parse_token_num_t cmd_set_ecpri_du_cfg_ru_cnt =
@@ -615,7 +620,7 @@ cmdline_parse_token_etheraddr_t cmd_set_ecpri_du_cfg_mac_addr =
 cmdline_parse_inst_t set_ecpri_du_cfg = {
     .f = cmd_set_ecpri_du_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri du cfg <cp_enable> <vlan_id> <ru_cnt> <mac addr>",
+    .help_str = "cfg du <cp_enable> <vlan_id> <ru_cnt> <mac addr>",
     .tokens = {
         (void *)&cmd_set_ecpri_du_cfg,
         (void *)&cmd_set_ecpri_du_cfg_cp_enable,
@@ -712,7 +717,7 @@ static void cmd_set_ecpri_comp_method_cfg_parsed(void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_set_comp_method_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_comp_method_cfg, comp_method_cfg, "set comp cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_comp_method_cfg, comp_method_cfg, "cfg comp");
 cmdline_parse_token_num_t cmd_set_comp_method_cfg_isStaticComp =
     TOKEN_NUM_INITIALIZER(struct cmd_ecpri_comp_method_cfg, isStaticComp, RTE_UINT8);
 cmdline_parse_token_num_t cmd_set_comp_method_cfg_method =
@@ -725,7 +730,7 @@ cmdline_parse_token_num_t cmd_set_comp_method_cfg_decomIqWidth =
 cmdline_parse_inst_t set_comp_method_cfg = {
     .f = cmd_set_ecpri_comp_method_cfg_parsed,
     .data = NULL,
-    .help_str = "set ecpri method cfg <isStaticComp> <method> <comIqWidth> <decomIqWidth>",
+    .help_str = "cfg comp <isStaticComp> <method> <comIqWidth> <decomIqWidth>",
     .tokens = {
         (void *)&cmd_set_comp_method_cfg,
         (void *)&cmd_set_comp_method_cfg_isStaticComp,
@@ -843,12 +848,12 @@ static void cmd_get_ecpri_comp_method_cfg_parsed(__attribute__((unused)) void *p
 }
 
 cmdline_parse_token_string_t cmd_get_comp_method_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_comp_method_cfg, comp_method_cfg, "get comp cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_comp_method_cfg, comp_method_cfg, "show comp");
 
 cmdline_parse_inst_t get_comp_method_cfg = {
     .f = cmd_get_ecpri_comp_method_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri method cfg <isStaticComp> <method> <comIqWidth> <decomIqWidth>",
+    .help_str = "show comp <isStaticComp> <method> <comIqWidth> <decomIqWidth>",
     .tokens = {
         (void *)&cmd_get_comp_method_cfg,
         NULL,
@@ -955,12 +960,12 @@ static void cmd_get_ecpri_eth_mtu_cfg_parsed(__attribute__((unused)) void *parse
 }
 
 cmdline_parse_token_string_t cmd_get_eth_mtu_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_eth_mtu_cfg, mtu_cfg, "get mtu cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_eth_mtu_cfg, mtu_cfg, "show mtu");
 
 cmdline_parse_inst_t get_eth_mtu_cfg = {
     .f = cmd_get_ecpri_eth_mtu_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri eth mtu cfg <mtu> ",
+    .help_str = "show eth mtu <mtu> ",
     .tokens = {
         (void *)&cmd_get_eth_mtu_cfg,
         NULL,
@@ -1099,12 +1104,12 @@ static void cmd_get_ecpri_basic_cfg_parsed(__attribute__((unused)) void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_get_ecpri_basic_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_basic_cfg, basic_cfg, "get basic cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_basic_cfg, basic_cfg, "show basic cfg");
 
 cmdline_parse_inst_t get_ecpri_basic_cfg = {
     .f = cmd_get_ecpri_basic_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri basic cfg <pcie_enable> <eth_type> <max_antenna_cnt> <max_section_cnt> <max_symbol_cnt_per_slot> <cur_antenna_cnt> <cur_section_cnt> <cur_symbol_cnt_per_slot> <pEcpriNtfyBuf> <pEcpriReqBuf> <om_msg_id>",
+    .help_str = "show basic cfg <pcie_enable> <eth_type> <max_antenna_cnt> <max_section_cnt> <max_symbol_cnt_per_slot> <cur_antenna_cnt> <cur_section_cnt> <cur_symbol_cnt_per_slot> <pEcpriNtfyBuf> <pEcpriReqBuf> <om_msg_id>",
     .tokens = {
         (void *)&cmd_get_ecpri_basic_cfg,
         NULL,
@@ -1308,12 +1313,12 @@ static void cmd_get_ecpri_perf_kpis_parsed(__attribute__((unused)) void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_get_ecpri_perf_kpis =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_perf_kpis, ecpri_perf_kpis, "get ecpri perf kpis");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_perf_kpis, ecpri_perf_kpis, "show perf kpis");
 
 cmdline_parse_inst_t get_ecpri_perf_kpis = {
     .f = cmd_get_ecpri_perf_kpis_parsed,
     .data = NULL,
-    .help_str = "get ecpri perf kpis: <m_rx_total> <m_rx_on_time> <m_rx_early> <m_rx_late> <m_rx_seqid_err> <m_rx_on_time_c> <m_rx_early_c> <m_rx_late_c> <m_rx_seqid_err_c> <m_rx_corrupt> <m_rx_err_drop> <m_rx_pkt_dupl> <m_tx_total> <m_tx_total_c>",
+    .help_str = "show perf kpis: <m_rx_total> <m_rx_on_time> <m_rx_early> <m_rx_late> <m_rx_seqid_err> <m_rx_on_time_c> <m_rx_early_c> <m_rx_late_c> <m_rx_seqid_err_c> <m_rx_corrupt> <m_rx_err_drop> <m_rx_pkt_dupl> <m_tx_total> <m_tx_total_c>",
     .tokens = {
         (void *)&cmd_get_ecpri_perf_kpis,
         NULL,
@@ -1400,7 +1405,6 @@ static int get_ecpri_du_cfg_handler(void)
     rsp_msg.u.du_cfg.cp_enable = 4;
     rsp_msg.Head.MsgId = ECPRI_DU_GET_RSP;
     rsp_msg.Head.MsgSize = sizeof(OamErrorInd_t) + sizeof(OamSubMessageHeader_t) + sizeof(EcpriDuCfg_t);
-    //rsp_msg.Head.MsgSize += 2;  //for test
     send_test_msg(&rsp_msg);    //for test
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -1433,12 +1437,12 @@ static void cmd_get_ecpri_du_cfg_parsed(__attribute__((unused)) void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_get_ecpri_du_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_du_cfg, ecpri_du_cfg, "get ecpri du cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_du_cfg, ecpri_du_cfg, "show du cfg");
 
 cmdline_parse_inst_t get_ecpri_du_cfg = {
     .f = cmd_get_ecpri_du_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri du cfg <ru_cnt> <mac addr> <vlan_id>",
+    .help_str = "show du cfg <ru_cnt> <mac addr> <vlan_id>",
     .tokens = {
         (void *)&cmd_get_ecpri_du_cfg,
         NULL,
@@ -1550,12 +1554,12 @@ static void cmd_get_ecpri_du_internal_cfg_parsed(__attribute__((unused)) void *p
 }
 
 cmdline_parse_token_string_t cmd_get_ecpri_du_internal_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_du_internal_cfg, cmd_ecpri_du_internal_cfg, "get ecpri du internal cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_ecpri_du_internal_cfg, cmd_ecpri_du_internal_cfg, "show du internal cfg");
 
 cmdline_parse_inst_t get_ecpri_du_internal_cfg = {
     .f = cmd_get_ecpri_du_internal_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri du internal cfg <pipeline_mode> <m_role> <outgoing_core_cnt> <ingoing_core_cnt>",
+    .help_str = "show du internal cfg <pipeline_mode> <m_role> <outgoing_core_cnt> <ingoing_core_cnt>",
     .tokens = {
         (void *)&cmd_get_ecpri_du_internal_cfg,
         NULL,
@@ -1689,12 +1693,12 @@ static void cmd_get_ecpri_ru_cfg_parsed(__attribute__((unused))void *parsed,
 
 
 cmdline_parse_token_string_t cmd_get_ecpri_ru_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_ru_cfg, ecpri_ru_cfg, "get ecpri ru cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_ru_cfg, ecpri_ru_cfg, "show ru cfg");
 
 cmdline_parse_inst_t get_ecpri_ru_cfg = {
     .f = cmd_get_ecpri_ru_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri ru cfg <ru_id> <s_interval> <Ta4min> <Ta4max> <T1amin_cp_ul> <T1amax_cp_ul> <T1amin_cp_dl> <T1amax_cp_dl> <T1amin_up> <T1amax_up> <ru_mac>",
+    .help_str = "show ru cfg <ru_id> <s_interval> <Ta4min> <Ta4max> <T1amin_cp_ul> <T1amax_cp_ul> <T1amin_cp_dl> <T1amax_cp_dl> <T1amin_up> <T1amax_up> <ru_mac>",
     .tokens = {
         (void *)&cmd_get_ecpri_ru_cfg,
         NULL,
@@ -1802,12 +1806,12 @@ static void cmd_get_ecpri_tx_rx_cfg_parsed(__attribute__((unused)) void *parsed,
 }
 
 cmdline_parse_token_string_t cmd_get_ecpri_tx_rx_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_tx_rx_cfg, ecpri_tx_rx_cfg, "get ecpri tx rx cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_tx_rx_cfg, ecpri_tx_rx_cfg, "show tx rx cfg");
 
 cmdline_parse_inst_t get_ecpri_tx_rx_cfg = {
     .f = cmd_get_ecpri_tx_rx_cfg_parsed,
     .data = NULL,
-    .help_str = "get ecpri tx rx cfg <maxTxLateThreshold>",
+    .help_str = "show tx rx cfg <maxTxLateThreshold>",
     .tokens = {
 	(void*) &cmd_get_ecpri_tx_rx_cfg,
         NULL,
@@ -1914,7 +1918,7 @@ struct cmd_read_ecpri_ptp_cfg {
 };
 
 cmdline_parse_token_string_t cmd_get_ecpri_ptp_cfg =
-    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_ptp_cfg, ptp_cfg, "get ptp cfg");
+    TOKEN_STRING_INITIALIZER(struct cmd_read_ecpri_ptp_cfg, ptp_cfg, "show ptp cfg");
 
 static void cmd_get_ecpri_ptp_cfg_parsed(__attribute__((unused)) void *parsed,
                 __attribute__((unused)) struct cmdline *cl,
@@ -1926,7 +1930,7 @@ static void cmd_get_ecpri_ptp_cfg_parsed(__attribute__((unused)) void *parsed,
 cmdline_parse_inst_t get_ecpri_ptp_cfg = {
     .f = cmd_get_ecpri_ptp_cfg_parsed,
     .data = NULL,
-    .help_str = "get ptp cfg <ptp_enable> <ptp_step_mode> <ecpri_step_mode> <ptp_domain>",
+    .help_str = "show ptp cfg <ptp_enable> <ptp_step_mode> <ecpri_step_mode> <ptp_domain>",
     .tokens = {
         (void *)&cmd_get_ecpri_ptp_cfg,
         NULL,
@@ -1936,24 +1940,210 @@ cmdline_parse_inst_t get_ecpri_ptp_cfg = {
 
 #endif 
 
-cmdline_parse_ctx_t main_ctx[] = {
-    (cmdline_parse_inst_t *)&set_comp_method_cfg,
-    (cmdline_parse_inst_t *)&set_ecpri_du_cfg,
-    (cmdline_parse_inst_t *)&set_ecpri_ptp_cfg,
-    (cmdline_parse_inst_t *)&set_ecpri_tx_rx_cfg,
-    (cmdline_parse_inst_t *)&set_ecpri_ru_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_basic_cfg,      
-    (cmdline_parse_inst_t *)&get_comp_method_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_du_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_du_internal_cfg, 
-    (cmdline_parse_inst_t *)&get_ecpri_tx_rx_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_ptp_cfg,      
-    (cmdline_parse_inst_t *)&get_eth_mtu_cfg,      
-    (cmdline_parse_inst_t *)&get_ecpri_ru_cfg,
-    (cmdline_parse_inst_t *)&get_ecpri_perf_kpis,
-    (cmdline_parse_inst_t *)&run_test_case,
-    (cmdline_parse_inst_t *)&cmd_quit,
-    NULL,
+
+typedef enum {
+    OduCmd_e = 1,       
+    EcpriCmd_e,       
+    PfiCmd_e,       
+    QuitCmd_e,       
+    OamMsgCmd_e
+} OamMsgType_e;
+
+static int run_num = OduCmd_e;
+
+
+/***** pfi *******/
+struct test_get_params {
+        cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t test_quit_token_cmd =
+        TOKEN_STRING_INITIALIZER(struct test_get_params, cmd, "quit");
+
+static void test_quit_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+	run_num = OduCmd_e;
+        cmdline_quit(ctx);
+}
+
+cmdline_parse_inst_t test_quit = {
+        .f = test_quit_callback,
+        .data = NULL,
+        .help_str = "quit\n     Exit program",
+        .tokens = {(void *)&test_quit_token_cmd, NULL},
+};
+
+cmdline_parse_ctx_t pfi_prompt_commands[] = {
+        (cmdline_parse_inst_t *)&test_quit,
+        NULL
+};
+
+static void pfi_main(void)
+{
+        struct cmdline *ctx_cmdline;
+
+        ctx_cmdline = cmdline_stdin_new(pfi_prompt_commands, "ODU>>PfiApp>> ");
+        cmdline_interact(ctx_cmdline);
+        cmdline_stdin_exit(ctx_cmdline);
+}
+
+
+/***** ecpri *******/
+struct pcmd_get_params {
+        cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t pcmd_quit_token_cmd =
+        TOKEN_STRING_INITIALIZER(struct pcmd_get_params, cmd, "quit");
+
+
+static void pcmd_quit_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+	run_num = OduCmd_e;
+        cmdline_quit(ctx);
+}
+
+cmdline_parse_inst_t ecpri_quit = {
+        .f = pcmd_quit_callback,
+        .data = NULL,
+        .help_str = "quit\n     Exit program",
+        .tokens = {(void *)&pcmd_quit_token_cmd, NULL},
 };
 
 
+cmdline_parse_ctx_t ecpri_prompt_commands[] = {
+	(cmdline_parse_inst_t *)&set_comp_method_cfg,
+    	(cmdline_parse_inst_t *)&set_ecpri_du_cfg,
+    	(cmdline_parse_inst_t *)&set_ecpri_ptp_cfg,
+    	(cmdline_parse_inst_t *)&set_ecpri_tx_rx_cfg,
+    	(cmdline_parse_inst_t *)&set_ecpri_ru_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_basic_cfg,
+    	(cmdline_parse_inst_t *)&get_comp_method_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_du_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_du_internal_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_tx_rx_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_ptp_cfg,
+    	(cmdline_parse_inst_t *)&get_eth_mtu_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_ru_cfg,
+    	(cmdline_parse_inst_t *)&get_ecpri_perf_kpis,
+    	(cmdline_parse_inst_t *)&run_test_case,
+        (cmdline_parse_inst_t *)&ecpri_quit,
+        NULL
+};
+
+static void ecpri_main(void)
+{
+        struct cmdline *ctx_cmdline;
+
+        ctx_cmdline = cmdline_stdin_new(ecpri_prompt_commands, "ODU>>EcpriApp>> ");
+        cmdline_interact(ctx_cmdline);
+        cmdline_stdin_exit(ctx_cmdline);
+}
+
+
+/***** ODU *******/
+struct pfi_get_params {
+        cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t pfi_token_cmd =
+        TOKEN_STRING_INITIALIZER(struct pfi_get_params, cmd, "pfi");
+
+static void pfi_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+	run_num = PfiCmd_e;
+        cmdline_quit(ctx);
+}
+
+cmdline_parse_inst_t pfi_cmd = {
+        .f = pfi_callback,
+        .data = NULL,
+        .help_str = "pfi cmd",
+        .tokens = {(void *)&pfi_token_cmd, NULL},
+};
+
+struct ecpri_get_params {
+        cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t ecpri_token_cmd =
+        TOKEN_STRING_INITIALIZER(struct ecpri_get_params, cmd, "ecpri");
+
+static void ecpri_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+	run_num = EcpriCmd_e;
+        cmdline_quit(ctx);
+}
+
+cmdline_parse_inst_t ecpri_cmd = {
+        .f = ecpri_callback,
+        .data = NULL,
+        .help_str = "ecpri cmd",
+        .tokens = {(void *)&ecpri_token_cmd, NULL},
+};
+
+
+struct odu_get_params {
+        cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t  odu_get_quit_token_cmd =
+        TOKEN_STRING_INITIALIZER(struct odu_get_params, cmd, "quit");
+
+static void odu_get_quit_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+ 	run_num = QuitCmd_e;
+        cmdline_quit(ctx);
+        cmdline_stdin_exit(ctx);
+
+}
+
+cmdline_parse_inst_t odu_quit = {
+        .f = odu_get_quit_callback,
+        .data = NULL,
+        .help_str = "quit\n     Exit program",
+        .tokens = {(void *)&odu_get_quit_token_cmd, NULL},
+};
+
+cmdline_parse_ctx_t odu_prompt_commands[] = {
+        (cmdline_parse_inst_t *)&ecpri_cmd,
+        (cmdline_parse_inst_t *)&pfi_cmd,
+        (cmdline_parse_inst_t *)&odu_quit,
+        NULL
+};
+
+
+static void odu_main(void)
+{
+        struct cmdline *ctx_cmdline;
+
+        ctx_cmdline = cmdline_stdin_new(odu_prompt_commands, "ODU>> ");
+        cmdline_interact(ctx_cmdline);
+        cmdline_stdin_exit(ctx_cmdline);
+}
+
+
+void odu_cmd_main(void)
+{
+    while(1)
+    {
+        if(run_num == OduCmd_e)
+        {
+          odu_main();
+        }
+        else if (run_num == EcpriCmd_e)
+        {
+          ecpri_main();
+
+        }
+        else if(run_num == PfiCmd_e)
+        {
+          pfi_main();
+        }
+
+       if(run_num == QuitCmd_e)
+       {
+         break;
+       }
+   }
+}
