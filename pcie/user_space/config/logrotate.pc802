@@ -1,0 +1,10 @@
+/var/log/pc802.log{
+    su root root
+    daily
+    size 10M
+    missingok
+    rotate 8
+    compress
+    delaycompress
+    notifempty
+}
