@@ -12,10 +12,12 @@ sources = files(
         'pc802_ethdev.c',
         'pc802_logs.c',
         'pcxx_ipc.c',
+        'pc802_oam_lib.c',
         'pc802_mailbox.c'
 )
 
 headers = files(
         'rte_pmd_pc802.h',
-        'pcxx_ipc.h'
+        'pcxx_ipc.h',
+        'pc802_oam_lib.h'
 )
