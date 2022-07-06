@@ -1,0 +1,160 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2019-2021 Broadcom
+ * All rights reserved.
+ */
+
+#ifndef _TF_DEVICE_P4_H_
+#define _TF_DEVICE_P4_H_
+
+#include "cfa_resource_types.h"
+#include "tf_core.h"
+#include "tf_rm.h"
+#include "tf_if_tbl.h"
+#include "tf_global_cfg.h"
+
+struct tf_rm_element_cfg tf_ident_p4[TF_IDENT_TYPE_MAX] = {
+	[TF_IDENT_TYPE_L2_CTXT_HIGH] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_L2_CTXT_REMAP_HIGH,
+		0, 0, 0
+	},
+	[TF_IDENT_TYPE_L2_CTXT_LOW] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_L2_CTXT_REMAP_LOW,
+		0, 0, 0
+	},
+	[TF_IDENT_TYPE_PROF_FUNC] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_PROF_FUNC,
+		0, 0, 0
+	},
+	[TF_IDENT_TYPE_WC_PROF] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_WC_TCAM_PROF_ID,
+		0, 0, 0
+	},
+	[TF_IDENT_TYPE_EM_PROF] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_EM_PROF_ID,
+		0, 0, 0
+	},
+};
+
+struct tf_rm_element_cfg tf_tcam_p4[TF_TCAM_TBL_TYPE_MAX] = {
+	[TF_TCAM_TBL_TYPE_L2_CTXT_TCAM_HIGH] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_L2_CTXT_TCAM_HIGH,
+		0, 0, 0
+	},
+	[TF_TCAM_TBL_TYPE_L2_CTXT_TCAM_LOW] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_L2_CTXT_TCAM_LOW,
+		0, 0, 0
+	},
+	[TF_TCAM_TBL_TYPE_PROF_TCAM] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_PROF_TCAM,
+		0, 0, 0
+	},
+	[TF_TCAM_TBL_TYPE_WC_TCAM] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_WC_TCAM,
+		0, 0, 0
+	},
+	[TF_TCAM_TBL_TYPE_SP_TCAM] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_SP_TCAM,
+		0, 0, 0
+	},
+};
+
+struct tf_rm_element_cfg tf_tbl_p4[TF_TBL_TYPE_MAX] = {
+	[TF_TBL_TYPE_FULL_ACT_RECORD] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_FULL_ACTION,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_MCAST_GROUPS] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_MCG,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_ENCAP_8B] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_ENCAP_8B,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_ENCAP_16B] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_ENCAP_16B,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_ENCAP_64B] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_ENCAP_64B,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_SP_SMAC] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_SP_MAC,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_SP_SMAC_IPV4] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_SP_MAC_IPV4,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_SP_SMAC_IPV6] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_SP_MAC_IPV6,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_STATS_64] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_COUNTER_64B,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_ACT_MODIFY_IPV4] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_NAT_IPV4,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_METER_PROF] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_METER_PROF,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_METER_INST] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_METER,
+		0, 0, 0
+	},
+	[TF_TBL_TYPE_MIRROR_CONFIG] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_MIRROR,
+		0, 0, 0
+	},
+
+};
+
+struct tf_rm_element_cfg tf_em_ext_p4[TF_EM_TBL_TYPE_MAX] = {
+	[TF_EM_TBL_TYPE_TBL_SCOPE] = {
+		TF_RM_ELEM_CFG_HCAPI_BA, CFA_RESOURCE_TYPE_P4_TBL_SCOPE,
+		0, 0, 0
+	},
+};
+
+struct tf_rm_element_cfg tf_em_int_p4[TF_EM_TBL_TYPE_MAX] = {
+	[TF_EM_TBL_TYPE_EM_RECORD] = {
+		TF_RM_ELEM_CFG_HCAPI, CFA_RESOURCE_TYPE_P4_EM_REC,
+		0, 0, 0
+	},
+};
+
+/* Note that hcapi_types from this table are from hcapi_cfa_p4.h
+ * These are not CFA resource types because they are not allocated
+ * CFA resources - they are identifiers for the interface tables
+ * shared between the firmware and the host.  It may make sense to
+ * move these types to cfa_resource_types.h.
+ */
+struct tf_if_tbl_cfg tf_if_tbl_p4[TF_IF_TBL_TYPE_MAX] = {
+	[TF_IF_TBL_TYPE_PROF_SPIF_DFLT_L2_CTXT] = {
+		TF_IF_TBL_CFG, CFA_P4_TBL_PROF_SPIF_DFLT_L2CTXT
+	},
+	[TF_IF_TBL_TYPE_PROF_PARIF_DFLT_ACT_REC_PTR] = {
+		TF_IF_TBL_CFG, CFA_P4_TBL_PROF_PARIF_DFLT_ACT_REC_PTR
+	},
+	[TF_IF_TBL_TYPE_PROF_PARIF_ERR_ACT_REC_PTR] = {
+		TF_IF_TBL_CFG, CFA_P4_TBL_PROF_PARIF_ERR_ACT_REC_PTR
+	},
+	[TF_IF_TBL_TYPE_LKUP_PARIF_DFLT_ACT_REC_PTR] = {
+		TF_IF_TBL_CFG, CFA_P4_TBL_LKUP_PARIF_DFLT_ACT_REC_PTR
+	},
+};
+
+struct tf_global_cfg_cfg tf_global_cfg_p4[TF_GLOBAL_CFG_TYPE_MAX] = {
+	[TF_TUNNEL_ENCAP] = {
+		TF_GLOBAL_CFG_CFG_HCAPI, TF_TUNNEL_ENCAP
+	},
+	[TF_ACTION_BLOCK] = {
+		TF_GLOBAL_CFG_CFG_HCAPI, TF_ACTION_BLOCK
+	},
+};
+#endif /* _TF_DEVICE_P4_H_ */
