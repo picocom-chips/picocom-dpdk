@@ -1761,13 +1761,14 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 /* see e1000_logs.c */
 RTE_INIT(picocom_pc802_init_log)
 {
+    printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
 }
 
 char * picocom_pc802_version(void)
 {
     static char ver[256];
-    snprintf(ver, sizeof(ver), "PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
+    snprintf(ver, sizeof(ver), "PC802 Driver %s", PC802_UDRIVER_VERSION);
     return ver;
 }
 

@@ -6,6 +6,8 @@ if is_windows
     subdir_done()
 endif
 
+version = run_command(find_program('cat', 'more'), files(meson.current_source_dir()+'/version')).stdout().strip()
+dpdk_conf.set('PC802_UDRIVER_VERSION', '"'+version+'"')
 cflags += '-DRTE_ENABLE_ASSERT'
 
 sources = files(
