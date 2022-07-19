@@ -1943,6 +1943,7 @@ static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
 static int pc802_process_phy_test_vectors(void *data)
 {
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
+    PC802_BAR_t *bar = pc802_get_BAR(adapter->port_id);
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     uint32_t MB_RCCNT;
     uint32_t EMB_RCCNT;
@@ -1950,6 +1951,7 @@ static int pc802_process_phy_test_vectors(void *data)
     volatile uint32_t EMB_EPCNT;
     volatile uint32_t COMMAND;
     volatile uint32_t pfi_core;
+    volatile uint32_t drv_state;
     uint32_t re = 1;
 
     MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
@@ -1957,7 +1959,8 @@ static int pc802_process_phy_test_vectors(void *data)
     if (MB_EPCNT != MB_RCCNT) {
         COMMAND = PC802_READ_REG(ext->MB_COMMAND);
         pfi_core = PC802_READ_REG(ext->MB_EPCORE);
-        if (0 != pfi_core) {
+        drv_state = PC802_READ_REG(bar->DRVSTATE);
+        if ((0 != pfi_core) && (3 == drv_state)) {
             if (COMMAND == MB_VEC_READ) {
                 re = handle_non_pfi_0_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
             } else if (COMMAND == MB_VEC_DUMP) {
