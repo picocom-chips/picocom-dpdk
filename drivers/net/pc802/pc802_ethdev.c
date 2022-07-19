@@ -200,10 +200,10 @@ struct pc802_adapter {
 
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
 static int pc802_download_boot_image(uint16_t port);
-static uint32_t handle_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
-static uint32_t handle_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
-static uint32_t handle_ecpri_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
-static uint32_t handle_ecpri_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
+static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
+static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
+static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
+static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
@@ -1949,18 +1949,29 @@ static int pc802_process_phy_test_vectors(void *data)
     volatile uint32_t MB_EPCNT;
     volatile uint32_t EMB_EPCNT;
     volatile uint32_t COMMAND;
+    volatile uint32_t pfi_core;
     uint32_t re = 1;
 
     MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
-    EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
     MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
-    EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
     if (MB_EPCNT != MB_RCCNT) {
         COMMAND = PC802_READ_REG(ext->MB_COMMAND);
-        if (COMMAND == 12) {
-            re = handle_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
-        } else if (COMMAND == 13) {
-            re = handle_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
+        pfi_core = PC802_READ_REG(ext->MB_EPCORE);
+        if (0 != pfi_core) {
+            if (COMMAND == MB_VEC_READ) {
+                re = handle_non_pfi_0_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
+            } else if (COMMAND == MB_VEC_DUMP) {
+                re = handle_non_pfi_0_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
+            }
+            PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
+            MB_RCCNT++;
+            PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
+            return 1;
+        }
+        if (COMMAND == MB_VEC_READ) {
+            re = handle_pfi_0_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
+        } else if (COMMAND == MB_VEC_DUMP) {
+            re = handle_pfi_0_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
         }
         PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
         PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
@@ -1968,12 +1979,14 @@ static int pc802_process_phy_test_vectors(void *data)
         PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
         return 1;
     }
+    EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
+    EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
     if (EMB_EPCNT != EMB_RCCNT) {
         COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
-        if (COMMAND == 12) {
-            re = handle_ecpri_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
-        } else if (COMMAND == 13) {
-            re = handle_ecpri_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
+        if (COMMAND == MB_VEC_READ) {
+            re = handle_non_pfi_0_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
+        } else if (COMMAND == MB_VEC_DUMP) {
+            re = handle_non_pfi_0_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
         }
         PC802_WRITE_REG(ext->EMB_RESULT, (0 == re));
         EMB_RCCNT++;
@@ -1984,7 +1997,7 @@ static int pc802_process_phy_test_vectors(void *data)
     return 0;
 }
 
-static uint32_t handle_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
@@ -2071,7 +2084,7 @@ static uint32_t handle_vec_read(uint16_t port_id, uint32_t file_id, uint32_t off
 // -----------------------------------------------------------------------------
 // handle_vec_dump: Handle task vector dump requests
 // -----------------------------------------------------------------------------
-static uint32_t handle_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
+static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
@@ -2132,7 +2145,7 @@ static uint32_t handle_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t add
     return 0;
 }
 
-static uint32_t handle_ecpri_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
+static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
@@ -2214,7 +2227,7 @@ static uint32_t handle_ecpri_vec_read(uint16_t port_id, uint32_t file_id, uint32
 // -----------------------------------------------------------------------------
 // handle_vec_dump: Handle task vector dump requests
 // -----------------------------------------------------------------------------
-static uint32_t handle_ecpri_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
+static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
@@ -2272,12 +2285,12 @@ static uint32_t handle_ecpri_vec_dump(uint16_t port_id, uint32_t file_id, uint32
 
 uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
-    return handle_vec_read(port_id, file_id, offset, address, length);
+    return handle_non_pfi_0_vec_read(port_id, file_id, offset, address, length);
 }
 
 uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
-    return handle_vec_dump(port_id, file_id, address, length);
+    return handle_non_pfi_0_vec_dump(port_id, file_id, address, length);
 }
 
 static inline void handle_trace_data(uint32_t core, uint32_t rccnt, uint32_t tdata)

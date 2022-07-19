@@ -215,6 +215,7 @@ struct PC802_BAR_Ext_t {
         struct {
             volatile uint32_t MB_EPCNT;
             uint32_t MB_COMMAND;
+            uint32_t MB_EPCORE;
             uint32_t VEC_EPCNT;
             uint32_t MB_ARGS[8];
         };
