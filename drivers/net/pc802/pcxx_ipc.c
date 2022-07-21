@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include <rte_debug.h>
+#include <rte_cycles.h>
 
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
@@ -40,8 +41,14 @@ static int openCtrlState = 0;
 static int openOamState = 0;
 static int openDataState = 0;
 
+static uint32_t cycles_of_a_slot;
+
 int pcxxCtrlOpen(const pcxxInfo_s* info)
 {
+    uint64_t hz = rte_get_timer_hz();
+    DBLOG("NPU CPU Hz = %lu\n", hz);
+    cycles_of_a_slot = hz / 2000;
+
     if (openCtrlState != 0) {
         printf("open Ctrl State = %d \n", openCtrlState);
         return -1;
@@ -222,19 +229,35 @@ int pcxxCtrlRecv(void)
     uint32_t offset;
     int ret;
     static uint32_t ctrlCnt = 0;
+    static uint64_t t_ctrl;
+    static uint64_t t_data;
+    static uint64_t t_thres;
+    uint64_t t_diff;
 
     if (NULL == rx_ctrl_buf) {
         num_rx = pc802_rx_mblk_burst(0, QID_CTRL, &mblk_ctrl, 1);
         if (num_rx)
             rx_ctrl_buf = (char *)&mblk_ctrl[1];
+        mblk_ctrl = (PC802_Mem_Block_t *)(rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
+        if (1 == mblk_ctrl->pkt_type) {
+            t_ctrl = rte_rdtsc();
+            t_thres = cycles_of_a_slot/2;
+        }
     }
     if (NULL == rx_ctrl_buf)
         return -1;
     mblk_ctrl = (PC802_Mem_Block_t *)(rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
     if (1 == mblk_ctrl->pkt_type) {
         num_rx = pc802_rx_mblk_burst(0, QID_DATA, &mblk_data, 1);
-        if (0 == num_rx)
+        if (0 == num_rx) {
+            t_data = rte_rdtsc();
+            t_diff = t_data - t_ctrl;
+            if (t_diff > t_thres) {
+                DBLOG("ERROR: No Data, Interval of ctrl and data = %lu > 1/2 slot\n", t_diff);
+                t_diff <<= 1;
+            }
             return -1;
+        }
         rx_data_buf = (char *)&mblk_data[1];
     }
 
