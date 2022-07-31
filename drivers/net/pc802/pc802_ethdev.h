@@ -320,4 +320,6 @@ typedef struct {
     magic_mailbox_t    m_host_to_cpu[MB_MAX_H2C_MAILBOXES];
 } mailbox_exclusive;
 
+int pc802_kni_add_port(uint16_t port);
+
 #endif /* _PC802_ETHDEV_H_ */

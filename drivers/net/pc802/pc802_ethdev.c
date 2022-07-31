@@ -20,9 +20,8 @@
 #include <rte_pci.h>
 #include <rte_bus_pci.h>
 #include <rte_version.h>
-#define __RTE_VERSION RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR, RTE_VER_RELEASE)
 #include <rte_ether.h>
-#if __RTE_VERSION >= RTE_VERSION_NUM(21, 0, 0, 0)
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 5, 0, 0)
 #include <ethdev_driver.h>
 #include <ethdev_pci.h>
 #else
@@ -219,6 +218,33 @@ int pc802_get_socket_id(uint16_t port_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
 	return dev->data->numa_node;
+}
+
+int pc802_get_port_id(uint16_t pc802_index)
+{
+    static int32_t port_num = 0;
+    static int32_t port_id[PC802_INDEX_MAX] = {-1, -1, -1, -1};
+    int index = 0;
+    int i;
+    struct rte_pci_device *pci_dev;
+
+    RTE_ASSERT(pc802_index < PC802_INDEX_MAX);
+    if (port_num > 0)
+        return port_id[pc802_index];
+
+    RTE_ETH_FOREACH_DEV(i)
+    {
+        DBLOG("ETH DEV %d: %s\n", i, rte_eth_devices[i].device->name);
+        pci_dev = RTE_ETH_DEV_TO_PCI(&rte_eth_devices[i]);
+        if ((PCI_VENDOR_PICOCOM == pci_dev->id.vendor_id) &&
+                ((PCI_DEVICE_PICOCOM_PC802_OLD == pci_dev->id.device_id) ||
+                (PCI_DEVICE_PICOCOM_PC802 == pci_dev->id.device_id))) {
+            DBLOG("PC802 index %d port is %d:%s\n", index, i, rte_eth_devices[i].device->name);
+            port_id[index++] = i;
+            port_num++;
+        }
+    }
+    return port_id[pc802_index];
 }
 
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
@@ -1094,6 +1120,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
     adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
 
+    pc802_kni_add_port( adapter->port_id );
     PMD_INIT_LOG(DEBUG, "<<");
 
     return 0;
