@@ -1377,7 +1377,7 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    port_init(0);
+    port_init(pc802_get_port_id(0));
 
     rte_eal_remote_launch(prompt, NULL, 1);
 

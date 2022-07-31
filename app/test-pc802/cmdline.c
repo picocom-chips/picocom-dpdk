@@ -13,6 +13,7 @@
 #include <rte_pmd_pc802.h>
 
 extern int main_stop;
+extern void pc802_kni_print_stats(void);
 
 struct cmd_quit_result {
     cmdline_fixed_string_t quit;
@@ -185,6 +186,7 @@ static void cmd_show_pcie_counter_parsed(void *parsed_result,
     RTE_ASSERT(!strcmp(res->show, "show"));
     RTE_ASSERT(!strcmp(res->pcie, "pcie"));
     RTE_ASSERT(!strcmp(res->counter, "counter"));
+    pc802_kni_print_stats();
     pc802_show_pcie_counter(0);
 }
 

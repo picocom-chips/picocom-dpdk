@@ -26,6 +26,7 @@ typedef enum PC802_Traffic_Type_e {
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
 
+#define PC802_INDEX_MAX     4
 #define NPU_CACHE_LINE_SZ   64
 
 struct pc802_mem_block {
@@ -40,6 +41,14 @@ struct pc802_mem_block {
 typedef struct pc802_mem_block PC802_Mem_Block_t;
 
 int pc802_get_socket_id(uint16_t port_id);
+
+/**
+* @brief get valid pc802 port id.
+*
+* @param[in] pc802_index PC802 index, value is 0-PC802_INDEX_MAX
+* @return return >=0 is the PC802 device id, or else return error
+*/
+int pc802_get_port_id(uint16_t pc802_index);
 
 char * picocom_pc802_version(void);
 
