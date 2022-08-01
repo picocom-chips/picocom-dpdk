@@ -22,7 +22,7 @@
 #include <rte_version.h>
 #define __RTE_VERSION RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR, RTE_VER_RELEASE)
 #include <rte_ether.h>
-#if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
+#if __RTE_VERSION >= RTE_VERSION_NUM(21, 0, 0, 0)
 #include <ethdev_driver.h>
 #include <ethdev_pci.h>
 #else
