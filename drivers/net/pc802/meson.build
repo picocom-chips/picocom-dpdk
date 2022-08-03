@@ -9,6 +9,7 @@ endif
 version = run_command(find_program('cat', 'more'), files(meson.current_source_dir()+'/version')).stdout().strip()
 dpdk_conf.set('PC802_UDRIVER_VERSION', '"'+version+'"')
 cflags += '-DRTE_ENABLE_ASSERT'
+dpdk_conf.set('MULTI_PC802', get_option('enable_multi_pc802'))
 
 sources = files(
         'pc802_ethdev.c',

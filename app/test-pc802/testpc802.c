@@ -91,36 +91,58 @@ static const struct rte_eth_conf dev_conf = {
         },
     };
 
+#ifdef MULTI_PC802
+#define PCXX_CALL0(fun,dev) fun(dev)
+#define PCXX_CALL(fun,dev,cell) fun(dev,cell)
+static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
+#else
+#define PCXX_CALL0(fun,dev) fun()
+#define PCXX_CALL(fun,dev,cell) fun()
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
+#endif
 
 static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
 static pcxxInfo_s   oam_cb_info  = {process_ul_oam_msg,  process_dl_oam_msg };
 static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
+uint16_t g_pc802_index = 0;
+uint16_t g_cell_index = 0;
 
-static int port_init(uint16_t port)
+static int port_init( uint16_t pc802_index )
 {
     struct rte_mempool *mbuf_pool;
     //const struct rte_eth_conf dev_conf;
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf tx_conf;
     //const struct rte_eth_rxconf rx_conf;
+    char temp_name[32] = {0};
     int socket_id;
+    uint16_t cell;
+    int port = pc802_get_port_id(pc802_index);
+    if ( port < 0 )
+        rte_exit( EXIT_FAILURE, "pc802 %d is notexist !\n", pc802_index );
 
     rte_eth_dev_info_get(port, &dev_info);
     socket_id = dev_info.device->numa_node;
 
-    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL_ETH_TX", 2048,
+    sprintf(temp_name, "MBUF_POOL_ETH%d_TX", pc802_index );
+    mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
             128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
     mpool_pc802_tx = mbuf_pool;
 
-    mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL_ETH_RX", 2048,
+    sprintf(temp_name, "MBUF_POOL_ETH%d_RX", pc802_index );
+    mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
             128 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
@@ -130,15 +152,16 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    pcxxDataOpen(&data_cb_info);
-
-    pcxxCtrlOpen(&ctrl_cb_info);
-
-    pcxxOamOpen(&oam_cb_info);
+    for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
+    {
+        pcxxDataOpen(&data_cb_info, pc802_index, cell);
+        pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
+    }
+    pcxxOamOpen(&oam_cb_info, pc802_index);
 
     rte_eth_dev_start(port);
 
-    printf("Finished port_init !\n");
+    printf("Finished %d port_init !\n", pc802_index );
 
     return 0;
 }
@@ -344,85 +367,126 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
     return;
 }
 
-#define QID_DATA    PC802_TRAFFIC_5G_EMBB_DATA
-#define QID_CTRL    PC802_TRAFFIC_5G_EMBB_CTRL
+extern PC802_Traffic_Type_e QID_DATA[];
+extern PC802_Traffic_Type_e QID_CTRL[];
 #define QID_OAM     PC802_TRAFFIC_OAM
 
 static union {
     const char *cc;
     uint32_t   *up;
-} dl_a[17];
-static uint32_t dl_a_num = 0;
+} dl_a[PC802_INDEX_MAX][CELL_NUM_PRE_DEV][17];
+static uint32_t dl_a_num[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
 static union {
     const char *cc;
     uint32_t   *up;
-} dl_oam[32];
-static uint32_t dl_oam_num = 0;
+} dl_oam[PC802_INDEX_MAX][32];
+static uint32_t dl_oam_num[PC802_INDEX_MAX] = {0};
 
-static int      atl_test_result;
+static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
 
+#ifdef MULTI_PC802
+static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
+{
+#else
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#endif
     payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
+    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
+    dl_a_num[dev_index][cell_index]++;
     return 0;
 }
 
+#ifdef MULTI_PC802
+static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
+{
+#else
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#endif
     uint64_t addr = (uint64_t)buf;
     uint32_t *ul_msg = (uint32_t *)addr;
     swap_msg(ul_msg, payloadSize);
     uint32_t *dl_msg;
-    dl_msg = dl_a[dl_a_num - 1].up;
+    dl_msg = dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index] - 1].up;
     if (check_same(&dl_msg, 1, ul_msg)) {
-        atl_test_result |= 1;
+        atl_test_result[dev_index][cell_index] |= 1;
     }
-    dl_a_num = 0;
+    dl_a_num[dev_index][cell_index] = 0;
     return payloadSize;
 }
 
+#ifdef MULTI_PC802
+static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
+{
+#else
 static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+#endif
     buf = buf;
     payloadSize = payloadSize;
-    dl_oam[dl_oam_num].cc = buf;
-    dl_oam_num++;
+    dl_oam[dev_index][dl_oam_num[dev_index]].cc = buf;
+    dl_oam_num[dev_index]++;
     return 0;
 }
 
+#ifdef MULTI_PC802
+static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
+{
+#else
 static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#endif
     uint64_t addr = (uint64_t)buf;
     uint32_t *ul_msg = (uint32_t *)addr;
     swap_msg(ul_msg, payloadSize);
     uint32_t **dl_msg;
-    dl_msg = &dl_oam[0].up;
-    if (check_same(dl_msg, dl_oam_num, ul_msg)) {
-        atl_test_result |= 4;
+    dl_msg = &dl_oam[dev_index][0].up;
+    if (check_same(dl_msg, dl_oam_num[dev_index], ul_msg)) {
+        atl_test_result[dev_index][cell_index] |= 4;
     }
-    dl_oam_num = 0;
+    dl_oam_num[dev_index] = 0;
     return payloadSize;
 }
 
+#ifdef MULTI_PC802
+static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
+{
+#else
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#endif
     payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
+    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
+    dl_a_num[dev_index][cell_index]++;
     return 0;
 }
 
+#ifdef MULTI_PC802
+static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
+{
+#else
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
 {
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#endif
     uint64_t addr = (uint64_t)buf;
     uint32_t *ul_msg = (uint32_t *)addr;
     swap_msg(ul_msg, payloadSize);
     uint32_t **dl_msg;
-    dl_msg = &dl_a[0].up;
-    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
-        atl_test_result |= 2;
+    dl_msg = &dl_a[dev_index][cell_index][0].up;
+    if (check_same(dl_msg, dl_a_num[dev_index][cell_index] - 1, ul_msg)) {
+        atl_test_result[dev_index][cell_index] |= 2;
     }
     return payloadSize;
 }
@@ -431,16 +495,16 @@ static int case1(void)
 {
     int re;
     uint32_t N;
-    uint32_t *a = alloc_tx_blk(QID_CTRL);
+    uint32_t *a = alloc_tx_blk(QID_CTRL[g_cell_index]);
     if (NULL == a) return -1;
 
-    produce_dl_src_data(a, QID_CTRL);
+    produce_dl_src_data(a, QID_CTRL[g_cell_index]);
     N = sizeof(uint32_t) * (a[1] + 2);
     set_blk_attr(a, N, 2, 1);
-    tx_blks(QID_CTRL, &a, 1);
+    tx_blks(QID_CTRL[g_cell_index], &a, 1);
 
     uint32_t *b;
-    while (0 == rx_blks(QID_CTRL, &b, 1));
+    while (0 == rx_blks(QID_CTRL[g_cell_index], &b, 1));
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
@@ -462,17 +526,17 @@ static int case101(void)
     uint32_t N;
     uint32_t avail;
 
-    pcxxSendStart();
-    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail));
+    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index );
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, QID_CTRL);
+    produce_dl_src_data(A, QID_CTRL[g_cell_index]);
     N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxCtrlSend(a, N);
-    pcxxSendEnd();
+    pcxxCtrlSend(a, N, g_pc802_index, g_cell_index);
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == pcxxCtrlRecv());
-    int re = atl_test_result;
-    atl_test_result = 0;
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
     return re;
 }
 
@@ -484,24 +548,24 @@ static int case2(void)
     uint32_t length = 0;
     uint8_t type, eop;
 
-    a[0] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[0], QID_DATA);
+    a[0] = alloc_tx_blk(QID_DATA[g_cell_index]);
+    produce_dl_src_data(a[0], QID_DATA[g_cell_index]);
     N = sizeof(uint32_t) * (a[0][1] + 2);
     set_blk_attr(a[0], N, 0, 1);
-    tx_blks(QID_DATA, &a[0], 1);
+    tx_blks(QID_DATA[g_cell_index], &a[0], 1);
 
-    a[1] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[1], QID_CTRL);
+    a[1] = alloc_tx_blk(QID_CTRL[g_cell_index]);
+    produce_dl_src_data(a[1], QID_CTRL[g_cell_index]);
     N = sizeof(uint32_t) * (a[1][1] + 2);
     set_blk_attr(a[1], N, 1, 1);
-    tx_blks(QID_CTRL, &a[1], 1);
+    tx_blks(QID_CTRL[g_cell_index], &a[1], 1);
 
     uint16_t s;
     do {
-        s = rx_blks(QID_DATA, &b[0], 1);
+        s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
     } while(0 == s);
     do {
-        s = rx_blks(QID_CTRL, &b[1], 1);
+        s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -528,29 +592,29 @@ static int case102(void)
     uint32_t offset;
     uint32_t avail;
 
-    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    pcxxSendStart();
+    PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
 
-    produce_dl_src_data(tmp, QID_DATA);
+    produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
     length = sizeof(uint32_t) * (tmp[1] + 2);
-    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset, g_pc802_index, g_cell_index));
     memcpy(a[0], tmp, length);
-    pcxxDataSend(offset, length);
+    pcxxDataSend(offset, length, g_pc802_index, g_cell_index);
 
 
-    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[1], &avail));
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[1], &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a[1];
-    produce_dl_src_data(A, QID_CTRL);
+    produce_dl_src_data(A, QID_CTRL[g_cell_index]);
     length = sizeof(uint32_t) * (A[1] + 2);
-    pcxxCtrlSend(a[1], length);
+    pcxxCtrlSend(a[1], length, g_pc802_index, g_cell_index);
 
-    pcxxSendEnd();
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == pcxxCtrlRecv());
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
 
-    int re = atl_test_result;
-    atl_test_result = 0;
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
     free_blk(tmp);
     return re;
 }
@@ -563,30 +627,30 @@ static int case3(void)
     uint32_t length = 0;
     uint8_t type, eop;
 
-    a[0] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[0], QID_DATA);
+    a[0] = alloc_tx_blk(QID_DATA[g_cell_index]);
+    produce_dl_src_data(a[0], QID_DATA[g_cell_index]);
     N = sizeof(uint32_t) * (a[0][1] + 2);
     set_blk_attr(a[0], N, 0, 0);
-    tx_blks(QID_DATA, &a[0], 1);
+    tx_blks(QID_DATA[g_cell_index], &a[0], 1);
 
-    a[1] = alloc_tx_blk(QID_DATA);
-    produce_dl_src_data(a[1], QID_DATA);
+    a[1] = alloc_tx_blk(QID_DATA[g_cell_index]);
+    produce_dl_src_data(a[1], QID_DATA[g_cell_index]);
     N = sizeof(uint32_t) * (a[1][1] + 2);
     set_blk_attr(a[1], N, 0, 1);
-    tx_blks(QID_DATA, &a[1], 1);
+    tx_blks(QID_DATA[g_cell_index], &a[1], 1);
 
-    a[2] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[2], QID_CTRL);
+    a[2] = alloc_tx_blk(QID_CTRL[g_cell_index]);
+    produce_dl_src_data(a[2], QID_CTRL[g_cell_index]);
     N = sizeof(uint32_t) * (a[2][1] + 2);
     set_blk_attr(a[2], N, 1, 1);
-    tx_blks(QID_CTRL, &a[2], 1);
+    tx_blks(QID_CTRL[g_cell_index], &a[2], 1);
 
     uint16_t s;
     do {
-        s = rx_blks(QID_DATA, &b[0], 1);
+        s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
     } while(0 == s);
     do {
-        s = rx_blks(QID_CTRL, &b[1], 1);
+        s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -614,35 +678,35 @@ static int case103(void)
     uint32_t offset;
     uint32_t avail;
 
-    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    pcxxSendStart();
+    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index);
 
-    produce_dl_src_data(tmp, QID_DATA);
+    produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
     length = sizeof(uint32_t) * (tmp[1] + 2);
-    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset));
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[0], &offset, g_pc802_index, g_cell_index));
     memcpy(a[0], tmp, length);
-    pcxxDataSend(offset, length);
+    pcxxDataSend(offset, length, g_pc802_index, g_cell_index);
 
-    produce_dl_src_data(tmp, QID_DATA);
+    produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
     length = sizeof(uint32_t) * (tmp[1] + 2);
-    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[1], &offset));
+    RTE_ASSERT(0 == pcxxDataAlloc(length, &a[1], &offset, g_pc802_index, g_cell_index));
     memcpy(a[1], tmp, length);
-    pcxxDataSend(offset, length);
+    pcxxDataSend(offset, length, g_pc802_index, g_cell_index);
 
 
-    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[2], &avail));
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[2], &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a[2];
-    produce_dl_src_data(A, QID_CTRL);
+    produce_dl_src_data(A, QID_CTRL[g_cell_index]);
     length = sizeof(uint32_t) * (A[1] + 2);
-    pcxxCtrlSend(a[2], length);
+    pcxxCtrlSend(a[2], length, g_pc802_index, g_cell_index);
 
-    pcxxSendEnd();
+    PCXX_CALL(pcxxSendEnd, g_pc802_index, g_cell_index);
 
-    while (-1 == pcxxCtrlRecv());
+    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, g_cell_index));
 
-    int re = atl_test_result;
-    atl_test_result = 0;
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
     free_blk(tmp);
     return re;
 }
@@ -658,27 +722,27 @@ static int case4(uint16_t D)
     if (D > 16) D = 16;
 
     for (k = 0; k < D; k++) {
-        a[k] = alloc_tx_blk(QID_DATA);
-        produce_dl_src_data(a[k], QID_DATA);
+        a[k] = alloc_tx_blk(QID_DATA[g_cell_index]);
+        produce_dl_src_data(a[k], QID_DATA[g_cell_index]);
         N = sizeof(uint32_t) * (a[k][1] + 2);
         eop = k == (D-1);
         set_blk_attr(a[k], N, 0, eop);
         //printf("  Type=0  m=%u  EOP=%1u\n", k, eop);
-        tx_blks(QID_DATA, &a[k], 1);
+        tx_blks(QID_DATA[g_cell_index], &a[k], 1);
     }
-    a[k] = alloc_tx_blk(QID_CTRL);
-    produce_dl_src_data(a[k], QID_CTRL);
+    a[k] = alloc_tx_blk(QID_CTRL[g_cell_index]);
+    produce_dl_src_data(a[k], QID_CTRL[g_cell_index]);
     N = sizeof(uint32_t) * (a[k][1] + 2);
     set_blk_attr(a[k], N, 1, 1);
     //printf("  Type=1  m=%u  EOP=1\n", k);
-    tx_blks(QID_CTRL, &a[k], 1);
+    tx_blks(QID_CTRL[g_cell_index], &a[k], 1);
 
     uint16_t s;
     do {
-        s = rx_blks(QID_DATA, &b[0], 1);
+        s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
     } while(0 == s);
     do {
-        s = rx_blks(QID_CTRL, &b[1], 1);
+        s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -707,30 +771,30 @@ static int case104(uint16_t D)
     int k;
 
     if (D > 16) D = 16;
-    uint32_t *tmp = alloc_tx_blk(QID_DATA);
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    pcxxSendStart();
+    PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
 
     for (k = 0; k < D; k++) {
-        produce_dl_src_data(tmp, QID_DATA);
+        produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
         length = sizeof(uint32_t) * (tmp[1] + 2);
-        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset));
+        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset, g_pc802_index, g_cell_index));
         memcpy(a[k], tmp, length);
-        pcxxDataSend(offset, length);
+        pcxxDataSend(offset, length, g_pc802_index, g_cell_index);
     }
 
-    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail));
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a[k];
-    produce_dl_src_data(A, QID_CTRL);
+    produce_dl_src_data(A, QID_CTRL[g_cell_index]);
     length = sizeof(uint32_t) * (A[1] + 2);
-    pcxxCtrlSend(a[k], length);
+    pcxxCtrlSend(a[k], length, g_pc802_index, g_cell_index);
 
-    pcxxSendEnd();
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == pcxxCtrlRecv());
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
 
-    int re = atl_test_result;
-    atl_test_result = 0;
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
     free_blk(tmp);
     return re;
 }
@@ -941,17 +1005,17 @@ static int case301(void)
     uint32_t N;
     uint32_t avail;
 
-    pcxxSendStart();
-    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail));
+    pcxxOamSendStart(g_pc802_index);
+    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index));
     A = (uint32_t *)a;
     produce_dl_src_data(A, QID_OAM);
     N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxOamSend(a, N);
-    pcxxSendEnd();
+    pcxxOamSend(a, N, g_pc802_index);
+    pcxxOamSendEnd(g_pc802_index);
 
-    while (-1 == pcxxOamRecv());
-    int re = atl_test_result;
-    atl_test_result = 0;
+    while (-1 == PCXX_CALL0(pcxxOamRecv,g_pc802_index));
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
     return re;
 }
 
@@ -1156,6 +1220,170 @@ static int case_n802(void)
     return 0;
 }
 
+static int case4802(void)
+{
+    uint16_t dev, cell;
+    int diag;
+    for (dev = 0; dev < pcxxGetDevCount(); dev++)
+    {
+        g_pc802_index = dev;
+        for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
+        {
+            g_cell_index = cell;
+            DBLOG("Case 4802 beging pc802 %d cell %d test ...\n", dev, cell);
+
+            diag = case101();
+            disp_test_result(101, diag);
+            diag = case102();
+            disp_test_result(102, diag);
+            diag = case103();
+            disp_test_result(103, diag);
+            diag = case104(16);
+            disp_test_result(104, diag);
+        }
+        g_cell_index = 0;
+        diag = case301();
+        disp_test_result(301, diag);
+        DBLOG("Case 4802 passed pc802 %d test.\n\n", dev );
+    }
+    return 0;
+}
+
+static int case_n4802(void)
+{
+    uint32_t k[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
+    uint16_t dev, cell;
+    int diag;
+
+    for (dev = 0;; dev++)
+    {
+        dev %= PC802_INDEX_MAX;
+        if (pc802_get_port_id(dev) < 0)
+            continue;
+        g_pc802_index = dev;
+        for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
+        {
+            g_cell_index = cell;
+            DBLOG("PC802 %d cell %d:Case n4802 beging test ...\n", dev, cell);
+            while (1)
+            {
+                diag = case101();
+                return_if_fail(101, diag, k[dev][cell]);
+                diag = case102();
+                return_if_fail(102, diag, k[dev][cell]);
+                diag = case103();
+                return_if_fail(103, diag, k[dev][cell]);
+                diag = case104(16);
+                return_if_fail(104, diag, k[dev][cell]);
+
+                diag = case301();
+                return_if_fail(301, diag, k[dev][cell]);
+                k[dev][cell]++;
+                if (0 == k[dev][cell] % TEST_PC802_DISP_LOOP_NUM)
+                {
+                    DBLOG("PC802 %d cell %d:Case n4802 Passed %u Loops.\n\n", dev, cell, k[dev][cell]);
+                    break;
+                }
+                pc802_check_dma_timeout(dev);
+                if (testpc802_exit_loop)
+                {
+                    DBLOG("PC802 %d cell %d:Case n4802 Passed %u Loops.\n\n", dev, cell, k[dev][cell] + 1);
+                    testpc802_exit_loop = 0;
+                    return 0;
+                }
+            }
+        }
+        // DBLOG("Case n4802 passed pc802 %d test.\n\n", dev);
+    }
+    return 0;
+}
+
+static int pcxx_test( uint16_t dev, uint16_t cell )
+{
+    int D = rand()%16+1;
+    char *a[17];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+    int k;
+
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[cell]);
+
+    PCXX_CALL( pcxxSendStart, dev, cell);
+
+    for (k = 0; k < D; k++) {
+        produce_dl_src_data(tmp, QID_DATA[cell]);
+        length = sizeof(uint32_t) * (tmp[1] + 2);
+        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset, dev, cell));
+        memcpy(a[k], tmp, length);
+        pcxxDataSend(offset, length, dev, cell);
+    }
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail, dev, cell));
+    A = (uint32_t *)a[k];
+    produce_dl_src_data(A, QID_CTRL[cell]);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[k], length, dev, cell);
+
+    PCXX_CALL(pcxxSendEnd, dev, cell);
+
+    while ( -1 == PCXX_CALL(pcxxCtrlRecv, dev, cell) );
+
+    int re = atl_test_result[dev][cell];
+    atl_test_result[dev][cell] = 0;
+    free_blk(tmp);
+    return re;
+}
+
+static int cell_worker( void *arg )
+{
+    uint32_t k[PC802_INDEX_MAX] = {0};
+    uint16_t dev;
+    uint16_t cell = (uint16_t)((uint64_t)arg);
+    int diag;
+
+    for (dev = 0;; dev++)
+    {
+        dev %= PC802_INDEX_MAX;
+        if (pc802_get_port_id(dev) < 0)
+            continue;
+
+        DBLOG("PC802 %d cell %d:Case n8802 beging test ...\n", dev, cell);
+        while (1)
+        {
+            diag = pcxx_test(dev, cell);
+            return_if_fail(8802, diag, k[dev]);
+
+            k[dev]++;
+            if (0 == k[dev] % TEST_PC802_DISP_LOOP_NUM)
+            {
+                DBLOG("PC802 %d cell %d:Case n8802 Passed %u Loops.\n\n", dev, cell, k[dev]);
+                break;
+            }
+            pc802_check_dma_timeout(dev);
+            if (testpc802_exit_loop)
+            {
+                DBLOG("PC802 %d cell %d:Case n8802 Passed %u Loops.\n\n", dev, cell, k[dev] + 1);
+                sleep(1);
+                testpc802_exit_loop = 0;
+                return 0;
+            }
+        }
+    }
+    return 0;
+}
+
+static int case_n8802(void)
+{
+    uint16_t cell;
+    for ( cell = 0; cell < CELL_NUM_PRE_DEV; cell++) {
+        rte_eal_wait_lcore( cell+1 );
+        rte_eal_remote_launch(cell_worker, (void *)((uint64_t)cell), cell+1);
+    }
+    return 0;
+}
+
 static int case_n2000(void)
 {
     uint32_t m, k, N;
@@ -1235,6 +1463,10 @@ static void run_case(int caseNo)
         diag = case301();
         disp_test_result(301, diag);
         break;
+    case 4802:
+        diag = case4802();
+        disp_test_result(4802, diag);
+        break;
     case -1:
         diag = case_n1();
         disp_test_result(-1, diag);
@@ -1259,7 +1491,14 @@ static void run_case(int caseNo)
         diag = case_n2000();
         disp_test_result(-2000, diag);
         break;
-    default:
+    case -4802:
+        diag = case_n4802();
+        disp_test_result(-4802, diag);
+        break;
+    case -8802:
+        diag = case_n8802();
+        //disp_test_result(-8802, diag);
+        break;    default:
         DBLOG("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
     }
     test_case_No = 0;
@@ -1366,6 +1605,8 @@ void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
 int main(int argc, char** argv)
 {
     int diag;
+    int port_id = 0;
+    int pc802_index = 0;
 
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
@@ -1377,9 +1618,15 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    port_init(pc802_get_port_id(0));
+    for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
+    {
+        port_id = pc802_get_port_id(pc802_index);
+        if (port_id < 0)
+            break;
 
-    rte_eal_remote_launch(prompt, NULL, 1);
+        port_init(pc802_index);
+    }
+    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
 
     while(!main_stop) {
         usleep(10);
@@ -1390,4 +1637,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
