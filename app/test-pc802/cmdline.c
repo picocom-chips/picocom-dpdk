@@ -75,6 +75,47 @@ cmdline_parse_inst_t run_test_case = {
         },
 };
 
+extern uint16_t g_pc802_index;
+extern uint16_t g_cell_index;
+struct cmd_set_index_result {
+    cmdline_fixed_string_t cmd;
+    cmdline_fixed_string_t index;
+    int                value;
+    int                cell;
+};
+
+cmdline_parse_token_string_t cmd_set_index_cmd =
+    TOKEN_STRING_INITIALIZER(struct cmd_set_index_result, cmd, "set");
+cmdline_parse_token_string_t cmd_set_index =
+    TOKEN_STRING_INITIALIZER(struct cmd_set_index_result, index, "index");
+cmdline_parse_token_num_t cmd_set_index_value =
+    TOKEN_NUM_INITIALIZER(struct cmd_set_index_result, value, RTE_UINT8);
+cmdline_parse_token_num_t cmd_set_cell_value =
+    TOKEN_NUM_INITIALIZER(struct cmd_set_index_result, cell, RTE_UINT8);
+
+static void cmd_set_index_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_set_index_result *res = parsed_result;
+    g_pc802_index = res->value;
+    g_cell_index = res->cell;
+    printf( "set pc802:%d, cell:%d.\n", g_pc802_index, g_cell_index);
+}
+
+cmdline_parse_inst_t set_index_case = {
+    .f = cmd_set_index_parsed,
+    .data = NULL,
+    .help_str = "set index <pc802_index(0-3)> <cell_index(0-1)>",
+    .tokens = {
+        (void *)&cmd_set_index_cmd,
+        (void *)&cmd_set_index,
+        (void *)&cmd_set_index_value,
+        (void *)&cmd_set_cell_value,
+        NULL,
+        },
+};
+
 static void read_pc802_memory(uint32_t startAddr, uint32_t bytesNum)
 {
     pc802_access_ep_mem(0, startAddr, bytesNum, DIR_PCIE_DMA_UPLINK);
@@ -721,6 +762,7 @@ cmdline_parse_inst_t vec_dump = {
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
+    (cmdline_parse_inst_t *)&set_index_case,
     (cmdline_parse_inst_t *)&read_memory,
     (cmdline_parse_inst_t *)&show_pcie_counter,
     (cmdline_parse_inst_t *)&show_pc802_info,

@@ -56,10 +56,10 @@ int  pc802_log_get_level( int type );
 void pc802_log_set_core( uint32_t core, bool flag);
 void pc802_log_change_core( uint32_t core );
 void pc802_log_flush(void);
-#define PC802_LOG( core, type, fmt, args...) \
+#define PC802_LOG( port, core, type, fmt, args...) \
 	do { \
-		syslog( type, "%s " fmt, pc802_core_name[core], ## args); \
-		pc802_log( core, "%s " fmt, pc802_core_name[core], ## args); \
+		syslog( type, "PC802_%d %s " fmt, port, pc802_core_name[core], ## args); \
+		pc802_log( core, "PC802_%d %s " fmt, port, pc802_core_name[core], ## args); \
 	}while (0)
 
 /* log init function shared by e1000 and igb drivers */

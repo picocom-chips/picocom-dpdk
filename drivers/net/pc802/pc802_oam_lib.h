@@ -1,6 +1,6 @@
-/*
-v0.1 initial version
-*/
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2018-2020 Picocom Corporation
+ */
 #ifndef __PC802_OAM_LIB_H_
 #define __PC802_OAM_LIB_H_
 
@@ -100,7 +100,7 @@ typedef struct{
 }EcpriDuInternalCfg_t;
 
 typedef struct EcpriDuCfg{
-    uint8_t cp_enable; 
+    uint8_t cp_enable;
     uint8_t ru_cnt; // startup required------------------------------------------
     uint8_t du_mac[ETH_MAC_ADDR_LEN];
     uint16_t vlan_id;
@@ -166,13 +166,13 @@ typedef struct{
     }u;
 }OamSubMessage_t;
 
-typedef int32_t (*PC802_OAM_CALLBACK_FUNTION)( void *arg, uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num );
+typedef int32_t (*PC802_OAM_CALLBACK_FUNTION)( void *arg, uint16_t dev_index, const OamSubMessage_t **sub_msg, uint32_t msg_num );
 
 int pc802_oam_init(void);
 int pc802_oam_register( PC802_OAM_CALLBACK_FUNTION recv_fun, void *arg );
 int pc802_oam_unregister(void);
 int pc802_oam_sub_msg_register( uint16_t sub_msg_id, PC802_OAM_CALLBACK_FUNTION recv_fun, void *arg );
 int pc802_oam_sub_msg_unregister( uint16_t sub_msg_id );
-int pc802_oam_send_msg( uint16_t port_id, const OamSubMessage_t **sub_msg, uint32_t msg_num );
+int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uint32_t msg_num );
 
 #endif

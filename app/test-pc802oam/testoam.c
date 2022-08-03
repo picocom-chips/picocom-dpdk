@@ -67,7 +67,7 @@ struct rte_mempool *mpool_pc802_tx;
 
 #define MAX_DATA_BUF_SZ (256*1024)
 
-extern void odu_cmd_main(void); 
+extern void odu_cmd_main(void);
 
 typedef union {
     uint32_t _d[MAX_DATA_BUF_SZ / sizeof(uint32_t)];
@@ -96,13 +96,8 @@ static const struct rte_eth_conf dev_conf = {
         },
     };
 
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
-
-static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
+static pcxxInfo_s   ctrl_cb_info = {NULL, NULL};
+static pcxxInfo_s   data_cb_info = {NULL, NULL};
 
 static int port_init(uint16_t port)
 {
@@ -132,9 +127,9 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    pcxxDataOpen(&data_cb_info);
+    pcxxDataOpen(&data_cb_info, 0, 0);
 
-    pcxxCtrlOpen(&ctrl_cb_info);
+    pcxxCtrlOpen(&ctrl_cb_info, 0, 0);
 
     pc802_oam_init( );
 
@@ -145,225 +140,7 @@ static int port_init(uint16_t port)
     return 0;
 }
 
-
-static int produce_random_dl_src_data(uint32_t *buf)
-{
-    //static uint32_t idx = 0;
-    uint32_t N, s, d, k;
-    do {
-        s = (uint32_t)rand();
-    } while (s == 0x4b3c2d1e);
-    *buf++ = s;
-    N = (uint32_t)rand();
-    N &= 511;
-    if (N < 10) N = 10;
-    if (N > 500) N = 500;
-    *buf++ = N;
-    d = (uint32_t)rand();
-    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_fixed_dl_src_data_1(uint32_t *buf, uint16_t qId)
-{
-    //static uint32_t idx = 0;
-    uint32_t N, s, d, k;
-    s = 0;
-    *buf++ = s;
-    N = 500;
-    *buf++ = N;
-    d = 0x11111111 * (1 + qId);
-    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_fixed_dl_src_data_2(uint32_t *buf, uint16_t qId)
-{
-    //static uint32_t idx = 0;
-    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    uint32_t N, s, d, k;
-    s = 1;
-    *buf++ = s;
-    N = 500;
-    *buf++ = N;
-    d = d0[qId];
-    d0[qId]++;
-    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_fixed_dl_src_data_3(uint32_t *buf, uint16_t qId)
-{
-    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    static uint32_t L = 400;
-    uint32_t N, s, d, k;
-    s = 1;
-    *buf++ = s;
-    if (L >= 501) L = 400;
-    N = L++;
-    *buf++ = N;
-    d = d0[qId];
-    d0[qId]++;
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
-{
-    if (0 == testpc802_data_mode) {
-        produce_random_dl_src_data(buf);
-    } else if (1 == testpc802_data_mode) {
-        produce_fixed_dl_src_data_1(buf, qId);
-    } else if (2 == testpc802_data_mode) {
-        produce_fixed_dl_src_data_2(buf, qId);
-    } else {
-        produce_fixed_dl_src_data_3(buf, qId);
-    }
-    return 0;
-}
-
-static int check_single_same(uint32_t *a, uint32_t *b)
-{
-    uint32_t k, N;
-    uint32_t err_cnt;
-    int res;
-    err_cnt = 0;
-    res = 0;
-    N = a[1] + 2;
-    for (k = 0; k < N; k++) {
-        if (a[k] != b[k]) {
-            res = -1;
-            DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
-                k, a[k], k, b[k]);
-            err_cnt++;
-            if (16 == err_cnt)
-                return -1;
-        }
-   }
-   return res;
-}
-
-static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
-{
-    uint32_t *pa;
-    uint32_t N;
-    uint16_t k;
-    for (k = 0; k < na; k++) {
-        pa = a[k];
-        N = pa[1] + 2;
-        if (check_single_same(pa, b)) {
-            DBLOG("ERROR: k = %hu\n", k);
-            return -1;
-        }
-        b += N;
-    }
-    return 0;
-}
-
-static void swap_msg(uint32_t *a, uint32_t msgSz)
-{
-    uint32_t d;
-    while (msgSz) {
-        d = *a;
-        *a++ = ~d;
-        msgSz -= sizeof(uint32_t);
-    }
-    return;
-}
-
-#define QID_DATA    PC802_TRAFFIC_5G_EMBB_DATA
-#define QID_CTRL    PC802_TRAFFIC_5G_EMBB_CTRL
-#define QID_OAM     PC802_TRAFFIC_OAM
-
-static union {
-    const char *cc;
-    uint32_t   *up;
-} dl_a[17];
-static uint32_t dl_a_num = 0;
-
-static int      atl_test_result;
-
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
-    return 0;
-}
-
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t *dl_msg;
-    dl_msg = dl_a[dl_a_num - 1].up;
-    if (check_same(&dl_msg, 1, ul_msg)) {
-        atl_test_result |= 1;
-    }
-    dl_a_num = 0;
-    return payloadSize;
-}
-
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
-{
-    payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
-    return 0;
-}
-
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
-{
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_a[0].up;
-    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
-        atl_test_result |= 2;
-    }
-    return payloadSize;
-}
-
-static int case301(void)
-{
-    char *a;
-    uint32_t *A;
-    uint32_t N;
-    uint32_t avail;
-
-    pcxxSendStart();
-    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail));
-    A = (uint32_t *)a;
-    produce_dl_src_data(A, QID_OAM);
-    N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxOamSend(a, N);
-    pcxxSendEnd();
-
-    while (-1 == pcxxOamRecv());
-    int re = atl_test_result;
-    atl_test_result = 0;
-    return re;
-}
-
-#ifdef SEND_TEST_MSG 
-
+#ifdef SEND_TEST_MSG
 static int send_test_msg(const OamSubMessage_t *sub_msg)
 {
     typedef enum{
@@ -427,7 +204,7 @@ static int32_t oam_rsp( void *arg, uint16_t port_id, const OamSubMessage_t **sub
 
 static int case310(void)
 {
-#ifdef SEND_TEST_MSG 
+#ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
     rsp_msg.Head.MsgId=BASIC_CFG_GET_RSP;
     rsp_msg.Head.MsgSize=sizeof(OamErrorInd_t);
@@ -451,7 +228,7 @@ static int case310(void)
     sub_msg.u.basic_cfg.pcie_enable = 1;
     sub_msg.u.basic_cfg.eth_type = 1;
     if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
-#ifdef SEND_TEST_MSG 
+#ifdef SEND_TEST_MSG
         send_test_msg( &rsp_msg );    //for test
 #endif
         clock_gettime( CLOCK_REALTIME, &ts );
@@ -515,10 +292,6 @@ static void run_case(int caseNo)
         return;
     printf("Begin Test Case %d\n", caseNo);
     switch(caseNo) {
-    case 301:
-        diag = case301();
-        disp_test_result(301, diag);
-        break;
     case 310:
         diag = case310();
         disp_test_result(301, diag);
