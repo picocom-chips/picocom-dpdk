@@ -2491,24 +2491,88 @@ static int handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
     return num;
 }
 
-static int pc802_mailbox_clear_up(magic_mailbox_t *mb, uint32_t *idx, uint32_t core, uint32_t init_idx)
+static void pc802_set_mailbox_xc_flags(uint8_t *flags, uint32_t start, int cnt)
+{
+    uint32_t idx = start;
+    while (cnt--) {
+        flags[idx] = 1;
+        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+    }
+}
+
+static int pc802_mailbox_rv_clear_up(magic_mailbox_t *mb, uint32_t idx, uint32_t core)
 {
     int num;
     int cnt;
     int acc;
+    uint32_t init_idx = idx;
+    uint32_t start;
+    uint64_t flags[2];
+    uint8_t * pflags = (uint8_t *)&flags[0];
 
+    flags[0] = 0;
+    flags[1] = 0;
     num = 0;
-    *idx = init_idx;
     acc = 0;
     do {
-        cnt = handle_mailbox(mb, idx, core);
+        start = idx;
+        cnt = handle_mailbox(mb, &idx, core);
+        pc802_set_mailbox_xc_flags(pflags, start, cnt);
         num += cnt;
         acc += (cnt + 1);
-        *idx = (*idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
     } while (acc < MB_MAX_C2H_MAILBOXES);
-    *idx = init_idx;
+    PC802_LOG(core, RTE_LOG_INFO, "RV MB Clear Up: core %u init_idx %u idx %u flags: 0x%016lx 0x%016lx\n",
+        core, init_idx, idx, flags[1], flags[0]);
     return num;
 }
+
+static uint32_t pc802_get_mailbox_xc_idx(uint8_t *flags)
+{
+    uint32_t k;
+    uint32_t sum = 0;
+    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++)
+        sum += flags[k];
+    if ((MB_MAX_C2H_MAILBOXES == sum) || (0 == sum))
+        return MB_MAX_C2H_MAILBOXES;
+    sum = 0;
+    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++) {
+        sum += flags[k];
+        if ((sum > 0) && (flags[k] == 0))
+            return k;
+    }
+    return 0;
+}
+
+static int pc802_mailbox_xc_clear_up(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
+{
+    int num;
+    int cnt;
+    int acc;
+    uint32_t pos;
+    uint32_t start;
+    uint64_t flags[2];
+    uint8_t * pflags = (uint8_t *)&flags[0];
+
+    flags[0] = 0;
+    flags[1] = 0;
+    num = 0;
+    pos = 0;
+    acc = 0;
+    do {
+        start = pos;
+        cnt = handle_mailbox(mb, &pos, core);
+        pc802_set_mailbox_xc_flags(pflags, start, cnt);
+        num += cnt;
+        acc += (cnt + 1);
+        pos = (pos + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+    } while (acc < MB_MAX_C2H_MAILBOXES);
+    *idx = pc802_get_mailbox_xc_idx(pflags);
+    PC802_LOG(core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
+        core, *idx, flags[1], flags[0]);
+    return num;
+}
+
 
 static int pc802_mailbox(void *data)
 {
@@ -2521,6 +2585,7 @@ static int pc802_mailbox(void *data)
     static uint32_t dsp_idx[3];
     uint32_t core;
     int num = 0;
+    volatile uint32_t mb_idx;
 
     if ( adapter == NULL )
     {
@@ -2529,15 +2594,28 @@ static int pc802_mailbox(void *data)
         mb_ecpri = adapter->mailbox_ecpri;
         mb_string_init();
 
-        for (core = 0; core < 16; core++) {
-            num += pc802_mailbox_clear_up(&mb_pfi[core].m_cpu_to_host[0], &pfi_idx[core], core,
-                adapter->mailbox_info_pfi[core].m_next_c2h);
-            num += pc802_mailbox_clear_up(&mb_ecpri[core].m_cpu_to_host[0], &ecpri_idx[core], core+16,
-                adapter->mailbox_info_ecpri[core].m_next_c2h);
-        }
         for (core = 0; core < 3; core++) {
             mb_dsp[core] = adapter->mailbox_dsp[core];
-            num += pc802_mailbox_clear_up(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32, 0);
+            num += pc802_mailbox_xc_clear_up(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+            pc802_log_flush();
+        }
+
+        for (core = 0; core < 16; core++) {
+            mb_idx = PC802_READ_REG(adapter->mailbox_info_pfi[core].m_next_c2h);
+            do {
+                pfi_idx[core] = mb_idx;
+                num += pc802_mailbox_rv_clear_up(&mb_pfi[core].m_cpu_to_host[0], pfi_idx[core], core);
+                mb_idx = PC802_READ_REG(adapter->mailbox_info_pfi[core].m_next_c2h);
+            } while (mb_idx != pfi_idx[core]);
+            pc802_log_flush();
+
+            mb_idx = PC802_READ_REG(adapter->mailbox_info_ecpri[core].m_next_c2h);
+            do {
+                ecpri_idx[core] = mb_idx;
+                num += pc802_mailbox_rv_clear_up(&mb_ecpri[core].m_cpu_to_host[0], ecpri_idx[core], core+16);
+                mb_idx = PC802_READ_REG(adapter->mailbox_info_ecpri[core].m_next_c2h);
+            } while (mb_idx != ecpri_idx[core]);
+            pc802_log_flush();
         }
     }
 
@@ -2550,7 +2628,12 @@ static int pc802_mailbox(void *data)
     }
 
     for (core = 0; core < 3; core++) {
-        num += handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+        if (MB_MAX_C2H_MAILBOXES == dsp_idx[core]) {
+            num += pc802_mailbox_xc_clear_up(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+            pc802_log_flush();
+        } else {
+            num += handle_mailbox(&(mb_dsp[core]->m_cpu_to_host[0]), &dsp_idx[core], core+32);
+        }
     }
 
     return num;
