@@ -2568,8 +2568,10 @@ static int pc802_mailbox_xc_clear_up(magic_mailbox_t *mb, uint32_t *idx, uint32_
         pos = (pos + 1) & (MB_MAX_C2H_MAILBOXES - 1);
     } while (acc < MB_MAX_C2H_MAILBOXES);
     *idx = pc802_get_mailbox_xc_idx(pflags);
-    PC802_LOG(core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
-        core, *idx, flags[1], flags[0]);
+    if (MB_MAX_C2H_MAILBOXES != *idx) {
+        PC802_LOG(core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
+            core, *idx, flags[1], flags[0]);
+    }
     return num;
 }
 
