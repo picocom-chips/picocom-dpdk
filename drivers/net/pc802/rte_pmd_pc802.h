@@ -43,6 +43,13 @@ typedef struct pc802_mem_block PC802_Mem_Block_t;
 int pc802_get_socket_id(uint16_t port_id);
 
 /**
+* @brief Get the total number of pc802 devices that have been successfully initialised.
+*
+* @return The total number of usable pc802 devices.
+*/
+uint16_t pc802_get_count(void);
+
+/**
 * @brief get valid pc802 port id.
 *
 * @param[in] pc802_index PC802 index, value is 0-PC802_INDEX_MAX

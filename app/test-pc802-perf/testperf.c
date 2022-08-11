@@ -55,23 +55,6 @@
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
 
-#define TEST_PC802_DISP_LOOP_NUM    10000
-
-int testpc802_data_mode = 0;
-int testpc802_exit_loop = 0;
-
-struct rte_mempool *mpool_pc802_tx;
-
-#define MAX_DATA_BUF_SZ (256*1024)
-
-typedef union {
-    uint32_t _d[MAX_DATA_BUF_SZ / sizeof(uint32_t)];
-    struct {
-        uint32_t s;
-        uint32_t N;
-        uint32_t d[0];
-    };
-} DataBuf_t;
 
 static void
 signal_handler(int signum)
@@ -91,25 +74,15 @@ static const struct rte_eth_conf dev_conf = {
         },
     };
 
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
-
-static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   oam_cb_info  = {process_ul_oam_msg,  process_dl_oam_msg };
-static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
-
 static int port_init(uint16_t port)
 {
     struct rte_mempool *mbuf_pool;
-    //const struct rte_eth_conf dev_conf;
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf tx_conf;
-    //const struct rte_eth_rxconf rx_conf;
     int socket_id;
+    static pcxxInfo_s   ctrl_cb_info = { NULL, NULL };
+    static pcxxInfo_s   oam_cb_info  = { NULL, NULL };
+    static pcxxInfo_s   data_cb_info = { NULL, NULL };
 
     rte_eth_dev_info_get(port, &dev_info);
     socket_id = dev_info.device->numa_node;
@@ -118,7 +91,6 @@ static int port_init(uint16_t port)
             128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
-    mpool_pc802_tx = mbuf_pool;
 
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL_ETH_RX", 2048,
             128 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
@@ -130,11 +102,11 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    pcxxDataOpen(&data_cb_info);
+    pcxxDataOpen(&data_cb_info, 0, 0);
 
-    pcxxCtrlOpen(&ctrl_cb_info);
+    pcxxCtrlOpen(&ctrl_cb_info, 0, 0);
 
-    pcxxOamOpen(&oam_cb_info);
+    pcxxOamOpen(&oam_cb_info, 0);
 
     rte_eth_dev_start(port);
 
@@ -202,138 +174,6 @@ static void get_blk_attr(uint32_t *blk, uint32_t *length, uint8_t *type, uint8_t
         *type = mblk->pkt_type;
         *eop = mblk->eop;
     }
-}
-
-static int check_single_same(uint32_t *a, uint32_t *b)
-{
-    uint32_t k, N;
-    uint32_t err_cnt;
-    int res;
-    err_cnt = 0;
-    res = 0;
-    N = a[1] + 2;
-    for (k = 0; k < N; k++) {
-        if (a[k] != b[k]) {
-            res = -1;
-            DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
-                k, a[k], k, b[k]);
-            err_cnt++;
-            if (16 == err_cnt)
-                return -1;
-        }
-   }
-   return res;
-}
-
-static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
-{
-    uint32_t *pa;
-    uint32_t N;
-    uint16_t k;
-    for (k = 0; k < na; k++) {
-        pa = a[k];
-        N = pa[1] + 2;
-        if (check_single_same(pa, b)) {
-            DBLOG("ERROR: k = %hu\n", k);
-            return -1;
-        }
-        b += N;
-    }
-    return 0;
-}
-
-static void swap_msg(uint32_t *a, uint32_t msgSz)
-{
-    uint32_t d;
-    while (msgSz) {
-        d = *a;
-        *a++ = ~d;
-        msgSz -= sizeof(uint32_t);
-    }
-    return;
-}
-
-#define QID_DATA    PC802_TRAFFIC_5G_EMBB_DATA
-#define QID_CTRL    PC802_TRAFFIC_5G_EMBB_CTRL
-#define QID_OAM     PC802_TRAFFIC_OAM
-
-static union {
-    const char *cc;
-    uint32_t   *up;
-} dl_a[17];
-static uint32_t dl_a_num = 0;
-static union {
-    const char *cc;
-    uint32_t   *up;
-} dl_oam[32];
-static uint32_t dl_oam_num = 0;
-
-static int      atl_test_result;
-
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
-    return 0;
-}
-
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t *dl_msg;
-    dl_msg = dl_a[dl_a_num - 1].up;
-    if (check_same(&dl_msg, 1, ul_msg)) {
-        atl_test_result |= 1;
-    }
-    dl_a_num = 0;
-    return payloadSize;
-}
-
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
-{
-    buf = buf;
-    payloadSize = payloadSize;
-    dl_oam[dl_oam_num].cc = buf;
-    dl_oam_num++;
-    return 0;
-}
-
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize)
-{
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_oam[0].up;
-    if (check_same(dl_msg, dl_oam_num, ul_msg)) {
-        atl_test_result |= 4;
-    }
-    dl_oam_num = 0;
-    return payloadSize;
-}
-
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
-{
-    payloadSize = payloadSize;
-    dl_a[dl_a_num].cc = buf;
-    dl_a_num++;
-    return 0;
-}
-
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
-{
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_a[0].up;
-    if (check_same(dl_msg, dl_a_num - 1, ul_msg)) {
-        atl_test_result |= 2;
-    }
-    return payloadSize;
 }
 
 static int pc802_test_pcie_recv( void *arg )
@@ -518,7 +358,7 @@ int main(int argc, char** argv)
     int diag;
 
     printf("%s\n", picocom_pc802_version());
-    printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
+    printf("PC802 perf tester built AT %s ON %s\n", __TIME__, __DATE__);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
