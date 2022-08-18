@@ -320,21 +320,6 @@ typedef struct {
     magic_mailbox_t    m_host_to_cpu[MB_MAX_H2C_MAILBOXES];
 } mailbox_exclusive;
 
-typedef struct {
-    uint32_t action;
-    uint32_t func_ptr;
-} mailbox_handler_t;
-
-typedef struct {
-    volatile uint32_t  m_registry_ptr;
-    volatile uint32_t  m_c2h_ptr;
-    volatile uint32_t  m_h2c_ptr;
-    uint32_t          m_handler_count;
-    mailbox_handler_t m_handlers[MB_NUM_HANDLERS];
-    uint32_t m_next_c2h;
-    uint32_t m_next_h2c;
-} mailbox_info_exclusive;
-
 int pc802_kni_add_port(uint16_t port);
 
 #endif /* _PC802_ETHDEV_H_ */
