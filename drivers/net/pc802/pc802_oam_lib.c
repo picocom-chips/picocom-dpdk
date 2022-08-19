@@ -9,6 +9,7 @@
 
 #include "rte_common.h"
 #include <rte_debug.h>
+#include <rte_memcpy.h>
 #include "rte_pmd_pc802.h"
 #include "pc802_oam_lib.h"
 
@@ -129,7 +130,7 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
             return -1;
         }
         sub = (pcxx_oam_sub_msg_t*)(buf+len);
-        memcpy( sub, sub_msg[i], SUB_MSG_TSIZE(sub_msg[i]->msg_size) );
+        rte_memcpy( sub, sub_msg[i], SUB_MSG_TSIZE(sub_msg[i]->msg_size) );
         len += SUB_MSG_TSIZE(sub_msg[i]->msg_size);
         msg->head.sub_msg_num++;
     }
@@ -138,7 +139,7 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     mblk->pkt_length = len;
     mblk->pkt_type = 2;
     mblk->eop = 1;
-    //printf_buf("Send msg", (uint8_t *)buf, len);
+    printf_buf("Send msg", (uint8_t *)buf, len);
     if ( pc802_tx_mblk_burst( g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, &mblk, 1) < 1 ) {
         DBLOG( "pc802_tx_mblk_burst(dev=%d,len=%d) err!\n", dev_index, mblk->pkt_length );
         pthread_mutex_unlock(&lock);
@@ -287,7 +288,7 @@ static void *oam_recv( __rte_unused void *arg)
             if (0 == num_rx)
                 continue;
             num += num_rx;
-            //printf_buf("Recv msg",  (uint8_t *)&mblk[1], mblk->pkt_length);
+            printf_buf("Recv msg",  (uint8_t *)&mblk[1], mblk->pkt_length);
             switch (mblk->pkt_type) {
             case OamMsgType_Log:
             case OamMsgType_Trace:

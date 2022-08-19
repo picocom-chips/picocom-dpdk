@@ -18,42 +18,8 @@
 #include <pc802_oam_lib.h>
 #include "ecpri_oam_inf.h"
 
-extern int main_stop;
+
 void odu_cmd_main(void);
-extern int test_case_No;
-
-struct cmd_run_test_case_result {
-    cmdline_fixed_string_t test;
-    cmdline_fixed_string_t caze;
-    int                    caseNo;
-};
-
-cmdline_parse_token_string_t cmd_run_test_case_result_test =
-    TOKEN_STRING_INITIALIZER(struct cmd_run_test_case_result, test, "test");
-cmdline_parse_token_string_t cmd_run_test_case_result_case =
-    TOKEN_STRING_INITIALIZER(struct cmd_run_test_case_result, caze, "case");
-cmdline_parse_token_num_t cmd_run_test_case_result_caseNo =
-    TOKEN_NUM_INITIALIZER(struct cmd_run_test_case_result, caseNo, RTE_INT32);
-
-static void cmd_run_test_case_parsed(void *parsed_result,
-                __attribute__((unused)) struct cmdline *cl,
-                __attribute__((unused)) void *data)
-{
-    struct cmd_run_test_case_result *res = parsed_result;
-    test_case_No = res->caseNo;
-}
-
-cmdline_parse_inst_t run_test_case = {
-    .f = cmd_run_test_case_parsed,
-    .data = NULL,
-    .help_str = "test case <case_number>",
-    .tokens = {
-        (void *)&cmd_run_test_case_result_test,
-        (void *)&cmd_run_test_case_result_case,
-        (void *)&cmd_run_test_case_result_caseNo,
-        NULL,
-        },
-};
 
 #ifdef SEND_TEST_MSG
 static int send_test_msg(const OamSubMessage_t *sub_msg)
@@ -1203,7 +1169,6 @@ cmdline_parse_token_string_t odu_get_quit_token_cmd = TOKEN_STRING_INITIALIZER(s
 
 static void odu_get_quit_callback(__rte_unused void *ptr_params, struct cmdline *ctx, __rte_unused void *ptr_data)
 {
-    main_stop = 1;
     run_num = QuitCmd_e;
     cmdline_quit(ctx);
     cmdline_stdin_exit(ctx);
@@ -1222,7 +1187,6 @@ cmdline_parse_inst_t odu_quit = {
 cmdline_parse_ctx_t odu_prompt_commands[] = {
     (cmdline_parse_inst_t *)&ecpri_cmd,
     (cmdline_parse_inst_t *)&pfi_cmd,
-    (cmdline_parse_inst_t *)&run_test_case,
     (cmdline_parse_inst_t *)&odu_quit,
     NULL
 };

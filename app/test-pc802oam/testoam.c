@@ -72,99 +72,6 @@ static int port_init( uint16_t pc802_index )
     return 0;
 }
 
-static int32_t oam_rsp( void *arg, uint16_t port_id, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num )
-{
-    const OamSubMessage_t *sub = (const OamSubMessage_t *)sub_msg[0];
-    printf( "Dev %d recv oam msg %d include %u sub mesg\n", port_id, msg_type, msg_num );
-    if ( ECPRI_ERR_IND == sub->Head.MsgId ) {
-        if ( 0 == sub->u.result.err_code )
-            printf( "oam rsp ok.\n" );
-        else
-            printf( "oam rsp err(%d)!\n", sub->u.result.err_code );
-    }
-    sem_post( (sem_t *)arg );
-    return 0;
-}
-
-static int case310(void)
-{
-    int ret = -1;
-    sem_t sem;
-    OamSubMessage_t sub_msg;
-    const pcxx_oam_sub_msg_t *list = (pcxx_oam_sub_msg_t*)&sub_msg;
-    struct timespec ts;
-
-    sem_init( &sem, 0, 0);
-
-    pcxx_oam_register( PCXX_OAM_MSG, oam_rsp, &sem );
-
-    memset( &sub_msg, 0, sizeof(sub_msg) );
-    sub_msg.Head.MsgId = BASIC_CFG_GET_REQ;
-    sub_msg.Head.MsgSize = sizeof(BasicCfg_t);
-    sub_msg.u.basic_cfg.pcie_enable = 1;
-    sub_msg.u.basic_cfg.eth_type = 1;
-    if ( 0== pcxx_oam_send_msg(0, PCXX_OAM_MSG, &list, 1 ) ) {
-        clock_gettime( CLOCK_REALTIME, &ts );
-        ts.tv_sec += 1;
-        if ( 0 != sem_timedwait(&sem, &ts) )
-            printf( "Oam wait rsp msg timeout!\n" );
-        ret = 0;
-    }
-    else
-        printf( "Oam send msg err!\n" );
-
-    pcxx_oam_unregister(PCXX_OAM_MSG);
-    return ret;
-}
-
-static int prompt(void* arg __rte_unused)
-{
-    odu_cmd_main();
-    return 0;
-}
-
-int test_case_No;
-
-#define disp_test_result(caseNo, result)  \
-    if (result) { \
-        DBLOG("Case %d --- FAILED\n", caseNo); \
-        break; \
-    } else { \
-        DBLOG("Case %d --- PASSED\n", caseNo); \
-    }
-
-#define disp_if_fail(caseNo, result) \
-    if (result) { \
-        DBLOG("Case %d --- FAILED\n", caseNo); \
-        break; \
-    }
-
-#define return_if_fail(case, result, looptimes) do {\
-        if (result) { \
-            DBLOG("Case %d -- FAILED -- Result = %d -- Loop = %u\n", case, result, looptimes); \
-            return -case; \
-        } \
-    } while(0)
-
-static void run_case(int caseNo)
-{
-    int diag;
-    if (0 == caseNo)
-        return;
-    printf("Begin Test Case %d\n", caseNo);
-    switch(caseNo) {
-    case 310:
-        diag = case310();
-        disp_test_result(310, diag);
-        break;
-    default:
-        DBLOG("Wrong case number, it should be 310\n");
-    }
-    test_case_No = 0;
-}
-
-int main_stop = 0;
-
 int main(int argc, char** argv)
 {
     int diag;
@@ -189,12 +96,7 @@ int main(int argc, char** argv)
         port_init(pc802_index);
     }
 
-    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
-
-    while(!main_stop) {
-        usleep(10);
-        run_case(test_case_No);
-    }
+    odu_cmd_main();
 
 	rte_eal_mp_wait_lcore();
 	//rte_eal_cleanup();
