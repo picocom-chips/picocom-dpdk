@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <fcntl.h>
+#include <semaphore.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -54,6 +55,7 @@
 
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
+#include <pc802_oam_lib.h>
 
 #define TEST_PC802_DISP_LOOP_NUM    10000
 
@@ -950,6 +952,120 @@ static int case201(void)
     return ret;
 }
 
+typedef struct {
+    sem_t sem;
+    uint16_t dev;
+    uint32_t msg_type;
+    uint32_t sub_num;
+    pcxx_oam_sub_msg_t *sub;
+}oam_cb_arg;
+
+static int32_t oam_rsp( void *arg, uint16_t dev, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num )
+{
+    oam_cb_arg *req = (oam_cb_arg *)arg;
+    //uint32_t *req_msg = (uint32_t *)&req->sub->msb_body;
+    //printf( "Dev %d recv oam msg %d include %u sub mesg[%d]\n", dev, msg_type, msg_num, sub_msg[0]->msg_id );
+    //swap_msg( (uint32_t *)(&sub_msg[0]->msb_body), sub_msg[0]->msg_size );
+    //if (!check_same( &req_msg, req->sub->msg_size, (uint32_t *)(&sub_msg[0]->msb_body)))
+    if ((req->msg_type == msg_type) && ((req->sub->msg_id == sub_msg[0]->msg_id)))
+        sem_post(&req->sem);
+    return 0;
+}
+
+static int case301(void)
+{
+    char *buf = rte_malloc(NULL, 4096, RTE_CACHE_LINE_MIN_SIZE);
+    int ret = 0;
+    oam_cb_arg arg;
+    struct timespec ts;
+    const pcxx_oam_sub_msg_t *list = (const pcxx_oam_sub_msg_t *)buf;
+    uint32_t *data;
+
+    arg.sub = (pcxx_oam_sub_msg_t *)buf;
+    arg.msg_type = PCXX_OAM_MSG;
+    sem_init( &arg.sem, 0, 0);
+    pcxx_oam_register( arg.msg_type, oam_rsp, &arg );
+    data = (uint32_t *)arg.sub->msb_body;
+    produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+    arg.dev = 0;
+    arg.sub->msg_id = (uint16_t)rand();
+    arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+    if (0 == pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;
+        if (0 != sem_timedwait(&arg.sem, &ts)) {
+            DBLOG("Wait timeout\n");
+            ret = -2;
+        }
+    } else {
+        DBLOG("Send ERROR\n");
+        ret = -1;
+    }
+    pcxx_oam_unregister(arg.msg_type);
+    rte_free(buf);
+    return ret;
+}
+
+static int case302(void)
+{
+    char *buf = rte_malloc(NULL, 4096, RTE_CACHE_LINE_MIN_SIZE);
+    int ret = 0;
+    oam_cb_arg arg;
+    struct timespec ts;
+    const pcxx_oam_sub_msg_t *list = (const pcxx_oam_sub_msg_t *)buf;
+    uint32_t *data;
+
+    arg.sub = (pcxx_oam_sub_msg_t *)buf;
+    arg.msg_type = rand()%PCXX_MSG_TYPE_MAX;
+    sem_init( &arg.sem, 0, 0);
+    pcxx_oam_register( arg.msg_type, oam_rsp, &arg );
+
+    for (arg.dev = 0; arg.dev < pcxxGetDevCount(); arg.dev++)
+    {
+        data = (uint32_t *)arg.sub->msb_body;
+        produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+        arg.sub->msg_id = (uint16_t)rand();
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+        if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
+            DBLOG("Send ERROR\n");
+            ret = -1;
+            break;
+        }
+        clock_gettime( CLOCK_REALTIME, &ts );
+        ts.tv_sec += 1;
+        if ( 0 != sem_timedwait(&arg.sem, &ts) ){
+            DBLOG("Wait timeout\n");
+            ret = -2;
+            break;
+        }
+    }
+    pcxx_oam_unregister(arg.msg_type);
+
+    for (arg.dev = 0; arg.dev < pcxxGetDevCount(); arg.dev++)
+    {
+        data = (uint32_t *)arg.sub->msb_body;
+        produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+        arg.sub->msg_id = (uint16_t)rand();
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+        pcxx_oam_sub_msg_register( arg.msg_type, arg.sub->msg_id, oam_rsp, &arg );
+        if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
+            DBLOG("Send ERROR\n");
+            ret = -1;
+            break;
+        }
+        clock_gettime( CLOCK_REALTIME, &ts );
+        ts.tv_sec += 1;
+        if ( 0 != sem_timedwait(&arg.sem, &ts) ){
+            DBLOG("Wait timeout\n");
+            ret = -2;
+            break;
+        }
+        pcxx_oam_sub_msg_unregister(arg.msg_type, arg.sub->msg_id );
+    }
+    rte_free(buf);
+    return ret;
+}
+
 extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
@@ -1036,6 +1152,8 @@ static int case_n2(void)
     int diag;
     diag = case201();
     return_if_fail(201, diag, 0);
+    diag = case301();
+    return_if_fail(301, diag, 0);
     diag = case1();
     return_if_fail(1, diag, 0);
     diag = case2();
@@ -1054,6 +1172,8 @@ static int case_n800(void)
     m = 0;
     k = 0;
     while (1) {
+        diag = case301();
+        return_if_fail(301, diag, k);
         diag = case1();
         return_if_fail(1, diag, k);
         diag = case2();
@@ -1087,6 +1207,8 @@ static int case_n1000(void)
     for (k = 0; k < N; k++) {
         diag = case201();
         return_if_fail(201, diag, k);
+        diag = case301();
+        return_if_fail(301, diag, k);
         diag = case1();
         return_if_fail(1, diag, k);
         diag = case2();
@@ -1119,6 +1241,8 @@ static int case_n802(void)
     while (1) {
         diag = case201();
         return_if_fail(201, diag, k);
+        diag = case301();
+        return_if_fail(301, diag, k);
         diag = case1();
         return_if_fail(1, diag, k);
         diag = case2();
@@ -1164,6 +1288,9 @@ static int case4802(void)
             diag = case104(16);
             disp_test_result(104, diag);
         }
+        g_cell_index = 0;
+        diag = case301();
+        disp_test_result(301, diag);
         DBLOG("Case 4802 passed pc802 %d test.\n\n", dev );
     }
     return 0;
@@ -1196,6 +1323,8 @@ static int case_n4802(void)
                 diag = case104(16);
                 return_if_fail(104, diag, k[dev][cell]);
 
+                diag = case301();
+                return_if_fail(301, diag, k[dev][cell]);
                 k[dev][cell]++;
                 if (0 == k[dev][cell] % TEST_PC802_DISP_LOOP_NUM)
                 {
@@ -1377,6 +1506,14 @@ static void run_case(int caseNo)
         diag = case201();
         disp_test_result(201, diag);
         break;
+    case 301:
+        diag = case301();
+        disp_test_result(301, diag);
+        break;
+    case 302:
+        diag = case302();
+        disp_test_result(302, diag);
+        break;
     case 4802:
         diag = case4802();
         disp_test_result(4802, diag);
@@ -1532,6 +1669,7 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
+    pcxx_oam_init();
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);

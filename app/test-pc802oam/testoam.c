@@ -65,8 +65,6 @@ static int port_init( uint16_t pc802_index )
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
-    pcxx_oam_init();
-
     rte_eth_dev_start(port);
 
     printf("Finished %d port_init !\n", pc802_index );
@@ -77,7 +75,7 @@ static int port_init( uint16_t pc802_index )
 static int32_t oam_rsp( void *arg, uint16_t port_id, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num )
 {
     const OamSubMessage_t *sub = (const OamSubMessage_t *)sub_msg[0];
-    printf( "Dev %d redv oam msg %d include %u sub mesg\n", port_id, msg_type, msg_num );
+    printf( "Dev %d recv oam msg %d include %u sub mesg\n", port_id, msg_type, msg_num );
     if ( ECPRI_ERR_IND == sub->Head.MsgId ) {
         if ( 0 == sub->u.result.err_code )
             printf( "oam rsp ok.\n" );
@@ -109,13 +107,13 @@ static int case310(void)
         clock_gettime( CLOCK_REALTIME, &ts );
         ts.tv_sec += 1;
         if ( 0 != sem_timedwait(&sem, &ts) )
-            printf( "Oam recv rsp timeout!\n" );
+            printf( "Oam wait rsp msg timeout!\n" );
+        ret = 0;
     }
     else
-        printf( "Oam send err!\n" );
+        printf( "Oam send msg err!\n" );
 
     pcxx_oam_unregister(PCXX_OAM_MSG);
-
     return ret;
 }
 
@@ -157,7 +155,7 @@ static void run_case(int caseNo)
     switch(caseNo) {
     case 310:
         diag = case310();
-        disp_test_result(301, diag);
+        disp_test_result(310, diag);
         break;
     default:
         DBLOG("Wrong case number, it should be 310\n");
@@ -182,6 +180,7 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
+    pcxx_oam_init();
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);
