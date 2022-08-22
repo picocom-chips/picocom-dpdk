@@ -1088,12 +1088,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     adapter->stopped = 0;
 
-    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
-    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
-    PC802_WRITE_REG(bar->DBAL, laddr);
-    PC802_WRITE_REG(bar->DBAH, haddr);
-    DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
-
     volatile uint32_t devRdy;
     volatile uint32_t drv_state;
     uint32_t old_devRdy, old_drv_state;
@@ -1785,6 +1779,12 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->descs_phy_addr = mz->iova;
     DBLOG("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
     DBLOG("descs_virt_addr = %p\n", adapter->pDescs);
+
+    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
+    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
+    PC802_WRITE_REG(bar->DBAL, laddr);
+    PC802_WRITE_REG(bar->DBAH, haddr);
+    DBLOG("Descriptor Rings Base = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     PC802_WRITE_REG(bar->DEVEN, 0);
     usleep(1000);
