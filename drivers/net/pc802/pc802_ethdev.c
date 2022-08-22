@@ -63,7 +63,6 @@ static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
 #define PC802_READ_REG(reg) \
     pc802_read_reg((volatile uint32_t *)&(reg))
 
-static PC802_BAR_t *gbar;
 static uint16_t num_pc802s = 0;
 static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
 
@@ -1715,7 +1714,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     rte_eth_copy_pci_info(eth_dev, pci_dev);
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
-    gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
+    bar = (PC802_BAR_t *)adapter->bar0_addr;
 
     pc802_check_rerun(adapter);
 
