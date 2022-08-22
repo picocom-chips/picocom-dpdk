@@ -337,7 +337,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->nb_rx_desc = nb_desc;
     rxq->rc_cnt = 0;
     rxq->nb_rx_hold = 0;
-    rxq->rx_free_thresh = 32;
+    rxq->rx_free_thresh = nb_desc / 4;
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
 
@@ -739,7 +739,7 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
 
     rxq->mb_pool = mp;
     rxq->nb_rx_desc = nb_desc;
-    rxq->rx_free_thresh = 32; //rx_conf->rx_free_thresh;
+    rxq->rx_free_thresh = nb_desc / 4;
     rxq->queue_id = queue_idx;
     rxq->port_id = dev->data->port_id;
 
