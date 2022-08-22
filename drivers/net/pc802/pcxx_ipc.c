@@ -10,9 +10,11 @@
 
 PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_5G_EMBB_DATA, PC802_TRAFFIC_4G_LTE_DATA};
 PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_5G_EMBB_CTRL, PC802_TRAFFIC_4G_LTE_CTRL};
-#define QID_OAM     PC802_TRAFFIC_OAM
+PC802_Traffic_Type_e QID_OAM[CELL_NUM_PRE_DEV]  = { PC802_TRAFFIC_OAM1, PC802_TRAFFIC_OAM2};
 
 #define DATA_QUEUE_BLOCK_SIZE   (256*1024)
+#define CTRL_QUEUE_BLOCK_SIZE   (256*1024)
+#define OAM_QUEUE_BLOCK_SIZE    (16*1024)
 
 #define NUM_DATA_BUF    64
 #define NUM_SFN_IDX     4
@@ -33,22 +35,23 @@ typedef struct {
     char     *rx_ctrl_buf;
     char     *rx_data_buf;
 
+    char     *oam_buf;
+    uint32_t oam_length;
+
     PCXX_RW_CALLBACK pcxx_ctrl_ul_handle;
     PCXX_RW_CALLBACK pcxx_ctrl_dl_handle;
 
     PCXX_RW_CALLBACK pcxx_data_ul_handle;
     PCXX_RW_CALLBACK pcxx_data_dl_handle;
+
+    PCXX_RW_CALLBACK pcxx_oam_dl_handle;
+    PCXX_RW_CALLBACK pcxx_oam_ul_handle;
 }pcxx_cell_info_t;
 
 typedef struct {
     uint16_t port_id;
 
     pcxx_cell_info_t cell_info[CELL_NUM_PRE_DEV];
-
-    char     *oam_buf;
-    uint32_t oam_length;
-    PCXX_RW_CALLBACK pcxx_oam_dl_handle;
-    PCXX_RW_CALLBACK pcxx_oam_ul_handle;
 }pcxx_dev_info_t;
 
 static pcxx_dev_info_t pcxx_devs[DEV_INDEX_MAX];
@@ -80,8 +83,8 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 256*1024, 64, 32));
-    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 256*1024, 64, 32));
+    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
 
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
@@ -106,32 +109,34 @@ void pcxxCtrlClose( _UNUSED_ uint16_t dev_index, uint16_t cell_index )
 int pcxxOamOpen(const pcxxInfo_s* info, ...)
 {
     uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
     va_list ap;
     va_start(ap, info);
     dev_index = va_arg(ap, int);
     va_end(ap);
 #else
-int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
+int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 {
 #endif
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT((ev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
         return -1;
+    pcxx_cell_info_t *cell_info = &pcxx_devs[dev_index].cell_info[cell_index];
 
-    if (pcxx_devs[dev_index].pcxx_oam_ul_handle != NULL) {
-        DBLOG( "Dev %d oam queue already open!\n", dev_index );
+    if (cell_info->pcxx_oam_ul_handle != NULL) {
+        DBLOG( "Dev %d cell %d oam queue already open!\n", dev_index, cell_index );
         return -1;
     }
 
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_OAM, 8*1024, 64, 32));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_OAM, 8*1024, 64, 32));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_OAM[cell_index], OAM_QUEUE_BLOCK_SIZE, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_OAM[cell_index], OAM_QUEUE_BLOCK_SIZE, 64, 32));
 
-    pcxx_devs[dev_index].pcxx_oam_ul_handle = info->readHandle;
-    pcxx_devs[dev_index].pcxx_oam_dl_handle = info->writeHandle;
+    cell_info->pcxx_oam_ul_handle = info->readHandle;
+    cell_info->pcxx_oam_dl_handle = info->writeHandle;
     pcxx_devs[dev_index].port_id = port_id;
     return 0;
 }
@@ -141,10 +146,10 @@ void pcxxOamClose(void)
 {
     uint16_t dev_index = 0;
 #else
-void pcxxOamClose( _UNUSED_ uint16_t dev_index )
+void pcxxOamClose( _UNUSED_ uint16_t dev_index, _UNUSED_ uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT((ev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
 }
 
 
@@ -253,24 +258,26 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-int pcxxOamSendStart(uint16_t dev_index)
+int pcxxOamSendStart(uint16_t dev_index, uint16_t cell_index)
 {
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
-    pcxx_devs[dev_index].oam_length = 0;
-    pcxx_devs[dev_index].oam_buf = NULL;
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    cell->oam_length = 0;
+    cell->oam_buf = NULL;
     return 0;
 }
 
-int pcxxOamSendEnd(uint16_t dev_index)
+int pcxxOamSendEnd(uint16_t dev_index, uint16_t cell_index)
 {
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     PC802_Mem_Block_t *mblk_oam;
-    if (NULL != pcxx_devs[dev_index].oam_buf) {
-        mblk_oam = (PC802_Mem_Block_t *)(pcxx_devs[dev_index].oam_buf - sizeof(PC802_Mem_Block_t));
-        mblk_oam->pkt_length = pcxx_devs[dev_index].oam_length;
+    if (NULL != cell->oam_buf) {
+        mblk_oam = (PC802_Mem_Block_t *)(cell->oam_buf - sizeof(PC802_Mem_Block_t));
+        mblk_oam->pkt_length = cell->oam_length;
         mblk_oam->pkt_type = 2;
         mblk_oam->eop = 1;
-        pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_OAM, &mblk_oam, 1);
+        pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_OAM[cell_index], &mblk_oam, 1);
     }
     return 0;
 }
@@ -301,7 +308,7 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     if (NULL == cell->ctrl_buf)
         return -1;
     *buf = cell->ctrl_buf + cell->ctrl_length;
-    *availableSize = 256 * 1024 - sizeof(PC802_Mem_Block_t) - cell->ctrl_length;
+    *availableSize = CTRL_QUEUE_BLOCK_SIZE - sizeof(PC802_Mem_Block_t) - cell->ctrl_length;
     return 0;
 }
 
@@ -424,27 +431,29 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...)
 {
     uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
     va_list ap;
     va_start(ap, availableSize);
     dev_index = va_arg(ap, int);
     va_end(ap);
 #else
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
+int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     PC802_Mem_Block_t *mblk;
-    if (NULL == pcxx_devs[dev_index].oam_buf) {
-        mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_OAM);
+    if (NULL == cell->oam_buf) {
+        mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_OAM[cell_index]);
         if (NULL == mblk)
             return -1;
-        pcxx_devs[dev_index].oam_buf = (char *)&mblk[1];
-        pcxx_devs[dev_index].oam_length = 0;
+        cell->oam_buf = (char *)&mblk[1];
+        cell->oam_length = 0;
     }
-    if (NULL == pcxx_devs[dev_index].oam_buf)
+    if (NULL == cell->oam_buf)
         return -1;
-    *buf = pcxx_devs[dev_index].oam_buf + pcxx_devs[dev_index].oam_length;
-    *availableSize = 256 * 1024 - sizeof(PC802_Mem_Block_t) - pcxx_devs[dev_index].oam_length;
+    *buf = cell->oam_buf + cell->oam_length;
+    *availableSize = OAM_QUEUE_BLOCK_SIZE - sizeof(PC802_Mem_Block_t) - cell->oam_length;
     return 0;
 }
 
@@ -457,24 +466,25 @@ int pcxxOamSend(const char* buf, uint32_t bufLen, ...)
     dev_index = va_arg(ap, int);
     va_end(ap);
 #else
-int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
+int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index)
 {
 #endif
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     uint32_t ret;
     RTE_ASSERT(0 == (bufLen & 3));
-    if (NULL == pcxx_devs[dev_index].pcxx_oam_dl_handle) {
-        pcxx_devs[dev_index].oam_length += bufLen;
+    if (NULL == cell->pcxx_oam_dl_handle) {
+        cell->oam_length += bufLen;
         return 0;
     }
 #ifdef MULTI_PC802
-    ret = pcxx_devs[dev_index].pcxx_oam_dl_handle(buf, bufLen, dev_index, 0);
+    ret = cell->pcxx_oam_dl_handle(buf, bufLen, dev_index, 0);
 #else
-    ret = pcxx_devs[dev_index].pcxx_oam_dl_handle(buf, bufLen);
+    ret = cell->pcxx_oam_dl_handle(buf, bufLen);
 #endif
     if (ret)
         return -1;
-    pcxx_devs[dev_index].oam_length += bufLen;
+    cell->oam_length += bufLen;
     return 0;
 }
 
@@ -482,11 +492,13 @@ int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
 int pcxxOamRecv(void)
 {
     uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
 #else
-int pcxxOamRecv(uint16_t dev_index )
+int pcxxOamRecv(uint16_t dev_index, uint16_t cell_index)
 {
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
 #endif
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     char *rx_oam_buf = NULL;
     PC802_Mem_Block_t *mblk_oam;
     uint16_t num_rx;
@@ -495,7 +507,7 @@ int pcxxOamRecv(uint16_t dev_index )
     int ret;
 
     if (NULL == rx_oam_buf) {
-        num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_OAM, &mblk_oam, 1);
+        num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_OAM[cell_index], &mblk_oam, 1);
         if (num_rx)
             rx_oam_buf = (char *)&mblk_oam[1];
     }
@@ -505,12 +517,12 @@ int pcxxOamRecv(uint16_t dev_index )
     uint32_t _len = mblk_oam->pkt_length;
     offset = 0;
     while (_len > 0) {
-        if (NULL == pcxx_devs[dev_index].pcxx_oam_ul_handle)
+        if (NULL == cell->pcxx_oam_ul_handle)
             break;
 #ifdef MULTI_PC802
-        ret = pcxx_devs[dev_index].pcxx_oam_ul_handle(rx_oam_buf + offset, _len, dev_index, 0);
+        ret = cell->pcxx_oam_ul_handle(rx_oam_buf + offset, _len, dev_index, 0);
 #else
-        ret = pcxx_devs[dev_index].pcxx_oam_ul_handle(rx_oam_buf + offset, _len);
+        ret = cell->pcxx_oam_ul_handle(rx_oam_buf + offset, _len);
 #endif
         if (ret < 0)
             break;
