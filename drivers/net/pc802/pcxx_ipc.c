@@ -80,8 +80,8 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 256*1024, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 256*1024, 64, 32));
 
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
@@ -127,8 +127,8 @@ int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_OAM, 8*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_OAM, 8*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_OAM, 8*1024, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_OAM, 8*1024, 64, 32));
 
     pcxx_devs[dev_index].pcxx_oam_ul_handle = info->readHandle;
     pcxx_devs[dev_index].pcxx_oam_dl_handle = info->writeHandle;
