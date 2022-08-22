@@ -1676,6 +1676,24 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        uint32_t drv_state;
+        bar = (PC802_BAR_t *)adapter->bar0_addr;
+        do {
+            usleep(1);
+            drv_state = PC802_READ_REG(bar->DRVSTATE);
+        } while (drv_state != 3);
+        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
+        uint32_t DBAH = PC802_READ_REG(bar->DBAH);
+        uint32_t DBAL = PC802_READ_REG(bar->DBAL);
+        DBLOG("DBA: 0x$08X %08X\n", DBAH, DBAL);
+        sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
+        const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
+        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        return 0;
+    }
+
     data = eth_dev->data;
     data->nb_rx_queues = 1;
     data->nb_tx_queues = 1;
