@@ -418,7 +418,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->nb_tx_desc = nb_desc;
     txq->rc_cnt = 0;
     txq->nb_tx_free = nb_desc;
-    txq->tx_free_thresh = 32;
+    txq->tx_free_thresh = nb_desc / 4;
     txq->queue_id = queue_id;
     txq->port_id = port_id;
 
@@ -551,7 +551,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint32_t tx_id = txq->rc_cnt;
     uint16_t nb_tx;
 
-    if (txq->nb_tx_free < txq->tx_free_thresh) {
+    if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_blks)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
     }
 
@@ -853,7 +853,7 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
 
     txq->nb_tx_desc = nb_desc;
     txq->nb_tx_free = nb_desc;
-    txq->tx_free_thresh = 32;
+    txq->tx_free_thresh = nb_desc / 4;
     txq->queue_id = queue_idx;
     txq->port_id = dev->data->port_id;
 
@@ -1157,7 +1157,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     tx_id   = txq->rc_cnt;
 
     /* Determine if the descriptor ring needs to be cleaned. */
-     if (txq->nb_tx_free < txq->tx_free_thresh) {
+     if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_pkts)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
      }
 
