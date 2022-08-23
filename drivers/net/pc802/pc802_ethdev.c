@@ -1808,6 +1808,7 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_INIT(picocom_pc802_init_log)
 {
     pthread_t tid;
+    printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
     pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
 }

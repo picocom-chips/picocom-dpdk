@@ -59,11 +59,11 @@ static int send_test_msg(const OamSubMessage_t *sub_msg)
 
     if(sub_msg->Head.MsgSize > sizeof(OamSubMessage_t))
     {
-    	memcpy(msg->SubMsg, sub_msg, sizeof(OamSubMessage_t));
+        memcpy(msg->SubMsg, sub_msg, sizeof(OamSubMessage_t));
     }
     else
     {
-    	memcpy(msg->SubMsg, sub_msg, sub_msg->Head.MsgSize);
+        memcpy(msg->SubMsg, sub_msg, sub_msg->Head.MsgSize);
     }
 
     end = (uint32_t *)((char *)msg->SubMsg + sub_msg->Head.MsgSize);
@@ -297,10 +297,10 @@ cmdline_parse_inst_t set_ecpri_tx_rx_cfg = {
     .data = NULL,
     .help_str = "cfg tx rx <maxTxLateThreshold>",
     .tokens = {
-	(void*) &cmd_set_ecpri_tx_rx_cfg,
+        (void*) &cmd_set_ecpri_tx_rx_cfg,
         (void *)&cmd_set_ecpri_tx_rx_cfg_maxTxLateThreshold,
         NULL,
-        },
+    },
 };
 
 static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, uint8_t ecpri_step_mode, uint8_t ptp_domain)
@@ -571,10 +571,10 @@ cmdline_parse_inst_t set_comp_method_cfg = {
 
 static void comp_method_cfg_print(const EcpriCompMethodCfg_t *cfg)
 {
-	printf("isStaticComp:		%d\n",  cfg->isStaticComp);
-	printf("method:         	%d\n",  cfg->method);
-	printf("comIqWidth:		    %d\n",  cfg->comIqWidth);
-	printf("decomIqWidth:		%d\n",  cfg->decomIqWidth);
+    printf("isStaticComp:     %d\n",  cfg->isStaticComp);
+    printf("method:           %d\n",  cfg->method);
+    printf("comIqWidth:       %d\n",  cfg->comIqWidth);
+    printf("decomIqWidth:     %d\n",  cfg->decomIqWidth);
 }
 
 /*oam get ecpri comp method cfg*/
@@ -616,7 +616,7 @@ static int32_t oam_get_eth_mtu_cfg_rsp(void *arg, uint16_t port_id, uint32_t msg
 {
     printf( "Dev %d rsp oam msg(%u) include sub msg(%u)\n", port_id, msg_type, msg_num );
     const OamSubMessage_t *sub = (const OamSubMessage_t *)sub_msg[0];
-    printf("mtu:		%d\n", sub->u.mtu_cfg.mtu);
+    printf("mtu:    %d\n", sub->u.mtu_cfg.mtu);
     sem_post( (sem_t *)arg );
     return 0;
 }
@@ -647,21 +647,13 @@ cmdline_parse_inst_t get_eth_mtu_cfg = {
 
 static void basic_cfg_print(const BasicCfg_t *cfg)
 {
-    printf("pcie_enable:			%d\n", cfg->pcie_enable);
-    printf("eth_type: 			    %d\n", cfg->eth_type);
-    printf("max_antenna_cnt: 		%d\n", cfg->max_antenna_cnt);
-    printf("max_section_cnt: 		%d\n", cfg->max_section_cnt);
+    printf("eth_type:               %d\n", cfg->eth_type);
+    printf("max_antenna_cnt:        %d\n", cfg->max_antenna_cnt);
+    printf("max_section_cnt:        %d\n", cfg->max_section_cnt);
     printf("max_symbol_cnt_per_slot:%d\n", cfg->max_symbol_cnt_per_slot);
-    printf("cur_antenna_cnt:  		%d\n", cfg->cur_antenna_cnt);
-    printf("cur_section_cnt: 		%d\n", cfg->cur_section_cnt);
+    printf("cur_antenna_cnt:        %d\n", cfg->cur_antenna_cnt);
+    printf("cur_section_cnt:        %d\n", cfg->cur_section_cnt);
     printf("cur_symbol_cnt_per_slot:%d\n", cfg->cur_symbol_cnt_per_slot);
-    printf("pipeline_mode: 			%d\n", cfg->pipeline_mode);
-    printf("outgoing_core_cnt: 		%d\n", cfg->outgoing_core_cnt);
-    printf("ingoing_core_cnt: 		%d\n", cfg->ingoing_core_cnt);
-    printf("eth_pkt_size: 			%d\n", cfg->eth_pkt_size);
-    printf("pEcpriNtfyBuf: 			%d\n", cfg->pEcpriNtfyBuf);
-    printf("pEcpriReqBuf: 			%d\n", cfg->pEcpriReqBuf);
-    printf("om_msg_id:  			%d\n", cfg->om_msg_id);
 }
 
 /*oam get ecpri basic cfg*/
@@ -806,11 +798,11 @@ cmdline_parse_inst_t get_ecpri_perf_kpis = {
 
 static void du_cfg_print(const EcpriDuCfg_t *cfg)
 {
-   printf("cp_enable: 		%d\n", cfg->cp_enable);
-   printf("vlan_id: 		%d\n", cfg->vlan_id);
-   printf("ru_cnt: 		%d\n", cfg->ru_cnt);
-   printf("du_mac: 		%02x:%02x:%02x:%02x:%02x:%02x\n", cfg->du_mac[0], cfg->du_mac[1], cfg->du_mac[2], 	\
-	   cfg->du_mac[3], cfg->du_mac[4], cfg->du_mac[5]);
+    printf("cp_enable:       %d\n", cfg->cp_enable);
+    printf("vlan_id:         %d\n", cfg->vlan_id);
+    printf("ru_cnt:          %d\n", cfg->ru_cnt);
+    printf("du_mac:          %02x:%02x:%02x:%02x:%02x:%02x\n", cfg->du_mac[0], cfg->du_mac[1], cfg->du_mac[2],
+           cfg->du_mac[3], cfg->du_mac[4], cfg->du_mac[5]);
 }
 
 /*oam get ecpri du cfg*/
@@ -849,10 +841,10 @@ cmdline_parse_inst_t get_ecpri_du_cfg = {
 
 static void du_internal_cfg_print(const EcpriDuInternalCfg_t *cfg)
 {
-	printf("pipeline_mode:		%d\n", cfg->pipeline_mode);
-	printf("m_role:			    %d\n", cfg->m_role);
-	printf("outgoing_core_cnt:	%d\n", cfg->outgoing_core_cnt);
-	printf("ingoing_core_cnt:	%d\n", cfg->ingoing_core_cnt);
+    printf("pipeline_mode:        %d\n", cfg->pipeline_mode);
+    printf("m_role:               %d\n", cfg->m_role);
+    printf("outgoing_core_cnt:    %d\n", cfg->outgoing_core_cnt);
+    printf("ingoing_core_cnt:     %d\n", cfg->ingoing_core_cnt);
 }
 
 /*oam get ecpri du inernal cfg*/
@@ -891,18 +883,18 @@ cmdline_parse_inst_t get_ecpri_du_internal_cfg = {
 
 static void ru_cfg_print(const EcpriRuCfg_t *cfg)
 {
-	printf("ru_id:			%d\n", cfg->ru_id);
-	printf("s_interval: 		%d\n", cfg->s_interval);
-	printf("Ta4min: 		%d\n", cfg->Ta4min);
-	printf("Ta4max: 		%d\n", cfg->Ta4max);
-	printf("T1amin_cp_ul: 		%d\n", cfg->T1amin_cp_ul);
-	printf("T1amax_cp_ul: 		%d\n", cfg->T1amax_cp_ul);
-	printf("T1amin_cp_dl: 		%d\n", cfg->T1amin_cp_dl);
-	printf("T1amax_cp_dl: 		%d\n", cfg->T1amax_cp_dl);
-	printf("T1amin_up: 		%d\n", cfg->T1amin_up);
-	printf("T1amax_up: 		%d\n", cfg->T1amax_up);
-    printf("ru_mac:			%02x:%02x:%02x:%02x:%02x:%02x\n",
-        cfg->ru_mac[0], cfg->ru_mac[1], cfg->ru_mac[2], cfg->ru_mac[3], cfg->ru_mac[4], cfg->ru_mac[5]);
+    printf("ru_id:              %d\n", cfg->ru_id);
+    printf("s_interval:         %d\n", cfg->s_interval);
+    printf("Ta4min:             %d\n", cfg->Ta4min);
+    printf("Ta4max:             %d\n", cfg->Ta4max);
+    printf("T1amin_cp_ul:       %d\n", cfg->T1amin_cp_ul);
+    printf("T1amax_cp_ul:       %d\n", cfg->T1amax_cp_ul);
+    printf("T1amin_cp_dl:       %d\n", cfg->T1amin_cp_dl);
+    printf("T1amax_cp_dl:       %d\n", cfg->T1amax_cp_dl);
+    printf("T1amin_up:          %d\n", cfg->T1amin_up);
+    printf("T1amax_up:          %d\n", cfg->T1amax_up);
+    printf("ru_mac:             %02x:%02x:%02x:%02x:%02x:%02x\n", cfg->ru_mac[0], cfg->ru_mac[1], cfg->ru_mac[2],
+           cfg->ru_mac[3], cfg->ru_mac[4], cfg->ru_mac[5]);
 }
 
 /* oam get ecpri ru cfg*/
@@ -945,7 +937,7 @@ static int32_t oam_get_ecpri_tx_rx_cfg_rsp( void *arg, uint16_t port_id, uint32_
 {
     printf( "Dev %d rsp oam msg(%u) include sub msg(%u)\n", port_id, msg_type, msg_num );
     const OamSubMessage_t *sub = (const OamSubMessage_t *)sub_msg[0];
-    printf("maxTxLateThreshold:		%d\n", sub->u.tx_rx_cfg.maxTxLateThreshold);
+    printf("maxTxLateThreshold:   %u\n", sub->u.tx_rx_cfg.maxTxLateThreshold);
     sem_post( (sem_t *)arg );
     return 0;
 }
@@ -969,17 +961,17 @@ cmdline_parse_inst_t get_ecpri_tx_rx_cfg = {
     .data = NULL,
     .help_str = "show tx rx cfg <maxTxLateThreshold>",
     .tokens = {
-	    (void*) &cmd_get_ecpri_tx_rx_cfg,
+      (void*) &cmd_get_ecpri_tx_rx_cfg,
         NULL,
     },
 };
 
 static void ptp_cfg_print(const EcpriPtpCfg_t *cfg)
 {
-    printf("ptp_enable:                   	%d\n", cfg->ptp_enable);
-    printf("ptp_step_mode:                	%d\n", cfg->ptp_step_mode);
-    printf("ecpri_step_mode:             	%d\n", cfg->ecpri_step_mode);
-    printf("ptp_domain:             	%d\n", cfg->ptp_domain);
+    printf("ptp_enable:               %d\n", cfg->ptp_enable);
+    printf("ptp_step_mode:            %d\n", cfg->ptp_step_mode);
+    printf("ecpri_step_mode:          %d\n", cfg->ecpri_step_mode);
+    printf("ptp_domain:               %d\n", cfg->ptp_domain);
 }
 
 /* oam get ecpri ptp cfg*/
