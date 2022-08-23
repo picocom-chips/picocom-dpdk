@@ -16,12 +16,12 @@ sources = files(
         'pc802_kni.c',
         'pc802_logs.c',
         'pcxx_ipc.c',
-        'pc802_oam_lib.c',
+        'pcxx_oam.c',
         'pc802_mailbox.c'
 )
 
 headers = files(
         'rte_pmd_pc802.h',
         'pcxx_ipc.h',
-        'pc802_oam_lib.h'
+        'pcxx_oam.h'
 )

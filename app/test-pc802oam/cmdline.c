@@ -15,7 +15,7 @@
 #include <rte_ether.h>
 
 #include <rte_pmd_pc802.h>
-#include <pc802_oam_lib.h>
+#include <pcxx_oam.h>
 #include "ecpri_oam_inf.h"
 
 

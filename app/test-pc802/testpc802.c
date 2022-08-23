@@ -55,7 +55,7 @@
 
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
-#include <pc802_oam_lib.h>
+#include <pcxx_oam.h>
 
 #define TEST_PC802_DISP_LOOP_NUM    10000
 

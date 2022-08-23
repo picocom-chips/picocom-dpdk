@@ -11,7 +11,7 @@
 #include <rte_debug.h>
 #include <rte_memcpy.h>
 #include "rte_pmd_pc802.h"
-#include "pc802_oam_lib.h"
+#include "pcxx_oam.h"
 
 typedef enum {
     OamMsgType_Log = 128,       /* lower 128 reserved for driver for special handing */

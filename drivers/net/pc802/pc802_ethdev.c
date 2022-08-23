@@ -187,12 +187,17 @@ struct pc802_adapter {
     uint32_t dgb_phy_addrL;
     uint32_t dgb_phy_addrH;
     uint32_t dbg_rccnt;
+    uint32_t DEVRDY;
+    uint32_t DRVSTATE;
 
     uint16_t port_index;
     uint16_t log_flag;
     mailbox_exclusive *mailbox_pfi;
     mailbox_exclusive *mailbox_ecpri;
     mailbox_exclusive *mailbox_dsp[3];
+
+    mailbox_info_exclusive *mailbox_info_pfi;
+    mailbox_info_exclusive *mailbox_info_ecpri;
 };
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
@@ -302,7 +307,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
         DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
-            block_size*block_num, port_id, queue_id, k);
+            block_size*block_num, port_id, queue_id, block_num);
         return -ENOMEM;
     }
     DBLOG("UL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
@@ -1641,6 +1646,37 @@ int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t
 	return -ret;
 }
 
+static int pc802_check_rerun(struct pc802_adapter *adapter)
+{
+    PC802_BAR_t *bar = pc802_get_BAR(adapter->port_id);
+    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
+    adapter->DEVRDY = PC802_READ_REG(bar->DEVRDY);
+    adapter->DRVSTATE = PC802_READ_REG(bar->DRVSTATE);
+    DBLOG("Port_Id = %u DEVRDY = %u DRVSTATE = %u\n", adapter->port_id,
+        adapter->DEVRDY, adapter->DRVSTATE);
+    uint32_t MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
+    uint32_t MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
+    uint32_t COMMAND = PC802_READ_REG(ext->MB_COMMAND);
+    if (MB_RCCNT != MB_EPCNT) {
+        DBLOG("Some PFI core is doing vec_access (COMMAND = %u MB_EPCNT = %u MB_RCCNT = %u) !\n",
+            COMMAND, MB_EPCNT, MB_RCCNT);
+        DBLOG("Please reset PC802 and NPU driver is exiting !!!\n");
+        exit(0);
+    }
+
+    uint32_t EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
+    uint32_t EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
+    COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
+    if (EMB_RCCNT != EMB_EPCNT) {
+        DBLOG("Some eCPRI core is doing vec_access (COMMAND = %u EMB_EPCNT = %u EMB_RCCNT = %u) !\n",
+            COMMAND, EMB_EPCNT, EMB_RCCNT);
+        DBLOG("Please reset PC802 and NPU driver is exiting !!!\n");
+        exit(0);
+    }
+
+    return 0;
+}
+
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1675,10 +1711,14 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;
 
+    pc802_check_rerun(adapter);
+
     DBLOG("PC802_BAR[0].vaddr = %p\n", pci_dev->mem_resource[0].addr);
-    pc802_bar_memset((uint32_t *)&bar[1], 0, (pci_dev->mem_resource[0].len - sizeof(bar[0])) / sizeof(uint32_t));
-    DBLOG("Finish clearing reset of BAR 0\n");
-    rte_mb();
+    if (adapter->DEVRDY < 2) {
+        pc802_bar_memset((uint32_t *)&bar[1], 0, (pci_dev->mem_resource[0].len - sizeof(bar[0])) / sizeof(uint32_t));
+        DBLOG("Finish clearing reset of BAR 0\n");
+        rte_mb();
+    }
 
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
@@ -1689,15 +1729,21 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
-        pc802_bar_memset((uint32_t *)pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len / sizeof(uint32_t));
-        DBLOG("Finish clearing BAR 1\n");
+        if (adapter->DEVRDY < 2) {
+            pc802_bar_memset((uint32_t *)pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len / sizeof(uint32_t));
+            DBLOG("Finish clearing BAR 1\n");
+        }
         DBLOG("PC802_BAR[2].vaddr = %p\n", pci_dev->mem_resource[2].addr);
-        pc802_bar_memset((uint32_t *)pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len / sizeof(uint32_t));
-        DBLOG("Finish clearing BAR 2\n");
+        if (adapter->DEVRDY < 2) {
+            pc802_bar_memset((uint32_t *)pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len / sizeof(uint32_t));
+            DBLOG("Finish clearing BAR 2\n");
+        }
         rte_mb();
 
+        adapter->mailbox_info_pfi = (mailbox_info_exclusive *)((uint8_t*)pci_dev->mem_resource[1].addr);
         adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
         adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
+        adapter->mailbox_info_ecpri = (mailbox_info_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + sizeof(mailbox_exclusive) * 16);
         for (dsp = 0; dsp < 3; dsp++) {
             adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
         }
@@ -1808,7 +1854,6 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_INIT(picocom_pc802_init_log)
 {
     pthread_t tid;
-    printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
     pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
 }
@@ -2349,31 +2394,36 @@ static inline void handle_trace_data(uint16_t port_id, uint32_t core, uint32_t r
     PC802_LOG( port_id, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
 }
 
-static int pc802_tracer(void *data)
+static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 {
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
-    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
+    static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
     int num = 0;
-    uint16_t port_index = adapter->port_index;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
     volatile uint32_t epcnt;
 
+    if (NULL == ext[port_index]) {
+        ext[port_index] = pc802_get_BAR_Ext(port_id);
+        for (core = 0; core < 32; core++) {
+            rccnt[port_index][core] = PC802_READ_REG(ext[port_index]->TRACE_RCCNT[core]);
+        }
+    }
+
     for (core = 0; core < 32; core++) {
-        epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
+        epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
-            trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
-            handle_trace_data(adapter->port_id, core, rccnt[port_index][core], trc_data);
+            trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
+            handle_trace_data(port_id, core, rccnt[port_index][core], trc_data);
             rccnt[port_index][core]++;
             num++;
         }
         if ( num>0 )
         {
             rte_wmb();
-            PC802_WRITE_REG(ext->TRACE_RCCNT[core], rccnt[port_index][core]);
+            PC802_WRITE_REG(ext[port_index]->TRACE_RCCNT[core], rccnt[port_index][core]);
         }
     }
 
@@ -2462,6 +2512,91 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
     return num;
 }
 
+static void pc802_set_mailbox_xc_flags(uint8_t *flags, uint32_t start, int cnt)
+{
+    uint32_t idx = start;
+    while (cnt--) {
+        flags[idx] = 1;
+        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+    }
+}
+
+static int pc802_mailbox_rv_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint32_t idx, uint32_t core)
+{
+    int num;
+    int cnt;
+    int acc;
+    uint32_t init_idx = idx;
+    uint32_t start;
+    uint64_t flags[2];
+    uint8_t * pflags = (uint8_t *)&flags[0];
+
+    flags[0] = 0;
+    flags[1] = 0;
+    num = 0;
+    acc = 0;
+    do {
+        start = idx;
+        cnt = handle_mailbox(port_id, mb, &idx, core);
+        pc802_set_mailbox_xc_flags(pflags, start, cnt);
+        num += cnt;
+        acc += (cnt + 1);
+        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+    } while (acc < MB_MAX_C2H_MAILBOXES);
+    PC802_LOG(port_id, core, RTE_LOG_INFO, "RV MB Clear Up: core %u init_idx %u idx %u flags: 0x%016lx 0x%016lx\n",
+        core, init_idx, idx, flags[1], flags[0]);
+    return num;
+}
+
+static uint32_t pc802_get_mailbox_xc_idx(uint8_t *flags)
+{
+    uint32_t k;
+    uint32_t sum = 0;
+    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++)
+        sum += flags[k];
+    if ((MB_MAX_C2H_MAILBOXES == sum) || (0 == sum))
+        return MB_MAX_C2H_MAILBOXES;
+    sum = 0;
+    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++) {
+        sum += flags[k];
+        if ((sum > 0) && (flags[k] == 0))
+            return k;
+    }
+    return 0;
+}
+
+static int pc802_mailbox_xc_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
+{
+    int num;
+    int cnt;
+    int acc;
+    uint32_t pos;
+    uint32_t start;
+    uint64_t flags[2];
+    uint8_t * pflags = (uint8_t *)&flags[0];
+
+    flags[0] = 0;
+    flags[1] = 0;
+    num = 0;
+    pos = 0;
+    acc = 0;
+    do {
+        start = pos;
+        cnt = handle_mailbox(port_id, mb, &pos, core);
+        pc802_set_mailbox_xc_flags(pflags, start, cnt);
+        num += cnt;
+        acc += (cnt + 1);
+        pos = (pos + 1) & (MB_MAX_C2H_MAILBOXES - 1);
+    } while (acc < MB_MAX_C2H_MAILBOXES);
+    *idx = pc802_get_mailbox_xc_idx(pflags);
+    if (MB_MAX_C2H_MAILBOXES != *idx) {
+        PC802_LOG(port_id, core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
+            core, *idx, flags[1], flags[0]);
+    }
+    return num;
+}
+
+
 static int pc802_mailbox(void *data)
 {
     static struct pc802_adapter *adapter[PC802_INDEX_MAX] = {NULL};
@@ -2474,6 +2609,7 @@ static int pc802_mailbox(void *data)
     uint32_t core;
     uint16_t port_index = ((struct pc802_adapter *)data)->port_index;
     int num = 0;
+    volatile uint32_t mb_idx;
 
     if ( adapter[port_index] == NULL )
     {
@@ -2489,6 +2625,26 @@ static int pc802_mailbox(void *data)
         for (core = 0; core < 3; core++) {
             mb_dsp[port_index][core] = adapter[port_index]->mailbox_dsp[core];
             dsp_idx[port_index][core] = 0;
+            num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
+            pc802_log_flush();
+        }
+
+        for (core = 0; core < 16; core++) {
+            mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_pfi[core].m_next_c2h);
+            do {
+                pfi_idx[port_index][core] = mb_idx;
+                num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_pfi[port_index][core].m_cpu_to_host[0], pfi_idx[port_index][core], core);
+                mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_pfi[core].m_next_c2h);
+            } while (mb_idx != pfi_idx[port_index][core]);
+            pc802_log_flush();
+
+            mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
+            do {
+                ecpri_idx[port_index][core] = mb_idx;
+                num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_ecpri[port_index][core].m_cpu_to_host[0], ecpri_idx[port_index][core], core+16);
+                mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
+            } while (mb_idx != ecpri_idx[port_index][core]);
+            pc802_log_flush();
         }
     }
 
@@ -2501,7 +2657,12 @@ static int pc802_mailbox(void *data)
     }
 
     for (core = 0; core < 3; core++) {
-        num += handle_mailbox(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
+        if (MB_MAX_C2H_MAILBOXES == dsp_idx[port_index][core]) {
+            num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
+            pc802_log_flush();
+        } else {
+            num += handle_mailbox(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
+        }
     }
 
     return num;
@@ -2518,10 +2679,10 @@ static void * pc802_debug(__rte_unused void *data)
     while( 1 )
     {
         num = 0;
-        for ( i=0; i<pc802_get_count(); i++ )
+        for ( i=0; i<num_pc802s; i++ )
         {
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(pc802_devices[i]);
+                num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_VEC))
