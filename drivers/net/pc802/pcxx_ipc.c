@@ -86,6 +86,11 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
     RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
 
+    if (RTE_PROC_PRIMARY == rte_eal_process_type()) {
+        pc802_start_tx_queue(port_id, QID_CTRL[cell_index]);
+        pc802_start_rx_queue(port_id, QID_CTRL[cell_index]);
+    }
+
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
 
@@ -135,6 +140,11 @@ int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
     RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_OAM[cell_index], OAM_QUEUE_BLOCK_SIZE, 64, 32));
     RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_OAM[cell_index], OAM_QUEUE_BLOCK_SIZE, 64, 32));
 
+    if (RTE_PROC_PRIMARY == rte_eal_process_type()) {
+        pc802_start_tx_queue(port_id, QID_OAM[cell_index]);
+        pc802_start_rx_queue(port_id, QID_OAM[cell_index]);
+    }
+
     cell_info->pcxx_oam_ul_handle = info->readHandle;
     cell_info->pcxx_oam_dl_handle = info->writeHandle;
     pcxx_devs[dev_index].port_id = port_id;
@@ -183,6 +193,11 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
 
     RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
     RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
+
+    if (RTE_PROC_PRIMARY == rte_eal_process_type()) {
+        pc802_start_tx_queue(port_id, QID_DATA[cell_index]);
+        pc802_start_rx_queue(port_id, QID_DATA[cell_index]);
+    }
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
     cell_info->pcxx_data_dl_handle = info->writeHandle;

@@ -340,11 +340,23 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
 
-    PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+    PC802_WRITE_REG(bar->RDNUM[queue_id], 0);
     PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
+    PC802_WRITE_REG(bar->REPCNT[queue_id], 0);
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
+    return 0;
+}
+
+int pc802_start_rx_queue(uint16_t port_id, uint16_t queue_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    PC802_WRITE_REG(bar->RDNUM[queue_id], rxq->nb_rx_desc);
     return 0;
 }
 
@@ -421,11 +433,23 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->queue_id = queue_id;
     txq->port_id = port_id;
 
+    PC802_WRITE_REG(bar->TDNUM[queue_id], 0);
     PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
-    PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+    PC802_WRITE_REG(bar->TEPCNT[queue_id], 0);
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
+    return 0;
+}
+
+int pc802_start_tx_queue(uint16_t port_id, uint16_t queue_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    PC802_WRITE_REG(bar->TDNUM[queue_id], txq->nb_tx_desc);
     return 0;
 }
 
