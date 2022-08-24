@@ -200,7 +200,7 @@ static int set_ecpri_tx_rx_cfg_handler(uint32_t maxTxLateThreshold)
     sub_msg.Head.MsgSize = sizeof(EcpriTxRxCfg_t);
     sub_msg.u.tx_rx_cfg.maxTxLateThreshold = maxTxLateThreshold;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
         rsp_msg_test(TX_RX_SET_RSP);
@@ -297,7 +297,7 @@ static int set_ecpri_ptp_cfg_handler(uint8_t ptp_enable, uint8_t ptp_step_mode, 
     sub_msg.u.ptp_cfg.ptp_step_mode = ptp_step_mode;
     sub_msg.u.ptp_cfg.ecpri_step_mode = ecpri_step_mode;
 
-    if ( 0== pc802_oam_send_msg(0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg(0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
         rsp_msg_test(PTP_SET_RSP);
@@ -412,7 +412,7 @@ static int set_ecpri_ru_cfg_handler(EcpriRuCfg_t *cfg)
     sub_msg.u.ru_cfg.T1amax_up = cfg->T1amax_up;
     memcpy(sub_msg.u.ru_cfg.ru_mac, cfg->ru_mac, ETH_MAC_ADDR_LEN);
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
         rsp_msg_test(ECPRI_RU_SET_RSP);
@@ -565,7 +565,7 @@ static int set_ecpri_du_cfg_handler(uint8_t cp_enable, uint8_t ru_cnt, uint16_t 
     sub_msg.u.du_cfg.cp_enable = cp_enable;
     memcpy(sub_msg.u.du_cfg.du_mac, addr_bytes, ETH_MAC_ADDR_LEN);
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
         rsp_msg_test(ECPRI_DU_SET_RSP);
@@ -673,7 +673,7 @@ static int set_ecpri_comp_method_cfg_handler(uint8_t isStaticComp, uint8_t metho
     sub_msg.u.comp_method_cfg.comIqWidth = comIqWidth;
     sub_msg.u.comp_method_cfg.decomIqWidth = decomIqWidth;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
      rsp_msg_test(COMP_METH_SET_RSP);
@@ -805,7 +805,7 @@ static int get_ecpri_comp_method_cfg_handler(void)
     sub_msg.Head.MsgId = COMP_METH_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -920,7 +920,7 @@ static int get_ecpri_eth_mtu_cfg_handler(void)
     sub_msg.Head.MsgId = ETH_MTU_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1048,7 +1048,7 @@ static int get_ecpri_basic_cfg_handler(void)
     sub_msg.Head.MsgId = BASIC_CFG_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1246,7 +1246,7 @@ static int get_ecpri_perf_kpis_handler(void)
     sub_msg.Head.MsgId = ECPRI_DU_KPIS_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1390,7 +1390,7 @@ static int get_ecpri_du_cfg_handler(void)
     sub_msg.Head.MsgId = ECPRI_DU_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1511,7 +1511,7 @@ static int get_ecpri_du_internal_cfg_handler(void)
     sub_msg.Head.MsgId = ECPRI_DU_LOCAL_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1636,7 +1636,7 @@ static int get_ecpri_ru_cfg_handler(void)
     sub_msg.Head.MsgId = ECPRI_RU_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1766,7 +1766,7 @@ static int get_ecpri_tx_rx_cfg_handler(void)
     sub_msg.Head.MsgId = TX_RX_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};
@@ -1882,7 +1882,7 @@ static int get_ecpri_ptp_cfg_handler(void)
     sub_msg.Head.MsgId = PTP_GET_REQ;
     sub_msg.Head.MsgSize = 0;
 
-    if ( 0== pc802_oam_send_msg(0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg(0, 0, &list, 1 ) ) {
 
 #ifdef SEND_TEST_MSG
     OamSubMessage_t rsp_msg = {0};

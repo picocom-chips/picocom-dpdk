@@ -87,7 +87,7 @@ int pc802_oam_init(void)
     return 0;
 }
 
-int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uint32_t msg_num )
+int pc802_oam_send_msg( uint16_t dev_index, uint16_t cell_index, const OamSubMessage_t **sub_msg, uint32_t msg_num )
 {
     OamMessage_t *msg = NULL;
     OamSubMessage_t *sub = NULL;
@@ -97,8 +97,8 @@ int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uin
 
     pthread_mutex_lock(&lock);
 
-    pcxxOamSendStart( dev_index, 0 );
-    pcxxOamAlloc( (char **)&msg, &len, dev_index, 0);
+    pcxxOamSendStart( dev_index, cell_index );
+    pcxxOamAlloc( (char **)&msg, &len, dev_index, cell_index);
     if ( NULL==msg ){
         pthread_mutex_unlock(&lock);
         return -1;
@@ -106,26 +106,26 @@ int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uin
     msg->Head.StartFlag = OAM_START_FLAG;
     msg->Head.MsgType = PICO_OAM_MSG;
     msg->Head.SubMsgNum = 0;
-    pcxxOamSend( (void*)msg, sizeof(OamMessageHeader_t), dev_index, 0 );
+    pcxxOamSend( (void*)msg, sizeof(OamMessageHeader_t), dev_index, cell_index );
 
     for ( i=0; i<msg_num; i++ ){
         sub = NULL;
-        pcxxOamAlloc( (char **)&sub, &len, dev_index, 0 );
+        pcxxOamAlloc( (char **)&sub, &len, dev_index, cell_index );
         if ( NULL==sub || len<sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) ){
             printf( "Not enough space(%u) for message(%d:%ld)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
             pthread_mutex_unlock(&lock);
             return -1;
         }
         memcpy( (void*)sub, (const void *)(sub_msg[i]), sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
-        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t), dev_index, 0 );
+        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t), dev_index, cell_index );
         msg->Head.SubMsgNum++;
     }
 
-    pcxxOamAlloc( (char **)&end, &len, dev_index, 0 );
+    pcxxOamAlloc( (char **)&end, &len, dev_index, cell_index );
     *end = OAM_END_FLAG;
-    pcxxOamSend( (void*)end, sizeof(*end), dev_index, 0 );
+    pcxxOamSend( (void*)end, sizeof(*end), dev_index, cell_index );
 
-    pcxxOamSendEnd( dev_index, 0 );
+    pcxxOamSendEnd( dev_index, cell_index );
 
     pthread_mutex_unlock(&lock);
 

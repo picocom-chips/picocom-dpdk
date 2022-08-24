@@ -227,7 +227,7 @@ static int case310(void)
     sub_msg.Head.MsgSize = sizeof(BasicCfg_t);
     sub_msg.u.basic_cfg.pcie_enable = 1;
     sub_msg.u.basic_cfg.eth_type = 1;
-    if ( 0== pc802_oam_send_msg( 0, &list, 1 ) ) {
+    if ( 0== pc802_oam_send_msg( 0, 0, &list, 1 ) ) {
 #ifdef SEND_TEST_MSG
         send_test_msg( &rsp_msg );    //for test
 #endif
