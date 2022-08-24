@@ -58,10 +58,11 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
 {
     uint16_t dev_index = 0;
     uint16_t cell_index = 0;
-    va_list ap;
-    va_start(ap, info);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, info);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
@@ -106,10 +107,10 @@ void pcxxCtrlClose( _UNUSED_ uint16_t dev_index, uint16_t cell_index )
 int pcxxOamOpen(const pcxxInfo_s* info, ...)
 {
     uint16_t dev_index = 0;
-    va_list ap;
-    va_start(ap, info);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, info);
+    //dev_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
 {
@@ -153,10 +154,11 @@ int pcxxDataOpen(const pcxxInfo_s* info, ...)
 {
     uint16_t dev_index = 0;
     uint16_t cell_index = 0;
-    va_list ap;
-    va_start(ap, info);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, info);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
@@ -280,10 +282,11 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
 {
     uint16_t dev_index = 0;
     uint16_t cell_index = 0;
-    va_list ap;
-    va_start(ap, availableSize);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, availableSize);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
 {
@@ -310,11 +313,11 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
 {
     uint16_t dev_index = 0;
     uint16_t cell_index = 0;
-    va_list ap;
-    va_start(ap, bufLen);
-    dev_index = va_arg(ap, int);
-    cell_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, bufLen);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
@@ -424,10 +427,10 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...)
 {
     uint16_t dev_index = 0;
-    va_list ap;
-    va_start(ap, availableSize);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, availableSize);
+    //dev_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
 {
@@ -452,10 +455,10 @@ int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
 int pcxxOamSend(const char* buf, uint32_t bufLen, ...)
 {
     uint16_t dev_index = 0;
-    va_list ap;
-    va_start(ap, bufLen);
-    dev_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, bufLen);
+    //dev_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
 {
@@ -532,11 +535,11 @@ int pcxxOamRecv(uint16_t dev_index )
 int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
 {
     uint16_t dev_index = 0, cell_index = 0;
-    va_list ap;
-    va_start(ap, offset);
-    dev_index = va_arg(ap, int);
-    cell_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, offset);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
 {
@@ -558,11 +561,11 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
 {
     uint16_t dev_index = 0, cell_index = 0;
-    va_list ap;
-    va_start(ap, bufLen);
-    dev_index = va_arg(ap, int);
-    cell_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, bufLen);
+    //dev_index = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
@@ -598,11 +601,11 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
 void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
 {
     uint16_t dev_index = 0, cell_index = 0;
-    va_list ap;
-    va_start(ap, len);
-    dev_index  = va_arg(ap, int);
-    cell_index = va_arg(ap, int);
-    va_end(ap);
+    //va_list ap;
+    //va_start(ap, len);
+    //dev_index  = va_arg(ap, int);
+    //cell_index = va_arg(ap, int);
+    //va_end(ap);
 #else
 void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
 {
