@@ -960,15 +960,15 @@ typedef struct {
     pcxx_oam_sub_msg_t *sub;
 }oam_cb_arg;
 
-static int32_t oam_rsp( void *arg, uint16_t dev, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num )
+static int32_t oam_rsp( void *arg, __rte_unused uint16_t dev, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, __rte_unused uint32_t msg_num )
 {
     oam_cb_arg *req = (oam_cb_arg *)arg;
-    //uint32_t *req_msg = (uint32_t *)&req->sub->msb_body;
+    uint32_t *req_msg = (uint32_t *)&req->sub->msb_body;
     //printf( "Dev %d recv oam msg %d include %u sub mesg[%d]\n", dev, msg_type, msg_num, sub_msg[0]->msg_id );
-    //swap_msg( (uint32_t *)(&sub_msg[0]->msb_body), sub_msg[0]->msg_size );
-    //if (!check_same( &req_msg, req->sub->msg_size, (uint32_t *)(&sub_msg[0]->msb_body)))
+    swap_msg( (uint32_t *)(&sub_msg[0]->msb_body), sub_msg[0]->msg_size );
     if ((req->msg_type == msg_type) && ((req->sub->msg_id == sub_msg[0]->msg_id)))
-        sem_post(&req->sem);
+        if (!check_same( &req_msg, 1, (uint32_t *)(&sub_msg[0]->msb_body)))
+            sem_post(&req->sem);
     return 0;
 }
 
@@ -989,7 +989,7 @@ static int case301(void)
     produce_dl_src_data(data, PC802_TRAFFIC_OAM);
     arg.dev = 0;
     arg.sub->msg_id = (uint16_t)rand();
-    arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+    arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
     if (0 == pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)) {
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += 1;
@@ -1025,7 +1025,7 @@ static int case302(void)
         data = (uint32_t *)arg.sub->msb_body;
         produce_dl_src_data(data, PC802_TRAFFIC_OAM);
         arg.sub->msg_id = (uint16_t)rand();
-        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
         if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
             DBLOG("Send ERROR\n");
             ret = -1;
@@ -1046,7 +1046,7 @@ static int case302(void)
         data = (uint32_t *)arg.sub->msb_body;
         produce_dl_src_data(data, PC802_TRAFFIC_OAM);
         arg.sub->msg_id = (uint16_t)rand();
-        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2)+sizeof(pcxx_oam_sub_msg_t);
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
         pcxx_oam_sub_msg_register( arg.msg_type, arg.sub->msg_id, oam_rsp, &arg );
         if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
             DBLOG("Send ERROR\n");
