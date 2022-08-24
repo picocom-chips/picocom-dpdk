@@ -1098,6 +1098,11 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     PMD_INIT_FUNC_TRACE();
 
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+        return 0;
+    }
+
     eth_pc802_stop(dev);
 
     eth_pc802_tx_init(dev);
