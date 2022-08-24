@@ -156,8 +156,8 @@ static int port_init( uint16_t pc802_index )
     {
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
+        pcxxOamOpen(&oam_cb_info, pc802_index, cell);
     }
-    pcxxOamOpen(&oam_cb_info, pc802_index, 0);
 
     rte_eth_dev_start(port);
 
