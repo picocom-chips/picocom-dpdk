@@ -6,6 +6,8 @@
 #include <string.h>
 #include <pthread.h>
 
+#include <rte_common.h>
+
 #include "rte_pmd_pc802.h"
 #include "pcxx_ipc.h"
 #include "pc802_oam_lib.h"
@@ -14,7 +16,7 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 #ifdef MULTI_PC802
-#define PCXX_CALL(fun,dev) fun(dev)
+#define PCXX_CALL(fun, dev, cell) fun(dev, cell)
 #else
 #define PCXX_CALL(fun,dev) fun()
 #endif
@@ -76,7 +78,8 @@ int pc802_oam_init(void)
 
     for ( dev_index=0; dev_index<pcxxGetDevCount(); dev_index++ )
     {
-        pcxxOamOpen(&cb_info, dev_index );
+        pcxxOamOpen(&cb_info, dev_index, 0);
+        pcxxOamOpen(&cb_info, dev_index, 1);
     }
 
     pthread_create( &tid, NULL, oam_recv, NULL);
@@ -94,8 +97,8 @@ int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uin
 
     pthread_mutex_lock(&lock);
 
-    pcxxOamSendStart( dev_index );
-    pcxxOamAlloc( (char **)&msg, &len, dev_index);
+    pcxxOamSendStart( dev_index, 0 );
+    pcxxOamAlloc( (char **)&msg, &len, dev_index, 0);
     if ( NULL==msg ){
         pthread_mutex_unlock(&lock);
         return -1;
@@ -103,26 +106,26 @@ int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uin
     msg->Head.StartFlag = OAM_START_FLAG;
     msg->Head.MsgType = PICO_OAM_MSG;
     msg->Head.SubMsgNum = 0;
-    pcxxOamSend( (void*)msg, sizeof(OamMessageHeader_t), dev_index );
+    pcxxOamSend( (void*)msg, sizeof(OamMessageHeader_t), dev_index, 0 );
 
     for ( i=0; i<msg_num; i++ ){
         sub = NULL;
-        pcxxOamAlloc( (char **)&sub, &len, dev_index );
+        pcxxOamAlloc( (char **)&sub, &len, dev_index, 0 );
         if ( NULL==sub || len<sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) ){
             printf( "Not enough space(%u) for message(%d:%ld)\n", len, sub_msg[i]->Head.MsgId, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
             pthread_mutex_unlock(&lock);
             return -1;
         }
         memcpy( (void*)sub, (const void *)(sub_msg[i]), sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t) );
-        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t), dev_index );
+        pcxxOamSend( (void*)sub, sub_msg[i]->Head.MsgSize+sizeof(OamSubMessageHeader_t), dev_index, 0 );
         msg->Head.SubMsgNum++;
     }
 
-    pcxxOamAlloc( (char **)&end, &len, dev_index );
+    pcxxOamAlloc( (char **)&end, &len, dev_index, 0 );
     *end = OAM_END_FLAG;
-    pcxxOamSend( (void*)end, sizeof(*end), dev_index );
+    pcxxOamSend( (void*)end, sizeof(*end), dev_index, 0 );
 
-    pcxxOamSendEnd( dev_index );
+    pcxxOamSendEnd( dev_index, 0 );
 
     pthread_mutex_unlock(&lock);
 
@@ -235,7 +238,7 @@ static void *oam_recv(_UNUSED_ void *arg)
     {
         for (dev_index = 0; dev_index < pcxxGetDevCount(); dev_index++)
         {
-            PCXX_CALL(pcxxOamRecv, dev_index);
+            PCXX_CALL(pcxxOamRecv, dev_index, 0);
         }
     }
     return NULL;

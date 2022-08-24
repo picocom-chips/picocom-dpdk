@@ -157,7 +157,7 @@ static int port_init( uint16_t pc802_index )
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
-    pcxxOamOpen(&oam_cb_info, pc802_index);
+    pcxxOamOpen(&oam_cb_info, pc802_index, 0);
 
     rte_eth_dev_start(port);
 
@@ -369,7 +369,7 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 
 extern PC802_Traffic_Type_e QID_DATA[];
 extern PC802_Traffic_Type_e QID_CTRL[];
-#define QID_OAM     PC802_TRAFFIC_OAM
+extern PC802_Traffic_Type_e QID_OAM[];
 
 static union {
     const char *cc;
@@ -1005,15 +1005,15 @@ static int case301(void)
     uint32_t N;
     uint32_t avail;
 
-    pcxxOamSendStart(g_pc802_index);
-    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index));
+    pcxxOamSendStart(g_pc802_index, 0);
+    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index, 0));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, QID_OAM);
+    produce_dl_src_data(A, QID_OAM[0]);
     N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxOamSend(a, N, g_pc802_index);
-    pcxxOamSendEnd(g_pc802_index);
+    pcxxOamSend(a, N, g_pc802_index, 0);
+    pcxxOamSendEnd(g_pc802_index, 0);
 
-    while (-1 == PCXX_CALL0(pcxxOamRecv,g_pc802_index));
+    while (-1 == PCXX_CALL(pcxxOamRecv,g_pc802_index, 0));
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
     return re;

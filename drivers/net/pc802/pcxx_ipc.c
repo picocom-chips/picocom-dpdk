@@ -8,8 +8,8 @@
 
 #define _UNUSED_ __attribute__((__unused__))
 
-PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_5G_EMBB_DATA, PC802_TRAFFIC_4G_LTE_DATA};
-PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_5G_EMBB_CTRL, PC802_TRAFFIC_4G_LTE_CTRL};
+PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_1ST_CELL_DATA, PC802_TRAFFIC_2ND_CELL_DATA};
+PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_1ST_CELL_CTRL, PC802_TRAFFIC_2ND_CELL_CTRL};
 PC802_Traffic_Type_e QID_OAM[CELL_NUM_PRE_DEV]  = { PC802_TRAFFIC_OAM1, PC802_TRAFFIC_OAM2};
 
 #define DATA_QUEUE_BLOCK_SIZE   (256*1024)
@@ -118,7 +118,7 @@ int pcxxOamOpen(const pcxxInfo_s* info, ...)
 int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 {
 #endif
-    RTE_ASSERT((ev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
+    RTE_ASSERT((dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
         return -1;
@@ -145,11 +145,12 @@ int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 void pcxxOamClose(void)
 {
     uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
 #else
 void pcxxOamClose( _UNUSED_ uint16_t dev_index, _UNUSED_ uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT((ev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
+    RTE_ASSERT((dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV));
 }
 
 
@@ -461,6 +462,7 @@ int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16
 int pcxxOamSend(const char* buf, uint32_t bufLen, ...)
 {
     uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
     va_list ap;
     va_start(ap, bufLen);
     dev_index = va_arg(ap, int);
@@ -654,9 +656,9 @@ int pcxxDataDestroy( uint16_t dev_index, uint16_t cell_index )
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     return 0;
 }
-int pcxxOamDestroy( uint16_t dev_index )
+int pcxxOamDestroy( uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT(dev_index<DEV_INDEX_MAX);
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     return 0;
 }
 #endif

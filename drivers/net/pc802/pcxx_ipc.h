@@ -55,7 +55,7 @@ void pcxxCtrlClose(uint16_t dev_index, uint16_t cell_index );
 #ifndef MULTI_PC802
 int pcxxOamOpen(const pcxxInfo_s* info, ...);
 #else
-int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index);
+int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**
@@ -67,7 +67,7 @@ int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index);
 #ifndef MULTI_PC802
 void pcxxOamClose(void);
 #else
-void pcxxOamClose(uint16_t dev_index);
+void pcxxOamClose(uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**
@@ -127,7 +127,7 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );;
 * @param[in] dev_index baseband device index
 * @return returns 0 if success, or else return error
 */
-int pcxxOamSendStart(uint16_t dev_index);
+int pcxxOamSendStart(uint16_t dev_index, uint16_t cell_index);
 
 /**
 * @brief Notify Rx side that new message are arrived.
@@ -135,7 +135,7 @@ int pcxxOamSendStart(uint16_t dev_index);
 * @param[in] dev_index baseband device index
 * @return  returns 0 if success, or else return error
 */
-int pcxxOamSendEnd(uint16_t dev_index );
+int pcxxOamSendEnd(uint16_t dev_index, uint16_t cell_index);
 
 /**
 * @brief Allocated one control message memory from current block in used.
@@ -191,7 +191,7 @@ int pcxxCtrlRecv(uint16_t dev_index, uint16_t cell_index );
 #ifndef MULTI_PC802
 int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...);
 #else
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index );
+int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**
@@ -205,7 +205,7 @@ int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index );
 #ifndef MULTI_PC802
 int pcxxOamSend(const char* buf, uint32_t bufLen, ...);
 #else
-int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index );
+int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**
@@ -217,7 +217,7 @@ int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index );
 #ifndef MULTI_PC802
 int pcxxOamRecv(void);
 #else
-int pcxxOamRecv(uint16_t dev_index );
+int pcxxOamRecv(uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**
@@ -273,7 +273,7 @@ int pcxxDataDestroy(void);
 #else
 int pcxxCtrlDestroy(uint16_t dev_index, uint16_t cell_index );
 int pcxxDataDestroy(uint16_t dev_index, uint16_t cell_index );
-int pcxxOamDestroy(uint16_t dev_index );
+int pcxxOamDestroy(uint16_t dev_index, uint16_t cell_index);
 #endif
 
 #endif
