@@ -286,6 +286,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
+    if (NULL != rxq->sw_ring) {
+        rte_free(rxq->sw_ring);
+    }
     if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
             sizeof (rxq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
@@ -297,6 +300,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->mpool.first = NULL;
     snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d",
             dev->data->port_id, queue_id);
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
         DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
@@ -375,6 +381,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
+    if (NULL != txq->sw_ring) {
+        rte_free(txq->sw_ring);
+    }
     sprintf(z_name, "txq%d->sw_ring", dev->data->port_id);
     if ((txq->sw_ring = rte_zmalloc( z_name,
             sizeof (txq->sw_ring[0]) * nb_desc,
@@ -386,6 +395,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     txq->mpool.first = NULL;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
         DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
