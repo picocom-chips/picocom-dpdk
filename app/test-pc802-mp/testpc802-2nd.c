@@ -802,15 +802,15 @@ static int case301(void)
     uint32_t N;
     uint32_t avail;
 
-    pcxxOamSendStart(g_pc802_index, 0);
-    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index, 0));
+    pcxxOamSendStart(g_pc802_index, g_cell_index);
+    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, QID_OAM[0]);
+    produce_dl_src_data(A, QID_OAM[g_cell_index]);
     N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxOamSend(a, N, g_pc802_index, 0);
-    pcxxOamSendEnd(g_pc802_index, 0);
+    pcxxOamSend(a, N, g_pc802_index, g_cell_index);
+    pcxxOamSendEnd(g_pc802_index, g_cell_index);
 
-    while (-1 == PCXX_CALL(pcxxOamRecv,g_pc802_index, 0));
+    while (-1 == PCXX_CALL(pcxxOamRecv,g_pc802_index, g_cell_index));
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
     return re;
