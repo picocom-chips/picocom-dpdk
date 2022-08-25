@@ -1704,7 +1704,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
         uint32_t DBAH = PC802_READ_REG(bar->DBAH);
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
-        DBLOG("DBA: 0x$08X %08X\n", DBAH, DBAL);
+        DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
         sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
         const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
         DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
