@@ -15,6 +15,7 @@ apps = [
         'test-pc802',
         'test-pc802oam',
         'test-pc802-perf',
+        'test-pc802-mp',
         'test-pipeline',
         'test-pmd',
         'test-regex',
