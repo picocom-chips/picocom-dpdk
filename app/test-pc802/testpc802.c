@@ -126,7 +126,6 @@ static int port_init( uint16_t pc802_index )
     //const struct rte_eth_rxconf rx_conf;
     char temp_name[32] = {0};
     int socket_id;
-    uint16_t cell;
     int port = pc802_get_port_id(pc802_index);
     if ( port < 0 )
         rte_exit( EXIT_FAILURE, "pc802 %d is notexist !\n", pc802_index );
@@ -152,12 +151,9 @@ static int port_init( uint16_t pc802_index )
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
-    {
-        pcxxDataOpen(&data_cb_info, pc802_index, cell);
-        pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
-        pcxxOamOpen(&oam_cb_info, pc802_index, cell);
-    }
+    pcxxDataOpen(&data_cb_info, pc802_index, 0);
+    pcxxCtrlOpen(&ctrl_cb_info, pc802_index, 0);
+    pcxxOamOpen(&oam_cb_info, pc802_index, 0);
 
     rte_eth_dev_start(port);
 
