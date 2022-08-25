@@ -85,12 +85,6 @@ signal_handler(int signum)
     }
 }
 
-static const struct rte_eth_conf dev_conf = {
-        .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
-        },
-    };
-
 #ifdef MULTI_PC802
 #define PCXX_CALL0(fun,dev) fun(dev)
 #define PCXX_CALL(fun,dev,cell) fun(dev,cell)
