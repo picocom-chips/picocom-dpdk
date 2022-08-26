@@ -1848,6 +1848,7 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_INIT(picocom_pc802_init_log)
 {
     pthread_t tid;
+    printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
     pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
 }
@@ -2653,7 +2654,7 @@ static int pc802_mailbox(void *data)
     for (core = 0; core < 3; core++) {
         if (MB_MAX_C2H_MAILBOXES == dsp_idx[port_index][core]) {
             num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
-            pc802_log_flush();
+            //pc802_log_flush();
         } else {
             num += handle_mailbox(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
         }
@@ -2668,7 +2669,7 @@ static void * pc802_debug(__rte_unused void *data)
     int num = 0;
     struct timespec req;
     req.tv_sec = 0;
-    req.tv_nsec = 1000;
+    req.tv_nsec = 250*1000;
 
     while( 1 )
     {
