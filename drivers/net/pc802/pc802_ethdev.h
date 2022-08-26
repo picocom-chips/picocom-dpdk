@@ -211,6 +211,30 @@ typedef struct PC802_BAR_t {
             uint32_t IO_RSP_DATA;
         };
     };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_req;
+        struct {
+            uint32_t TX_RST_RCCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_rsp;
+        struct {
+            uint32_t TX_RST_EPCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_req;
+        struct {
+            uint32_t RX_RST_RCCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_rsp;
+        struct {
+            uint32_t RX_RST_EPCNT[PC802_TRAFFIC_NUM];
+        };
+    };
 } PC802_BAR_t;
 
 #define PC802_DEVEN             (offsetof(PC802_BAR_t,   DEVEN))
