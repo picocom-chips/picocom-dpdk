@@ -523,7 +523,7 @@ int pcxxOamRecv(uint16_t dev_index, uint16_t cell_index)
         if (NULL == cell->pcxx_oam_ul_handle)
             break;
 #ifdef MULTI_PC802
-        ret = cell->pcxx_oam_ul_handle(rx_oam_buf + offset, _len, dev_index, 0);
+        ret = cell->pcxx_oam_ul_handle(rx_oam_buf + offset, _len, dev_index, cell_index);
 #else
         ret = cell->pcxx_oam_ul_handle(rx_oam_buf + offset, _len);
 #endif
