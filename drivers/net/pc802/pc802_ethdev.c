@@ -278,6 +278,8 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
     PC802_Mem_Block_t *mblk;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     rxq->mpool.block_size = block_size;
     rxq->mpool.block_num = block_num;
@@ -348,7 +350,17 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
     PC802_WRITE_REG(bar->REPCNT[queue_id], 0);
+    *rxq->repcnt_mirror_addr = 0;
     PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+    rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
+    rc_rst_cnt++;
+    PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
+    if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+        do {
+            usleep(2);
+            ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+    }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
@@ -373,6 +385,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
     PC802_Mem_Block_t *mblk;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     txq->mpool.block_size = block_size;
     txq->mpool.block_num = block_num;
@@ -436,7 +450,17 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
     PC802_WRITE_REG(bar->TEPCNT[queue_id], 0);
+    *txq->tepcnt_mirror_addr = 0;
     PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+    rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
+    rc_rst_cnt++;
+    PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
+    if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+        do {
+            usleep(2);
+            ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+    }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
@@ -986,12 +1010,25 @@ eth_pc802_tx_init(struct rte_eth_dev *dev)
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_tx_queue *txq;
     uint16_t i;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     /* Setup the Base and Length of the Tx Descriptor Rings. */
     for (i = 0; i < dev->data->nb_tx_queues; i++) {
         txq = dev->data->tx_queues[i];
         PC802_WRITE_REG(bar->TRCCNT[i], 0);
+        PC802_WRITE_REG(bar->TEPCNT[i], 0);
+        *txq->tepcnt_mirror_addr = 0;
         PC802_WRITE_REG(bar->TDNUM[i], txq->nb_tx_desc);
+        rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[i ]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
+        if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+            do {
+                usleep(2);
+                ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[i]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
     }
 }
 
@@ -1048,7 +1085,8 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
     //uint32_t rctl_bsize;
     uint16_t i;
     int ret;
-
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     //dev->rx_pkt_burst = (eth_rx_burst_t)eth_em_recv_pkts;
 
@@ -1067,6 +1105,17 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         rxq->rc_cnt = 0;
         PC802_WRITE_REG(bar->RDNUM[i], rxq->nb_rx_desc);
         PC802_WRITE_REG(bar->RRCCNT[i], 0);
+        *rxq->repcnt_mirror_addr = 0;
+        PC802_WRITE_REG(bar->REPCNT[i], 0);
+        rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[i ]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
+        if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+            do {
+                usleep(2);
+                ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[i]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
     }
 
     return 0;
