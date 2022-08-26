@@ -131,6 +131,86 @@ typedef struct PC802_BAR_t {
             uint32_t DLDMA_TIMEOUT_ERROR[4];
         };
     };
+    union {
+        PC802_CacheLine_t _cache_line_rx_tstamp;
+        struct {
+            uint32_t RX_TIMESTAMP0;
+            uint32_t RX_TIMESTAMP1;
+            uint32_t RX_TIMESTAMP2;
+            uint32_t RX_TIMESTAMP3;
+            uint32_t RX_TS_EPCNT;
+        }
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_tstamp;
+        struct {
+            uint32_t TX_TIMESTAMP0;
+            uint32_t TX_TIMESTAMP1;
+            uint32_t TX_TIMESTAMP2;
+            uint32_t TX_TIMESTAMP3;
+            uint32_t TX_TS_EPCNT;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tstamp_mode;
+        struct {
+            uint32_t PTP_TIMESTAMP_MODE;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_timeadj;
+        struct {
+            uint32_t TIMEADJ0;
+            uint32_t TIMEADJ1;
+            uint32_t TIMEADJ2;
+            uint32_t TIMEADJ_CNT;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_freqadj;
+        struct {
+            int32_t  FREQADJ;
+            uint32_t FREQADJ_CNT;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tstamp_rccnt;
+        struct {
+            uint32_t RX_TS_RCCNT;
+            uint32_t TX_TS_RCCNT;
+            uint32_t SYSTIM_RCCNT;
+            uint32_t SYSTIM_CMD;
+            uint32_t SYSTIM_RC1;
+            uint32_t SYSTIM_RC2;
+            uint32_t SYSTIM_RC3;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_systim_ep;
+        struct {
+            uint32_t SYSTIM_EPCNT;
+            uint32_t SYSTIM_EP1;
+            uint32_t SYSTIM_EP2;
+            uint32_t SYSTIM_EP3;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_io_req;
+        struct {
+            uint32_t IO_RCCNT;
+            uint32_t IO_CMD;
+            uint32_t IO_OFFSET;
+            uint32_t IO_REQ_DATA;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_io_rsp;
+        struct {
+            uint32_t IO_EPCNT;
+            uint32_t IO_ERROR;
+            uint32_t IO_RSP_DATA;
+        };
+    };
 } PC802_BAR_t;
 
 #define PC802_DEVEN             (offsetof(PC802_BAR_t,   DEVEN))
