@@ -139,7 +139,7 @@ typedef struct PC802_BAR_t {
             uint32_t RX_TIMESTAMP2;
             uint32_t RX_TIMESTAMP3;
             uint32_t RX_TS_EPCNT;
-        }
+        };
     };
     union {
         PC802_CacheLine_t _cache_line_tx_tstamp;
