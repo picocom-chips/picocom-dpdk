@@ -355,7 +355,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
     rc_rst_cnt++;
     PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
-    if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+    if (PC802_READ_REG(bar->DEVEN)) {
         do {
             usleep(2);
             ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
@@ -455,7 +455,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
     rc_rst_cnt++;
     PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
-    if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+    if (PC802_READ_REG(bar->DEVEN)) {
         do {
             usleep(2);
             ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
@@ -1023,7 +1023,7 @@ eth_pc802_tx_init(struct rte_eth_dev *dev)
         rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[i ]);
         rc_rst_cnt++;
         PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
-        if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+        if (PC802_READ_REG(bar->DEVEN)) {
             do {
                 usleep(2);
                 ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[i]);
@@ -1110,7 +1110,7 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[i ]);
         rc_rst_cnt++;
         PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
-        if (3 == PC802_READ_REG(bar->DRVSTATE)) {
+        if (PC802_READ_REG(bar->DEVEN)) {
             do {
                 usleep(2);
                 ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[i]);
