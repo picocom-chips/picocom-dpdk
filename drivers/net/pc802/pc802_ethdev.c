@@ -1954,6 +1954,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
+        PC802_WRITE_REG(bar->DEVRDY, 4);
         return 0;
     }
 
