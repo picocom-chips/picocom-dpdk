@@ -1872,6 +1872,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("Descriptor Rings Base = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     PC802_WRITE_REG(bar->DEVEN, 0);
+    DBLOG("NPU clear PC802 prot %d DEVEN = 0\n", adapter->port_id);
     usleep(1000);
 
     adapter->started = 1;
@@ -2003,6 +2004,7 @@ static int pc802_download_boot_image(uint16_t port)
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
     } while (1);
+    printf("\n");
 
     *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
     fclose(fp);
