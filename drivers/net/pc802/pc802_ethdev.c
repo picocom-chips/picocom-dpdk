@@ -1838,13 +1838,12 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
     }
-    adapter->dbg_rccnt = 0;
     adapter->dbg = mz->addr;
     adapter->dgb_phy_addrH = (uint32_t)(mz->iova >> 32);
     adapter->dgb_phy_addrL = (uint32_t)mz->iova;
     PC802_WRITE_REG(bar->DBGRCAL, adapter->dgb_phy_addrL);
     PC802_WRITE_REG(bar->DBGRCAH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
+    adapter->dbg_rccnt = PC802_READ_REG(bar->DBGRCCNT);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
