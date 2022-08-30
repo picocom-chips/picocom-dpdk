@@ -348,18 +348,16 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
 
-    PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
-    PC802_WRITE_REG(bar->REPCNT[queue_id], 0);
-    *rxq->repcnt_mirror_addr = 0;
-    PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
-    rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
-    rc_rst_cnt++;
-    PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
     if (PC802_READ_REG(bar->DEVEN)) {
+        rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
         do {
-            usleep(2);
             ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
         } while (ep_rst_cnt != rc_rst_cnt);
+        PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+        PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
+        *rxq->repcnt_mirror_addr = 0;
     }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
@@ -448,18 +446,16 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->queue_id = queue_id;
     txq->port_id = port_id;
 
-    PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
-    PC802_WRITE_REG(bar->TEPCNT[queue_id], 0);
-    *txq->tepcnt_mirror_addr = 0;
-    PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
-    rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
-    rc_rst_cnt++;
-    PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
     if (PC802_READ_REG(bar->DEVEN)) {
+        rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
         do {
-            usleep(2);
             ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
         } while (ep_rst_cnt != rc_rst_cnt);
+        PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+        PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
+        *txq->tepcnt_mirror_addr = 0;
     }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
@@ -1025,7 +1021,6 @@ eth_pc802_tx_init(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
         if (PC802_READ_REG(bar->DEVEN)) {
             do {
-                usleep(2);
                 ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[i]);
             } while (ep_rst_cnt != rc_rst_cnt);
         }
@@ -1112,7 +1107,6 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
         if (PC802_READ_REG(bar->DEVEN)) {
             do {
-                usleep(2);
                 ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[i]);
             } while (ep_rst_cnt != rc_rst_cnt);
         }
@@ -1130,6 +1124,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
     //struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
     int ret;
+    int q;
     //uint32_t intr_vector = 0;
     //uint32_t *speeds;
     //int num_speeds;
@@ -1173,6 +1168,13 @@ eth_pc802_start(struct rte_eth_dev *dev)
     old_devRdy = devRdy;
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
         PC802_READ_REG(bar->BOOTERROR));
+
+    for (q = 0; q < PC802_TRAFFIC_NUM; q++) {
+        PC802_WRITE_REG(bar->TDNUM[q], adapter->txq[q].nb_tx_desc);
+        PC802_WRITE_REG(bar->TRCCNT[q], 0);
+        PC802_WRITE_REG(bar->RDNUM[q], adapter->rxq[q].nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT[q], 0);
+    }
 
     PC802_WRITE_REG(bar->DEVEN, 1);
 
