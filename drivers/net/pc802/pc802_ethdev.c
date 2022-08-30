@@ -1186,6 +1186,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->RRCCNT[q], 0);
     }
 
+    rte_io_wmb();
     PC802_WRITE_REG(bar->DEVEN, 1);
 
     DBLOG("Waiting for PC802 boot(DRVSTATE=3) ...\n");
