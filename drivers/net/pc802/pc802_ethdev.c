@@ -280,6 +280,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
+    volatile uint32_t ep_cnt;
 
     rxq->mpool.block_size = block_size;
     rxq->mpool.block_num = block_num;
@@ -349,13 +350,17 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->port_id = port_id;
 
     if (PC802_READ_REG(bar->DEVEN)) {
+        PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+        rte_wmb();
         rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
         rc_rst_cnt++;
         PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
         do {
             ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
         } while (ep_rst_cnt != rc_rst_cnt);
-        PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+        do {
+            ep_cnt = PC802_READ_REG(bar->REPCNT[queue_id]);
+        } while (0 != ep_cnt);
         PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
         *rxq->repcnt_mirror_addr = 0;
     }
@@ -385,6 +390,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
+    volatile uint32_t ep_cnt;
 
     txq->mpool.block_size = block_size;
     txq->mpool.block_num = block_num;
@@ -447,13 +453,17 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->port_id = port_id;
 
     if (PC802_READ_REG(bar->DEVEN)) {
+        PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+        rte_io_wmb();
         rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
         rc_rst_cnt++;
         PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
         do {
             ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
         } while (ep_rst_cnt != rc_rst_cnt);
-        PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+        do {
+            ep_cnt = PC802_READ_REG(bar->TEPCNT[queue_id]);
+        } while (0 != ep_cnt);
         PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
         *txq->tepcnt_mirror_addr = 0;
     }
