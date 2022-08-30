@@ -1173,7 +1173,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (devRdy < 5);
+    } while (devRdy != 5);
     old_drv_state = PC802_READ_REG(bar->DRVSTATE);
     old_devRdy = devRdy;
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
@@ -1966,7 +1966,6 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
-        PC802_WRITE_REG(bar->DEVRDY, 4);
         return 0;
     }
 
