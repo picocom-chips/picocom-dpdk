@@ -205,6 +205,8 @@ struct pc802_adapter {
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
 
+int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
+		void *(*start_routine)(void *), void *arg);
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
 static int pc802_download_boot_image(uint16_t port);
 static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
@@ -230,13 +232,17 @@ int pc802_get_socket_id(uint16_t port_id)
 
 uint16_t pc802_get_count(void)
 {
+#ifdef MULTI_PC802
 	return num_pc802s;
+#else
+    return num_pc802s>0?1:0;
+#endif
 }
 
 int pc802_get_port_id(uint16_t pc802_index)
 {
     static int32_t port_num = 0;
-    static int32_t port_id[PC802_INDEX_MAX] = {-1,-1,-1,-1};
+    static int32_t port_id[4] = {-1,-1,-1,-1};
     int index = 0;
     int i;
     struct rte_pci_device *pci_dev;
@@ -1603,7 +1609,7 @@ static const cpu_set_t * get_ctrl_cpuset( void )
     return &ctrl_cpuset;
 }
 
-static int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
+int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg)
 {
 	int ret;

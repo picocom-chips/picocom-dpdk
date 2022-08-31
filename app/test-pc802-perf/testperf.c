@@ -81,7 +81,6 @@ static int port_init(uint16_t port)
     struct rte_eth_txconf tx_conf;
     int socket_id;
     static pcxxInfo_s   ctrl_cb_info = { NULL, NULL };
-    static pcxxInfo_s   oam_cb_info  = { NULL, NULL };
     static pcxxInfo_s   data_cb_info = { NULL, NULL };
 
     rte_eth_dev_info_get(port, &dev_info);
@@ -105,8 +104,6 @@ static int port_init(uint16_t port)
     pcxxDataOpen(&data_cb_info, 0, 0);
 
     pcxxCtrlOpen(&ctrl_cb_info, 0, 0);
-
-    pcxxOamOpen(&oam_cb_info, 0);
 
     rte_eth_dev_start(port);
 

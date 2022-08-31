@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <fcntl.h>
+#include <semaphore.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -54,6 +55,7 @@
 
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
+#include <pcxx_oam.h>
 
 #define TEST_PC802_DISP_LOOP_NUM    10000
 
@@ -96,8 +98,6 @@ static const struct rte_eth_conf dev_conf = {
 #define PCXX_CALL(fun,dev,cell) fun(dev,cell)
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 #else
@@ -105,14 +105,11 @@ static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint1
 #define PCXX_CALL(fun,dev,cell) fun()
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 #endif
 
 static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   oam_cb_info  = {process_ul_oam_msg,  process_dl_oam_msg };
 static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
@@ -157,7 +154,6 @@ static int port_init( uint16_t pc802_index )
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
-    pcxxOamOpen(&oam_cb_info, pc802_index);
 
     rte_eth_dev_start(port);
 
@@ -369,18 +365,12 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 
 extern PC802_Traffic_Type_e QID_DATA[];
 extern PC802_Traffic_Type_e QID_CTRL[];
-#define QID_OAM     PC802_TRAFFIC_OAM
 
 static union {
     const char *cc;
     uint32_t   *up;
 } dl_a[PC802_INDEX_MAX][CELL_NUM_PRE_DEV][17];
 static uint32_t dl_a_num[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
-static union {
-    const char *cc;
-    uint32_t   *up;
-} dl_oam[PC802_INDEX_MAX][32];
-static uint32_t dl_oam_num[PC802_INDEX_MAX] = {0};
 
 static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
 
@@ -417,42 +407,6 @@ static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
         atl_test_result[dev_index][cell_index] |= 1;
     }
     dl_a_num[dev_index][cell_index] = 0;
-    return payloadSize;
-}
-
-#ifdef MULTI_PC802
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
-{
-#else
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-#endif
-    buf = buf;
-    payloadSize = payloadSize;
-    dl_oam[dev_index][dl_oam_num[dev_index]].cc = buf;
-    dl_oam_num[dev_index]++;
-    return 0;
-}
-
-#ifdef MULTI_PC802
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-#else
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#endif
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_oam[dev_index][0].up;
-    if (check_same(dl_msg, dl_oam_num[dev_index], ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 4;
-    }
-    dl_oam_num[dev_index] = 0;
     return payloadSize;
 }
 
@@ -998,25 +952,118 @@ static int case201(void)
     return ret;
 }
 
+typedef struct {
+    sem_t sem;
+    uint16_t dev;
+    uint32_t msg_type;
+    uint32_t sub_num;
+    pcxx_oam_sub_msg_t *sub;
+}oam_cb_arg;
+
+static int32_t oam_rsp( void *arg, __rte_unused uint16_t dev, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, __rte_unused uint32_t msg_num )
+{
+    oam_cb_arg *req = (oam_cb_arg *)arg;
+    uint32_t *req_msg = (uint32_t *)&req->sub->msb_body;
+    //printf( "Dev %d recv oam msg %d include %u sub mesg[%d]\n", dev, msg_type, msg_num, sub_msg[0]->msg_id );
+    swap_msg( (uint32_t *)(&sub_msg[0]->msb_body), sub_msg[0]->msg_size );
+    if ((req->msg_type == msg_type) && ((req->sub->msg_id == sub_msg[0]->msg_id)))
+        if (!check_same( &req_msg, 1, (uint32_t *)(&sub_msg[0]->msb_body)))
+            sem_post(&req->sem);
+    return 0;
+}
+
 static int case301(void)
 {
-    char *a;
-    uint32_t *A;
-    uint32_t N;
-    uint32_t avail;
+    char *buf = rte_malloc(NULL, 4096, RTE_CACHE_LINE_MIN_SIZE);
+    int ret = 0;
+    oam_cb_arg arg;
+    struct timespec ts;
+    const pcxx_oam_sub_msg_t *list = (const pcxx_oam_sub_msg_t *)buf;
+    uint32_t *data;
 
-    pcxxOamSendStart(g_pc802_index);
-    RTE_ASSERT(0 == pcxxOamAlloc(&a, &avail, g_pc802_index));
-    A = (uint32_t *)a;
-    produce_dl_src_data(A, QID_OAM);
-    N = sizeof(uint32_t) * (A[1] + 2);
-    pcxxOamSend(a, N, g_pc802_index);
-    pcxxOamSendEnd(g_pc802_index);
+    arg.sub = (pcxx_oam_sub_msg_t *)buf;
+    arg.msg_type = PCXX_OAM_MSG;
+    sem_init( &arg.sem, 0, 0);
+    pcxx_oam_register( arg.msg_type, oam_rsp, &arg );
+    data = (uint32_t *)arg.sub->msb_body;
+    produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+    arg.dev = 0;
+    arg.sub->msg_id = (uint16_t)rand();
+    arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
+    if (0 == pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;
+        if (0 != sem_timedwait(&arg.sem, &ts)) {
+            DBLOG("Wait timeout\n");
+            ret = -2;
+        }
+    } else {
+        DBLOG("Send ERROR\n");
+        ret = -1;
+    }
+    pcxx_oam_unregister(arg.msg_type);
+    rte_free(buf);
+    return ret;
+}
 
-    while (-1 == PCXX_CALL0(pcxxOamRecv,g_pc802_index));
-    int re = atl_test_result[g_pc802_index][g_cell_index];
-    atl_test_result[g_pc802_index][g_cell_index] = 0;
-    return re;
+static int case302(void)
+{
+    char *buf = rte_malloc(NULL, 4096, RTE_CACHE_LINE_MIN_SIZE);
+    int ret = 0;
+    oam_cb_arg arg;
+    struct timespec ts;
+    const pcxx_oam_sub_msg_t *list = (const pcxx_oam_sub_msg_t *)buf;
+    uint32_t *data;
+
+    arg.sub = (pcxx_oam_sub_msg_t *)buf;
+    arg.msg_type = rand()%PCXX_MSG_TYPE_MAX;
+    sem_init( &arg.sem, 0, 0);
+    pcxx_oam_register( arg.msg_type, oam_rsp, &arg );
+
+    for (arg.dev = 0; arg.dev < pcxxGetDevCount(); arg.dev++)
+    {
+        data = (uint32_t *)arg.sub->msb_body;
+        produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+        arg.sub->msg_id = (uint16_t)rand();
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
+        if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
+            DBLOG("Send ERROR\n");
+            ret = -1;
+            break;
+        }
+        clock_gettime( CLOCK_REALTIME, &ts );
+        ts.tv_sec += 1;
+        if ( 0 != sem_timedwait(&arg.sem, &ts) ){
+            DBLOG("Wait timeout\n");
+            ret = -2;
+            break;
+        }
+    }
+    pcxx_oam_unregister(arg.msg_type);
+
+    for (arg.dev = 0; arg.dev < pcxxGetDevCount(); arg.dev++)
+    {
+        data = (uint32_t *)arg.sub->msb_body;
+        produce_dl_src_data(data, PC802_TRAFFIC_OAM);
+        arg.sub->msg_id = (uint16_t)rand();
+        arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
+        pcxx_oam_sub_msg_register( arg.msg_type, arg.sub->msg_id, oam_rsp, &arg );
+        if (0 != pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)){
+            DBLOG("Send ERROR\n");
+            ret = -1;
+            break;
+        }
+        clock_gettime( CLOCK_REALTIME, &ts );
+        ts.tv_sec += 1;
+        if ( 0 != sem_timedwait(&arg.sem, &ts) ){
+            DBLOG("Wait timeout\n");
+            ret = -2;
+            break;
+        }
+        pcxx_oam_sub_msg_unregister(arg.msg_type, arg.sub->msg_id );
+    }
+    rte_free(buf);
+    return ret;
 }
 
 extern cmdline_parse_ctx_t main_ctx[];
@@ -1463,6 +1510,10 @@ static void run_case(int caseNo)
         diag = case301();
         disp_test_result(301, diag);
         break;
+    case 302:
+        diag = case302();
+        disp_test_result(302, diag);
+        break;
     case 4802:
         diag = case4802();
         disp_test_result(4802, diag);
@@ -1618,6 +1669,7 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
+    pcxx_oam_init();
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);
