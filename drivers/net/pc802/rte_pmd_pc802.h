@@ -26,7 +26,12 @@ typedef enum PC802_Traffic_Type_e {
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
 
+#ifdef MULTI_PC802
 #define PC802_INDEX_MAX     4
+#else
+#define PC802_INDEX_MAX     1
+#endif
+
 #define NPU_CACHE_LINE_SZ   64
 
 struct pc802_mem_block {

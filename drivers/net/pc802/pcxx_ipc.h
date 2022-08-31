@@ -4,7 +4,11 @@
 #include <stdint.h>
 
 #define DEV_INDEX_MAX       PC802_INDEX_MAX     /**< Max number of baseband devices */
+#ifdef MULTI_PC802
 #define CELL_NUM_PRE_DEV    2                   /**< Number of cells per baseband device */
+#else
+#define CELL_NUM_PRE_DEV    1                   /**< Number of cells per baseband device */
+#endif
 /**< Get the total number of baseband devices that have been successfully initialised */
 #define pcxxGetDevCount()   pc802_get_count()
 
@@ -43,31 +47,6 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
 void pcxxCtrlClose(void);
 #else
 void pcxxCtrlClose(uint16_t dev_index, uint16_t cell_index );
-#endif
-
-/**
-* @brief Create OAM queues for Tx and Rx
-*
-* @param[in] info Register Tx and Rx callback functions
-* @param[in] dev_index baseband device index
-* @return returns 0 if open success, or else return error
-*/
-#ifndef MULTI_PC802
-int pcxxOamOpen(const pcxxInfo_s* info, ...);
-#else
-int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index);
-#endif
-
-/**
-* @brief Close and free the OAM Shared memory.
-*
-* @param[in] dev_index baseband device index
-* @return	none
-*/
-#ifndef MULTI_PC802
-void pcxxOamClose(void);
-#else
-void pcxxOamClose(uint16_t dev_index);
 #endif
 
 /**
@@ -130,14 +109,6 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );;
 int pcxxOamSendStart(uint16_t dev_index);
 
 /**
-* @brief Notify Rx side that new message are arrived.
-*
-* @param[in] dev_index baseband device index
-* @return  returns 0 if success, or else return error
-*/
-int pcxxOamSendEnd(uint16_t dev_index );
-
-/**
 * @brief Allocated one control message memory from current block in used.
 *
 * @param[out] buf the allocated memory address
@@ -178,46 +149,6 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
 int pcxxCtrlRecv(void);
 #else
 int pcxxCtrlRecv(uint16_t dev_index, uint16_t cell_index );
-#endif
-
-/**
-* @brief Allocated one OAM message memory from current block in used.
-*
-* @param[out] buf the allocated memory address
-* @param[out] availableSize the current available size in this block
-* @param[in] dev_index baseband device index
-* @return returns 0 if open success, or else return error
-*/
-#ifndef MULTI_PC802
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...);
-#else
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index );
-#endif
-
-/**
-* @brief Update block header when the content of one OAM message is completed.
-*
-* @param[in] buf   write memory data
-* @param[in] bufLen length of data written
-* @param[in] dev_index baseband device index
-* @return returns 0 if open success, or else return error
-*/
-#ifndef MULTI_PC802
-int pcxxOamSend(const char* buf, uint32_t bufLen, ...);
-#else
-int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index );
-#endif
-
-/**
-* @brief Checks the number of received OAM messages. Application thread may poll at function till it detects there is message from Tx side.
-*
-* @param[in] dev_index baseband device index
-* @return	returns 0 if handle the received messages success, or else return error
-*/
-#ifndef MULTI_PC802
-int pcxxOamRecv(void);
-#else
-int pcxxOamRecv(uint16_t dev_index );
 #endif
 
 /**
@@ -268,12 +199,10 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t c
 
 #ifndef MULTI_PC802
 int pcxxCtrlDestroy(void);
-int pcxxOamDestroy(void);
 int pcxxDataDestroy(void);
 #else
 int pcxxCtrlDestroy(uint16_t dev_index, uint16_t cell_index );
 int pcxxDataDestroy(uint16_t dev_index, uint16_t cell_index );
-int pcxxOamDestroy(uint16_t dev_index );
 #endif
 
 #endif

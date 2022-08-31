@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2018-2020 Picocom Corporation
  */
-#ifndef __PC802_OAM_LIB_H_
-#define __PC802_OAM_LIB_H_
+#ifndef __ecpri_oam_h_
+#define __ecpri_oam_h_
 
 #define ETH_MAC_ADDR_LEN 6
 
@@ -35,7 +35,6 @@ typedef enum{
 }EcpriOamType_e;
 
 typedef struct{
-    uint8_t pcie_enable;// 1: enable 0: disable
     uint8_t eth_type;// 0: 25Gbps 1: 10Gpbs
     uint8_t max_antenna_cnt;
     uint8_t max_section_cnt;
@@ -43,14 +42,7 @@ typedef struct{
     uint8_t cur_antenna_cnt;
     uint8_t cur_section_cnt;
     uint8_t cur_symbol_cnt_per_slot;
-    uint8_t pipeline_mode;//0:non-pipeline,1:pipeline
-    uint8_t outgoing_core_cnt;
-    uint8_t ingoing_core_cnt;// maxium 7
-    uint8_t reserved;
-    uint32_t eth_pkt_size;
-    uint32_t pEcpriNtfyBuf;
-    uint32_t pEcpriReqBuf;
-    uint32_t om_msg_id;
+    uint8_t rev0;
 }BasicCfg_t;
 
 
@@ -103,6 +95,8 @@ typedef struct EcpriDuCfg{
     uint8_t cp_enable;
     uint8_t ru_cnt; // startup required------------------------------------------
     uint8_t du_mac[ETH_MAC_ADDR_LEN];
+    uint8_t du_port_id;
+    uint8_t rev0;
     uint16_t vlan_id;
     uint16_t reserved;
 }EcpriDuCfg_t;
@@ -165,14 +159,5 @@ typedef struct{
         uint8_t kpi_rpt_flag;
     }u;
 }OamSubMessage_t;
-
-typedef int32_t (*PC802_OAM_CALLBACK_FUNTION)( void *arg, uint16_t dev_index, const OamSubMessage_t **sub_msg, uint32_t msg_num );
-
-int pc802_oam_init(void);
-int pc802_oam_register( PC802_OAM_CALLBACK_FUNTION recv_fun, void *arg );
-int pc802_oam_unregister(void);
-int pc802_oam_sub_msg_register( uint16_t sub_msg_id, PC802_OAM_CALLBACK_FUNTION recv_fun, void *arg );
-int pc802_oam_sub_msg_unregister( uint16_t sub_msg_id );
-int pc802_oam_send_msg( uint16_t dev_index, const OamSubMessage_t **sub_msg, uint32_t msg_num );
 
 #endif
