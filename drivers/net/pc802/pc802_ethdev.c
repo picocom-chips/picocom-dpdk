@@ -361,8 +361,16 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         do {
             ep_cnt = PC802_READ_REG(bar->REPCNT[queue_id]);
         } while (0 != ep_cnt);
+        do {
+            ep_cnt = *rxq->repcnt_mirror_addr;
+        } while (0 != ep_cnt);
         PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
-        *rxq->repcnt_mirror_addr = 0;
+        rc_rst_cnt++;
+        rte_io_wmb();
+        PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
     }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
@@ -464,8 +472,16 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         do {
             ep_cnt = PC802_READ_REG(bar->TEPCNT[queue_id]);
         } while (0 != ep_cnt);
+        do {
+            ep_cnt = *txq->tepcnt_mirror_addr;
+        } while (0 != ep_cnt);
         PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
-        *txq->tepcnt_mirror_addr = 0;
+        rc_rst_cnt++;
+        rte_io_wmb();
+        PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
     }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
