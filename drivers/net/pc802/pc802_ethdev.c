@@ -1042,10 +1042,10 @@ eth_pc802_tx_init(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->TEPCNT[i], 0);
         *txq->tepcnt_mirror_addr = 0;
         PC802_WRITE_REG(bar->TDNUM[i], txq->nb_tx_desc);
-        rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[i ]);
-        rc_rst_cnt++;
-        PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
         if (PC802_READ_REG(bar->DEVEN)) {
+            rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[i ]);
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
             do {
                 ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[i]);
             } while (ep_rst_cnt != rc_rst_cnt);
@@ -1128,10 +1128,10 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->RRCCNT[i], 0);
         *rxq->repcnt_mirror_addr = 0;
         PC802_WRITE_REG(bar->REPCNT[i], 0);
-        rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[i ]);
-        rc_rst_cnt++;
-        PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
         if (PC802_READ_REG(bar->DEVEN)) {
+            rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[i ]);
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
             do {
                 ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[i]);
             } while (ep_rst_cnt != rc_rst_cnt);
