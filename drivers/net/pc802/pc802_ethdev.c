@@ -1648,6 +1648,8 @@ static int pc802_check_rerun(struct pc802_adapter *adapter)
     adapter->DRVSTATE = PC802_READ_REG(bar->DRVSTATE);
     DBLOG("Port_Id = %u DEVRDY = %u DRVSTATE = %u\n", adapter->port_id,
         adapter->DEVRDY, adapter->DRVSTATE);
+    if (adapter->DEVRDY < 2)
+        return 0;
     uint32_t MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
     uint32_t MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
     uint32_t COMMAND = PC802_READ_REG(ext->MB_COMMAND);
