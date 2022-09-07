@@ -101,14 +101,6 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );;
 #endif
 
 /**
-* @brief Called before sending a Oam message, mainly is used to select the block .
-*
-* @param[in] dev_index baseband device index
-* @return returns 0 if success, or else return error
-*/
-int pcxxOamSendStart(uint16_t dev_index);
-
-/**
 * @brief Allocated one control message memory from current block in used.
 *
 * @param[out] buf the allocated memory address
