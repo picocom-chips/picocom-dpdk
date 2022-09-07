@@ -116,6 +116,7 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
         pthread_mutex_unlock(&lock);
         return -1;
     }
+    pthread_mutex_unlock(&lock);
     buf = (char *)&mblk[1];
     msg = (oam_message_t *)buf;
     msg->head.start_flag = OAM_START_FLAG;
@@ -124,10 +125,10 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     len += sizeof(oam_msg_head_t);
 
     for ( i=0; i<msg_num; i++ ) {
+        RTE_ASSERT(0 == (sub_msg[i]->msg_size&3));
         if ( SUB_MSG_TSIZE(sub_msg[i]->msg_size) > OAM_QUEUE_BLOCK_SIZE - len) {
             DBLOG( "Not enough space(%u) for sub msg(%d:%ld)\n", OAM_QUEUE_BLOCK_SIZE - len,
                    sub_msg[i]->msg_id, SUB_MSG_TSIZE(sub_msg[i]->msg_size));
-            pthread_mutex_unlock(&lock);
             return -1;
         }
         sub = (pcxx_oam_sub_msg_t*)(buf+len);
@@ -141,12 +142,12 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     mblk->pkt_type = 2;
     mblk->eop = 1;
     //printf_buf("Send msg", (uint8_t *)buf, len);
+    pthread_mutex_lock(&lock);
     if ( pc802_tx_mblk_burst( g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, &mblk, 1) < 1 ) {
         DBLOG( "pc802_tx_mblk_burst(dev=%d,len=%d) err!\n", dev_index, mblk->pkt_length );
         pthread_mutex_unlock(&lock);
         return -1;
     }
-
     pthread_mutex_unlock(&lock);
     return 0;
 }
