@@ -248,6 +248,39 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
+typedef struct SimULSlotMsg_st{
+    uint8_t msgNum;
+    uint8_t opaque;
+    uint16_t rev;
+    uint32_t msgId;
+    uint32_t msgSize;
+    union {
+        uint32_t sfnSlot;
+        struct {
+            uint16_t SFN;
+            uint16_t Slot;
+        };
+   };
+} SimULSlotMsg_t;
+
+static SimULSlotMsg_t sfn_slot_0 = {
+    .msgNum = 1,
+    .opaque = 0,
+    .rev = 0,
+    .msgId = 0x82,
+    .msgSize = 0x4,
+    .sfnSlot = 0xFFFFFFFF,
+};
+
+static SimULSlotMsg_t sfn_slot_1 = {
+    .msgNum = 1,
+    .opaque = 1,
+    .rev = 0,
+    .msgId = 0x82,
+    .msgSize = 0x4,
+    .sfnSlot = 0xFFFFFFFF,
+};
+
 #ifndef MULTI_PC802
 int pcxxCtrlRecv(void)
 {
@@ -264,6 +297,17 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     uint32_t offset;
     int ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    uint32_t sfn_slot;
+
+    sfn_slot = pc802_get_sfn_slot(dev_index, cell_index);
+    if ((0 ==  cell_index) && (sfn_slot != sfn_slot_0.sfnSlot)) {
+        sfn_slot_0.sfnSlot = sfn_slot;
+        pccxxReadHandle[PCXX_CTRL]((const char *)&sfn_slot_0,  sizeof(sfn_slot_0));
+    }
+    if ((1 ==  cell_index) && (sfn_slot != sfn_slot_1.sfnSlot)) {
+        sfn_slot_1.sfnSlot = sfn_slot;
+        pccxxReadHandle[PCXX_CTRL]((const char *)&sfn_slot_1,  sizeof(sfn_slot_1));
+    }
 
     if (NULL == cell->rx_ctrl_buf) {
         num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index], &mblk_ctrl, 1);

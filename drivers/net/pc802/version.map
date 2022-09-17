@@ -20,6 +20,7 @@ DPDK_21 {
 	pc802_set_ul_dma_count;
 	pc802_vec_read;
 	pc802_vec_dump;
+	pc802_get_sfn_slot;
 	pcxxCtrlOpen;
 	pcxxCtrlClose;
 	pcxxOamOpen;
