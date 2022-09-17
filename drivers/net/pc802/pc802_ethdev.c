@@ -1776,6 +1776,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
+    PC802_WRITE_REG(bar->SFN_SLOT_0, 0xFFFFFFFF);
+    PC802_WRITE_REG(bar->SFN_SLOT_1, 0xFFFFFFFF);
+
     if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
         adapter->log_flag  |= (1<<PC802_LOG_EVENT);
     }
@@ -2697,4 +2700,18 @@ static void * pc802_debug(__rte_unused void *data)
         }
     }
     return NULL;
+}
+
+uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
+{
+    PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    uint32_t sfn_slot;
+    if (0 == cell_index) {
+        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_0);
+    } else if (1 == cell_index) {
+        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_1);
+    } else {
+        sfn_slot = 0xFFFFFFFF;
+    }
+    return sfn_slot;
 }
