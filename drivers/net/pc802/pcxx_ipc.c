@@ -299,7 +299,7 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     uint32_t sfn_slot;
 
-    sfn_slot = pc802_get_sfn_slot(dev_index, cell_index);
+    sfn_slot = pc802_get_sfn_slot(pcxx_devs[dev_index].port_id, cell_index);
     if ((0 ==  cell_index) && (sfn_slot != sfn_slot_0.sfnSlot)) {
         sfn_slot_0.sfnSlot = sfn_slot;
         pccxxReadHandle[PCXX_CTRL]((const char *)&sfn_slot_0,  sizeof(sfn_slot_0));
