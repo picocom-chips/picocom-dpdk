@@ -2,23 +2,10 @@
 # Copyright(c) 2017-2019 Intel Corporation
 
 apps = [
-        'pdump',
-        'proc-info',
-        'test-acl',
-        'test-bbdev',
-        'test-cmdline',
-        'test-compress-perf',
-        'test-crypto-perf',
-        'test-eventdev',
-        'test-fib',
-        'test-flow-perf',
-        'test-pc802',
-        'test-pc802oam',
-        'test-pc802-perf',
-        'test-pipeline',
-        'test-pmd',
-        'test-regex',
-        'test-sad',
+        'pri-eth',
+        'sec-cell-1',
+        'sec-cell-2',
+        'sec-oam'
 ]
 
 default_cflags = machine_args + ['-DALLOW_EXPERIMENTAL_API']
@@ -68,7 +55,3 @@ foreach app:apps
             install_rpath: join_paths(get_option('prefix'), driver_install_path),
             install: true)
 endforeach
-
-# special case the autotests
-subdir('test')
-subdir('test-pc802-mp')
