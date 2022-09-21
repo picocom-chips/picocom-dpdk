@@ -12,6 +12,7 @@ PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1, PC802_
 PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2};
 
 #define DATA_QUEUE_BLOCK_SIZE   (256*1024)
+#define CTRL_QUEUE_BLOCK_SIZE   (256*1024)
 
 #define NUM_DATA_BUF    64
 #define NUM_SFN_IDX     4
@@ -70,13 +71,14 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], CTRL_QUEUE_BLOCK_SIZE, 64, 32));
 
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
 
     pcxx_devs[dev_index].port_id = port_id;
+
     return 0;
 }
 
@@ -216,7 +218,7 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     if (NULL == cell->ctrl_buf)
         return -1;
     *buf = cell->ctrl_buf + cell->ctrl_length;
-    *availableSize = 256 * 1024 - sizeof(PC802_Mem_Block_t) - cell->ctrl_length;
+    *availableSize = CTRL_QUEUE_BLOCK_SIZE - sizeof(PC802_Mem_Block_t) - cell->ctrl_length;
     return 0;
 }
 
