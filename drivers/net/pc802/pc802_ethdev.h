@@ -61,26 +61,26 @@ typedef struct PC802_BAR_t {
         PC802_CacheLine_t _cahce_line_repcnt;
         uint32_t REPCNT[PC802_TRAFFIC_NUM];
     };
-	union {
+    union {
         PC802_CacheLine_t _cahce_line_brccnt;
-		struct {
-			uint32_t BOOTSRCL;
-			uint32_t BOOTSRCH;
-			uint32_t BOOTDST;
-			uint32_t BOOTSZ;
-			uint32_t BOOTRCCNT;
-			uint32_t BOOTRSPL;
-			uint32_t BOOTRSPH;
-		};
+        struct {
+            uint32_t BOOTSRCL;
+            uint32_t BOOTSRCH;
+            uint32_t BOOTDST;
+            uint32_t BOOTSZ;
+            uint32_t BOOTRCCNT;
+            uint32_t BOOTRSPL;
+            uint32_t BOOTRSPH;
+        };
     };
-	union {
+    union {
         PC802_CacheLine_t _cahce_line_bepcnt;
-		struct {
-			uint32_t BOOTEPCNT;
-			uint32_t BOOTERROR;
+        struct {
+            uint32_t BOOTEPCNT;
+            uint32_t BOOTERROR;
             uint32_t BOOTDEBUG;
             uint32_t MB_HANDSHAKE;
-		};
+        };
     };
     union {
         PC802_CacheLine_t _cahce_line_macaddr;
@@ -221,6 +221,30 @@ typedef struct PC802_BAR_t {
         PC802_CacheLine_t _cache_line_ul_slot_1;
         struct {
             uint32_t SFN_SLOT_1;
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_req;
+        struct {
+            uint32_t TX_RST_RCCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_rsp;
+        struct {
+            uint32_t TX_RST_EPCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_req;
+        struct {
+            uint32_t RX_RST_RCCNT[PC802_TRAFFIC_NUM];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_rsp;
+        struct {
+            uint32_t RX_RST_EPCNT[PC802_TRAFFIC_NUM];
         };
     };
 } PC802_BAR_t;

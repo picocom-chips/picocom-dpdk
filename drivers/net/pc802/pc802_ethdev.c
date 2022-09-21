@@ -284,6 +284,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
     PC802_Mem_Block_t *mblk;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
+    volatile uint32_t ep_cnt;
 
     rxq->mpool.block_size = block_size;
     rxq->mpool.block_num = block_num;
@@ -292,6 +295,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
+    if (NULL != rxq->sw_ring) {
+        rte_free(rxq->sw_ring);
+    }
     if ((rxq->sw_ring = rte_zmalloc("rxq->sw_ring",
             sizeof (rxq->sw_ring[0]) * nb_desc,
             RTE_CACHE_LINE_SIZE)) == NULL) {
@@ -303,6 +309,9 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->mpool.first = NULL;
     snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d",
             dev->data->port_id, queue_id);
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
         DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
@@ -346,8 +355,31 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
 
-    PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
-    PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
+    if (PC802_READ_REG(bar->DEVEN)) {
+        PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
+        rte_wmb();
+        rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+        do {
+            ep_cnt = PC802_READ_REG(bar->REPCNT[queue_id]);
+        } while (0 != ep_cnt);
+        do {
+            ep_cnt = *rxq->repcnt_mirror_addr;
+        } while (0 != ep_cnt);
+        if (0 != PC802_READ_REG(bar->RRCCNT[queue_id])) {
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->RX_RST_RCCNT[queue_id], rc_rst_cnt);
+            rte_io_wmb();
+            PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
+    }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
@@ -372,6 +404,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
     PC802_Mem_Block_t *mblk;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
+    volatile uint32_t ep_cnt;
 
     txq->mpool.block_size = block_size;
     txq->mpool.block_num = block_num;
@@ -380,6 +415,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
+    if (NULL != txq->sw_ring) {
+        rte_free(txq->sw_ring);
+    }
     sprintf(z_name, "txq%d->sw_ring", dev->data->port_id);
     if ((txq->sw_ring = rte_zmalloc( z_name,
             sizeof (txq->sw_ring[0]) * nb_desc,
@@ -391,6 +429,9 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     txq->mpool.first = NULL;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
         DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
@@ -427,8 +468,31 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->queue_id = queue_id;
     txq->port_id = port_id;
 
-    PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
-    PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+    if (PC802_READ_REG(bar->DEVEN)) {
+        PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
+        rte_io_wmb();
+        rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+        do {
+            ep_cnt = PC802_READ_REG(bar->TEPCNT[queue_id]);
+        } while (0 != ep_cnt);
+        do {
+            ep_cnt = *txq->tepcnt_mirror_addr;
+        } while (0 != ep_cnt);
+        if (0 != PC802_READ_REG(bar->TRCCNT[queue_id])) {
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->TX_RST_RCCNT[queue_id], rc_rst_cnt);
+            rte_io_wmb();
+            PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
+    }
 
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
@@ -978,12 +1042,24 @@ eth_pc802_tx_init(struct rte_eth_dev *dev)
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_tx_queue *txq;
     uint16_t i;
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     /* Setup the Base and Length of the Tx Descriptor Rings. */
     for (i = 0; i < dev->data->nb_tx_queues; i++) {
         txq = dev->data->tx_queues[i];
         PC802_WRITE_REG(bar->TRCCNT[i], 0);
+        PC802_WRITE_REG(bar->TEPCNT[i], 0);
+        *txq->tepcnt_mirror_addr = 0;
         PC802_WRITE_REG(bar->TDNUM[i], txq->nb_tx_desc);
+        if (PC802_READ_REG(bar->DEVEN)) {
+            rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[i ]);
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->TX_RST_RCCNT[i], rc_rst_cnt);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[i]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
     }
 }
 
@@ -1040,7 +1116,8 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
     //uint32_t rctl_bsize;
     uint16_t i;
     int ret;
-
+    uint32_t rc_rst_cnt;
+    uint32_t ep_rst_cnt;
 
     //dev->rx_pkt_burst = (eth_rx_burst_t)eth_em_recv_pkts;
 
@@ -1059,6 +1136,16 @@ eth_pc802_rx_init(struct rte_eth_dev *dev)
         rxq->rc_cnt = 0;
         PC802_WRITE_REG(bar->RDNUM[i], rxq->nb_rx_desc);
         PC802_WRITE_REG(bar->RRCCNT[i], 0);
+        *rxq->repcnt_mirror_addr = 0;
+        PC802_WRITE_REG(bar->REPCNT[i], 0);
+        if (PC802_READ_REG(bar->DEVEN)) {
+            rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[i ]);
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->RX_RST_RCCNT[i], rc_rst_cnt);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[i]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
     }
 
     return 0;
@@ -1073,12 +1160,18 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
     //struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
     int ret;
+    int q;
     //uint32_t intr_vector = 0;
     //uint32_t *speeds;
     //int num_speeds;
     //bool autoneg;
 
     PMD_INIT_FUNC_TRACE();
+
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+        return 0;
+    }
 
     eth_pc802_stop(dev);
 
@@ -1093,12 +1186,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     adapter->stopped = 0;
 
-    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
-    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
-    PC802_WRITE_REG(bar->DBAL, laddr);
-    PC802_WRITE_REG(bar->DBAH, haddr);
-    DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
-
     volatile uint32_t devRdy;
     volatile uint32_t drv_state;
     uint32_t old_devRdy, old_drv_state;
@@ -1112,11 +1199,18 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (devRdy < 5);
+    } while (devRdy != 5);
     old_drv_state = PC802_READ_REG(bar->DRVSTATE);
     old_devRdy = devRdy;
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
         PC802_READ_REG(bar->BOOTERROR));
+
+    for (q = 0; q < PC802_TRAFFIC_NUM; q++) {
+        PC802_WRITE_REG(bar->TDNUM[q], adapter->txq[q].nb_tx_desc);
+        PC802_WRITE_REG(bar->TRCCNT[q], 0);
+        PC802_WRITE_REG(bar->RDNUM[q], adapter->rxq[q].nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT[q], 0);
+    }
 
     PC802_WRITE_REG(bar->DEVEN, 1);
 
@@ -1689,6 +1783,24 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        uint32_t drv_state;
+        bar = (PC802_BAR_t *)adapter->bar0_addr;
+        do {
+            usleep(1);
+            drv_state = PC802_READ_REG(bar->DRVSTATE);
+        } while (drv_state != 3);
+        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
+        uint32_t DBAH = PC802_READ_REG(bar->DBAH);
+        uint32_t DBAL = PC802_READ_REG(bar->DBAL);
+        DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
+        sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
+        const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
+        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        return 0;
+    }
+
     data = eth_dev->data;
     data->nb_rx_queues = 1;
     data->nb_tx_queues = 1;
@@ -1766,13 +1878,12 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
     }
-    adapter->dbg_rccnt = 0;
     adapter->dbg = mz->addr;
     adapter->dgb_phy_addrH = (uint32_t)(mz->iova >> 32);
     adapter->dgb_phy_addrL = (uint32_t)mz->iova;
     PC802_WRITE_REG(bar->DBGRCAL, adapter->dgb_phy_addrL);
     PC802_WRITE_REG(bar->DBGRCAH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(bar->DBGRCCNT, adapter->dbg_rccnt);
+    adapter->dbg_rccnt = PC802_READ_REG(bar->DBGRCCNT);
     DBLOG("DEBUG NPU Memory = 0x%08X %08X\n", bar->DBGRCAH, bar->DBGRCAL);
 
     PC802_WRITE_REG(bar->SFN_SLOT_0, 0xFFFFFFFF);
@@ -1796,7 +1907,14 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
     DBLOG("descs_virt_addr = %p\n", adapter->pDescs);
 
+    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
+    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
+    PC802_WRITE_REG(bar->DBAL, laddr);
+    PC802_WRITE_REG(bar->DBAH, haddr);
+    DBLOG("Descriptor Rings Base = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
+
     PC802_WRITE_REG(bar->DEVEN, 0);
+    DBLOG("NPU clear PC802 prot %d DEVEN = 0\n", adapter->port_id);
     usleep(1000);
 
     adapter->started = 1;
@@ -1928,6 +2046,7 @@ static int pc802_download_boot_image(uint16_t port)
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
     } while (1);
+    printf("\n");
 
     *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
     fclose(fp);
