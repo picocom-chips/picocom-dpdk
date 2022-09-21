@@ -556,7 +556,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint32_t tx_id = txq->rc_cnt;
     uint16_t nb_tx;
 
-    if (txq->nb_tx_free < txq->tx_free_thresh) {
+    if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_blks)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
     }
 
@@ -1168,7 +1168,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     tx_id   = txq->rc_cnt;
 
     /* Determine if the descriptor ring needs to be cleaned. */
-     if (txq->nb_tx_free < txq->tx_free_thresh) {
+     if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_pkts)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
      }
 
