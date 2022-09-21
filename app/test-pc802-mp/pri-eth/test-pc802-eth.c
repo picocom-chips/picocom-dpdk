@@ -149,12 +149,6 @@ static int port_init( uint16_t pc802_index )
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
-    {
-        pcxxDataOpen(&data_cb_info, pc802_index, cell);
-        pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
-    }
-
     rte_eth_dev_start(port);
 
     printf("Finished %d port_init !\n", pc802_index );
@@ -1241,16 +1235,6 @@ static int case_n802(void)
     while (1) {
         diag = case201();
         return_if_fail(201, diag, k);
-        diag = case301();
-        return_if_fail(301, diag, k);
-        diag = case1();
-        return_if_fail(1, diag, k);
-        diag = case2();
-        return_if_fail(2, diag, k);
-        diag = case3();
-        return_if_fail(3, diag, k);
-        diag = case4(16);
-        return_if_fail(4, diag, k);
         m++;
         k++;
         if (TEST_PC802_DISP_LOOP_NUM == m) {
@@ -1669,7 +1653,6 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    pcxx_oam_init();
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);
