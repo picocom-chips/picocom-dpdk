@@ -241,7 +241,7 @@ uint16_t pc802_get_count(void)
 int pc802_get_port_id(uint16_t pc802_index)
 {
     static int32_t port_num = 0;
-    static int32_t port_id[4] = {-1,-1,-1,-1};
+    static int32_t port_id[PC802_INDEX_MAX] = {-1,-1,-1,-1};
     int index = 0;
     int i;
     struct rte_pci_device *pci_dev;
