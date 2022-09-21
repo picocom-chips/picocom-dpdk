@@ -79,3 +79,4 @@ endforeach
 
 # special case the autotests
 subdir('test')
+subdir('test-pc802-mp')
