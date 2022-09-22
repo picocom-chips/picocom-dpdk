@@ -1783,6 +1783,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    pc802_devices[num_pc802s] = adapter;
+    num_pc802s++;
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
         uint32_t drv_state;
         bar = (PC802_BAR_t *)adapter->bar0_addr;
@@ -1837,8 +1839,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
     adapter->port_index = num_pc802s;
-    pc802_devices[num_pc802s] = adapter;
-    num_pc802s++;
 
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
