@@ -1923,6 +1923,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
 
+    pthread_t tid;
+    pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+
     pc802_download_boot_image(data->port_id);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
@@ -1975,10 +1978,8 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 /* see e1000_logs.c */
 RTE_INIT(picocom_pc802_init_log)
 {
-    pthread_t tid;
     printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
-    pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
 }
 
 char * picocom_pc802_version(void)
