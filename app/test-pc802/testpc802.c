@@ -229,7 +229,7 @@ static int produce_random_dl_src_data(uint32_t *buf)
     uint32_t N, s, d, k;
     do {
         s = (uint32_t)rand();
-    } while (s == 0x4b3c2d1e);
+    } while ((s == 0x4b3c2d1e) || (s == 0xd1c2b3a4));
     *buf++ = s;
     N = (uint32_t)rand();
     N &= 511;
@@ -974,36 +974,28 @@ static int32_t oam_rsp( void *arg, __rte_unused uint16_t dev, uint32_t msg_type,
 
 static int case301(void)
 {
-    char *buf = rte_malloc(NULL, 4096, RTE_CACHE_LINE_MIN_SIZE);
-    int ret = 0;
-    oam_cb_arg arg;
-    struct timespec ts;
-    const pcxx_oam_sub_msg_t *list = (const pcxx_oam_sub_msg_t *)buf;
-    uint32_t *data;
+    int re;
+    uint32_t N;
+    uint32_t *a = alloc_tx_blk(PC802_TRAFFIC_OAM);
+    if (NULL == a) return -1;
 
-    arg.sub = (pcxx_oam_sub_msg_t *)buf;
-    arg.msg_type = PCXX_OAM_MSG;
-    sem_init( &arg.sem, 0, 0);
-    pcxx_oam_register( arg.msg_type, oam_rsp, &arg );
-    data = (uint32_t *)arg.sub->msb_body;
-    produce_dl_src_data(data, PC802_TRAFFIC_OAM);
-    arg.dev = 0;
-    arg.sub->msg_id = (uint16_t)rand();
-    arg.sub->msg_size = sizeof(uint32_t)*(data[1]+2);
-    if (0 == pcxx_oam_send_msg(arg.dev, arg.msg_type, &list, 1)) {
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 1;
-        if (0 != sem_timedwait(&arg.sem, &ts)) {
-            DBLOG("Wait timeout\n");
-            ret = -2;
-        }
-    } else {
-        DBLOG("Send ERROR\n");
-        ret = -1;
-    }
-    pcxx_oam_unregister(arg.msg_type);
-    rte_free(buf);
-    return ret;
+    produce_dl_src_data(a, PC802_TRAFFIC_OAM);
+    N = sizeof(uint32_t) * (a[1] + 2);
+    set_blk_attr(a, N, 2, 1);
+    tx_blks(PC802_TRAFFIC_OAM, &a, 1);
+
+    uint32_t *b;
+    while (0 == rx_blks(PC802_TRAFFIC_OAM, &b, 1));
+    uint32_t length = 0;
+    uint8_t type, eop = 0;
+    get_blk_attr(b, &length, &type, &eop);
+    if ((type != 0) || (eop != 1))
+        return -1;
+    swap_msg(b, length);
+    re = check_single_same(a, b);
+    free_blk(a);
+    free_blk(b);
+    return re;
 }
 
 static int case302(void)
