@@ -114,6 +114,8 @@ static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
 
+#define OAM_QUEUE_BLOCK_SIZE   (8*1024)
+
 static int port_init( uint16_t pc802_index )
 {
     struct rte_mempool *mbuf_pool;
@@ -154,6 +156,9 @@ static int port_init( uint16_t pc802_index )
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
+
+    RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
 
     rte_eth_dev_start(port);
 
@@ -1661,7 +1666,6 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    pcxx_oam_init();
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);
