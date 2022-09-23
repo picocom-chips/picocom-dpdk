@@ -2489,6 +2489,25 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     return;
 }
 
+static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
+{
+    uint32_t num_args = PC802_READ_REG(mb->num_args);
+    if (1 == num_args) {
+        DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
+    } else if (3 == num_args) {
+        const char *func_name = mb_get_string(mb->arguments[1], core);
+        DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
+            num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
+    } else {
+        DBLOG("EXIT(%u): core %u args:\n", num_args, core);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[0], mb->arguments[1],
+            mb->arguments[2], mb->arguments[3]);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[4], mb->arguments[5],
+            mb->arguments[6], mb->arguments[7]);
+    }
+    return;
+}
+
 static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
     int num = 0;
@@ -2501,6 +2520,8 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
             num++;
             if (MB_PRINTF == action) {
                 handle_mb_printf(port_id, &mb[n], core);
+            } else if (MB_SIM_STOP == action) {
+                handle_mb_sim_stop(&mb[n], core);
             } else {
                 num_args = PC802_READ_REG(mb[n].num_args);
                 DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
