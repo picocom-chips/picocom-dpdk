@@ -14,6 +14,7 @@ dpdk_conf.set('MULTI_PC802', get_option('enable_multi_pc802'))
 sources = files(
         'pc802_ethdev.c',
         'pc802_kni.c',
+        'pc802_pdump.c',
         'pc802_logs.c',
         'pcxx_ipc.c',
         'pcxx_oam.c',

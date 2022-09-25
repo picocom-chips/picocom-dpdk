@@ -266,6 +266,19 @@ int pc802_get_port_id(uint16_t pc802_index)
     return port_id[pc802_index];
 }
 
+uint16_t pc802_get_index_by_name(const char *name)
+{
+    int i;
+    int port;
+
+    for (i = 0; i < pc802_get_count(); i++) {
+        port = pc802_get_port_id(i);
+        if (0 == strcmp(rte_eth_devices[port].device->name, name))
+            return i;
+    }
+    return MBUF_INVALID_PORT;
+}
+
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
 {
     if (!isPowerOf2(nb_desc) || (nb_desc > MAX_DESC_NUM) || (nb_desc < MIN_DESC_NUM))
@@ -537,6 +550,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
+    if( nb_rx )
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks);
     return nb_rx;
 }
 
@@ -562,6 +577,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
+    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
         idx = tx_id & mask;
@@ -1080,6 +1096,10 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //bool autoneg;
 
     PMD_INIT_FUNC_TRACE();
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+        return 0;
+    }
 
     eth_pc802_stop(dev);
 
@@ -1690,6 +1710,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        return 0;
+    }
+
     data = eth_dev->data;
     data->nb_rx_queues = 1;
     data->nb_tx_queues = 1;
@@ -1709,6 +1733,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
 
     rte_eth_copy_pci_info(eth_dev, pci_dev);
+    pc802_pdump_init( );
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     gbar = bar = (PC802_BAR_t *)adapter->bar0_addr;

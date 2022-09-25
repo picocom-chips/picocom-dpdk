@@ -429,5 +429,15 @@ typedef struct {
 
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
+uint16_t pc802_get_index_by_name(const char *name);
+
+enum {
+	PC802_FLAG_RX = 1,
+	PC802_FLAG_TX = 2,
+};
+
+int pc802_pdump_init(void);
+int pc802_pdump_uninit(void);
+uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks);
 
 #endif /* _PC802_ETHDEV_H_ */
