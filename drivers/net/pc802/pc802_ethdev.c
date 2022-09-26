@@ -1923,8 +1923,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
 
-    pthread_t tid;
-    pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+    if (1 == num_pc802s) {
+        pthread_t tid;
+        pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+    }
 
     pc802_download_boot_image(data->port_id);
 
