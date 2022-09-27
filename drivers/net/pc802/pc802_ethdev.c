@@ -265,6 +265,19 @@ int pc802_get_port_id(uint16_t pc802_index)
     return port_id[pc802_index];
 }
 
+uint16_t pc802_get_index_by_name(const char *name)
+{
+    int i;
+    int port;
+
+    for (i = 0; i < pc802_get_count(); i++) {
+        port = pc802_get_port_id(i);
+        if (0 == strcmp(rte_eth_devices[port].device->name, name))
+            return i;
+    }
+    return MBUF_INVALID_PORT;
+}
+
 int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_size, uint32_t block_num, uint16_t nb_desc)
 {
     if (!isPowerOf2(nb_desc) || (nb_desc > MAX_DESC_NUM) || (nb_desc < MIN_DESC_NUM))
@@ -600,6 +613,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
+    if( nb_rx )
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks);
     return nb_rx;
 }
 
@@ -625,6 +640,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
+    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
         idx = tx_id & mask;
@@ -1926,6 +1942,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+        pc802_pdump_init( );
     }
 
     pc802_download_boot_image(data->port_id);
