@@ -2820,6 +2820,7 @@ static void * pc802_debug(__rte_unused void *data)
 {
     int i = 0;
     int num = 0;
+    int idle = 0;
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
@@ -2833,13 +2834,18 @@ static void * pc802_debug(__rte_unused void *data)
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_VEC))
+            if ((pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) && (idle > 4 * 100)) {
                 num += pc802_process_phy_test_vectors(pc802_devices[i]);
+                idle = 0;
+            }
         }
         if ( 0 == num ) {
             pc802_log_flush();
             nanosleep(&req, NULL);
+            idle++;
         }
+        else
+            idle = 0;
     }
     return NULL;
 }
