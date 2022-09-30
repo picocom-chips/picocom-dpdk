@@ -2,6 +2,8 @@ DPDK_21 {
 	global:
 
 	pc802_get_socket_id;
+	pc802_get_count;
+	pc802_get_port_id;
 	picocom_pc802_version;
 	pc802_create_rx_queue;
 	pc802_create_tx_queue;
@@ -16,6 +18,7 @@ DPDK_21 {
 	pc802_show_rx_info;
 	pc802_show_tx_data;
 	pc802_show_rx_data;
+	pc802_kni_print_stats;
 	pc802_check_dma_timeout;
 	pc802_set_ul_dma_count;
 	pc802_vec_read;
@@ -23,8 +26,6 @@ DPDK_21 {
 	pc802_get_sfn_slot;
 	pcxxCtrlOpen;
 	pcxxCtrlClose;
-	pcxxOamOpen;
-	pcxxOamClose;
 	pcxxDataOpen;
 	pcxxDataClose;
 	pcxxSendStart;
@@ -32,15 +33,17 @@ DPDK_21 {
 	pcxxCtrlAlloc;
 	pcxxCtrlSend;
 	pcxxCtrlRecv;
-	pcxxOamAlloc;
-	pcxxOamSend;
-	pcxxOamRecv;
 	pcxxDataAlloc;
 	pcxxDataSend;
 	pcxxDataRecv;
 	pcxxCtrlDestroy;
-	pcxxOamDestroy;
 	pcxxDataDestroy;
+	pcxx_oam_init;
+	pcxx_oam_register;
+	pcxx_oam_unregister;
+	pcxx_oam_sub_msg_register;
+	pcxx_oam_sub_msg_unregister;
+	pcxx_oam_send_msg;
 
 	local: *;
 };
