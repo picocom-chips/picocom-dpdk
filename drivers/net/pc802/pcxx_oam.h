@@ -4,6 +4,10 @@
 #ifndef __PCXX_OAM_H_
 #define __PCXX_OAM_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     uint16_t msg_id;
     uint16_t msg_size;              //only include msb_body size
@@ -76,5 +80,9 @@ int pcxx_oam_sub_msg_unregister(uint32_t msg_type, uint16_t sub_msg_id);
 * @return returns 0 if send success, or else return error.
 */
 int pcxx_oam_send_msg(uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
