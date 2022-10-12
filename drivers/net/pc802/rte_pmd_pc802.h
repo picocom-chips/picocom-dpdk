@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define  DBLOG(format, ...) \
     printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
 
@@ -131,5 +135,9 @@ int pc802_check_dma_timeout(uint16_t port);
 int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __RTE_PMD_PC802_H__ */
