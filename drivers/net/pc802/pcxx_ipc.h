@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define DEV_INDEX_MAX       PC802_INDEX_MAX     /**< Max number of baseband devices */
 #ifdef MULTI_PC802
 #define CELL_NUM_PRE_DEV    2                   /**< Number of cells per baseband device */
@@ -195,6 +199,10 @@ int pcxxDataDestroy(void);
 #else
 int pcxxCtrlDestroy(uint16_t dev_index, uint16_t cell_index );
 int pcxxDataDestroy(uint16_t dev_index, uint16_t cell_index );
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif
