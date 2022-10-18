@@ -33,9 +33,9 @@
 #include <rte_malloc.h>
 #include <rte_dev.h>
 
-#include "pc802_logs.h"
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
+#include "pc802_logs.h"
 #include "pc802_mailbox.h"
 
 #define PCI_VENDOR_PICOCOM          0x1EC4
@@ -1818,6 +1818,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("mz_s->addr = %p\n", mz_s->addr);
         return 0;
     }
+    if (1 == num_pc802s)
+        log_server_init( );
 
     data = eth_dev->data;
     data->nb_rx_queues = 1;
@@ -2533,11 +2535,6 @@ uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, ui
     return handle_non_pfi_0_vec_dump(port_id, file_id, address, length);
 }
 
-static inline void handle_trace_data(uint16_t port_id, uint32_t core, uint32_t rccnt, uint32_t tdata)
-{
-    PC802_LOG( port_id, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
-}
-
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 {
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
@@ -2560,7 +2557,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
-            handle_trace_data(port_id, core, rccnt[port_index][core], trc_data);
+            log_event( port_id, core, rccnt[port_index][core], trc_data );
             rccnt[port_index][core]++;
             num++;
         }
@@ -2574,100 +2571,22 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return num;
 }
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core)
-{
-    uint32_t num_args = PC802_READ_REG(mb->num_args);
-    char str[2048];
-    char formatter[16];
-    const char *arg0 = mb_get_string(mb->arguments[0], core);
-    const char *arg0_bak = arg0;
-    char *ps = &str[0];
-    uint32_t arg_idx = 1;
-    const char *sub_str;
-    uint32_t j;
-
-    ps += sprintf(ps, "PRINTF: ");
-    while (*arg0) {
-        if (*arg0 == '%') {
-            formatter[0] = '%';
-            arg0++;
-            j = 1;
-            do {
-                assert(j < 15);
-                formatter[j] = *arg0++;
-                if (isalpha(formatter[j])) {
-                    formatter[j+1] = 0;
-                    break;
-                }
-                j++;
-            } while (1);
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-            if (formatter[j] == 's') {
-                sub_str = mb_get_string(mb->arguments[arg_idx++], core);
-                ps += snprintf(ps, sizeof(str), formatter, sub_str);
-            } else {
-                ps += snprintf(ps, sizeof(str), formatter, mb->arguments[arg_idx++]);
-            }
-#pragma GCC diagnostic pop
-
-        } else {
-            *ps++ = *arg0++;
-        }
-    }
-    *ps = 0;
-    if (arg_idx != num_args) {
-        DBLOG("core %u (arg_idx = %u num_args = %u): format = %s\n",
-            core, arg_idx, num_args, arg0_bak);
-        DBLOG("PC802 Core %u printf: %s\n", core, str);
-        assert(0);
-    }
-    PC802_LOG( port_id, core, RTE_LOG_INFO, "%s", str );
-    return;
-}
-
-static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
-{
-    uint32_t num_args = PC802_READ_REG(mb->num_args);
-    if (1 == num_args) {
-        DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
-    } else if (3 == num_args) {
-        const char *func_name = mb_get_string(mb->arguments[1], core);
-        DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
-            num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
-    } else {
-        DBLOG("EXIT(%u): core %u args:\n", num_args, core);
-        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[0], mb->arguments[1],
-            mb->arguments[2], mb->arguments[3]);
-        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[4], mb->arguments[5],
-            mb->arguments[6], mb->arguments[7]);
-    }
-    return;
-}
-
 static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
+    uint32_t i;
     int num = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
-    volatile uint32_t num_args;
+    magic_mailbox_t temp_mb;
     do {
         action = PC802_READ_REG(mb[n].action);
         if (MB_EMPTY != action ) {
             num++;
-            if (MB_PRINTF == action) {
-                handle_mb_printf(port_id, &mb[n], core);
-            } else if (MB_SIM_STOP == action) {
-                handle_mb_sim_stop(&mb[n], core);
-            } else {
-                num_args = PC802_READ_REG(mb[n].num_args);
-                DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
-                    mb[n].arguments[2], mb[n].arguments[3]);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
-                    mb[n].arguments[6], mb[n].arguments[7]);
-            }
+            temp_mb.action = action;
+            temp_mb.num_args = PC802_READ_REG(mb[n].num_args);
+            for( i=0; i<temp_mb.num_args; i++ )
+                temp_mb.arguments[i] = PC802_READ_REG(mb[n].arguments[i]);
+            log_mb(port_id, core, n, &temp_mb);
             rte_mb();
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
@@ -2708,7 +2627,7 @@ static int pc802_mailbox_rv_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint
         acc += (cnt + 1);
         idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
     } while (acc < MB_MAX_C2H_MAILBOXES);
-    PC802_LOG(port_id, core, RTE_LOG_INFO, "RV MB Clear Up: core %u init_idx %u idx %u flags: 0x%016lx 0x%016lx\n",
+    log_buf(port_id, core, "RV MB Clear Up: core %u init_idx %u idx %u flags: 0x%016lx 0x%016lx\n",
         core, init_idx, idx, flags[1], flags[0]);
     return num;
 }
@@ -2755,7 +2674,7 @@ static int pc802_mailbox_xc_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint
     } while (acc < MB_MAX_C2H_MAILBOXES);
     *idx = pc802_get_mailbox_xc_idx(pflags);
     if (MB_MAX_C2H_MAILBOXES != *idx) {
-        PC802_LOG(port_id, core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
+        log_buf(port_id, core, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
             core, *idx, flags[1], flags[0]);
     }
     return num;
@@ -2781,7 +2700,7 @@ static int pc802_mailbox(void *data)
         adapter[port_index] = (struct pc802_adapter *)data;
         mb_pfi[port_index] = adapter[port_index]->mailbox_pfi;
         mb_ecpri[port_index] = adapter[port_index]->mailbox_ecpri;
-        mb_string_init();
+        //mb_string_init();
 
         for (core = 0; core < 16; core++) {
             pfi_idx[port_index][core] = 0;

@@ -13,6 +13,11 @@
 #include <rte_log.h>
 #endif
 #include <rte_atomic.h>
+#include <rte_eal.h>
+#include <rte_errno.h>
+#include <rte_mempool.h>
+#include <rte_ring.h>
+
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
 #include "pc802_logs.h"
@@ -189,5 +194,132 @@ void pc802_init_log(void) {
 		pc802_print_type = rte_log_register("pc802.printf");
 		pc802_vec_type = rte_log_register("pc802.vec");
 		pc802_log_initialized = 1;
+	}
+}
+
+static struct rte_ring    *log_ring = NULL;
+static struct rte_mempool *log_pool = NULL;
+static enum log_en_dis log_flag = DISABLE;
+
+static int log_request(const struct rte_mp_msg *mp_msg, const void *peer)
+{
+	struct rte_mp_msg mp_rsp;
+	const struct pc802_log_request *req;
+	struct pc802_log_response *rsp = (struct pc802_log_response *)&mp_rsp.param;
+
+	/* recv client requests */
+	if (mp_msg->len_param != sizeof(*req)) {
+		printf("failed to recv from client\n");
+		rsp->err_value = -EINVAL;
+	} else {
+        req = (const struct pc802_log_request *)mp_msg->param;
+        rsp->ver = req->ver;
+        rsp->res_op = req->op;
+        if (req->op) {
+			if( (NULL != req->pool) && (NULL != req->ring) ) {
+				log_pool = req->pool;
+				log_ring = req->ring;
+				log_flag = ENABLE;
+				rsp->err_value = 0;
+				printf("recv log enable req\n");
+			}
+			else
+				rsp->err_value = -EINVAL;
+        }
+		else{
+            log_pool = NULL;
+            log_ring = NULL;
+			log_flag = DISABLE;
+			rsp->err_value = 0;
+			printf("recv log disable req\n");
+		}
+    }
+
+	strncpy(mp_rsp.name, LOG_MP, RTE_MP_MAX_NAME_LEN);
+	mp_rsp.len_param = sizeof(*rsp);
+	mp_rsp.num_fds = 0;
+	if (rte_mp_reply(&mp_rsp, peer) < 0) {
+		printf("failed to send to client:%s\n", strerror(rte_errno));
+		return -1;
+	}
+
+	return 0;
+}
+
+int log_server_init(void)
+{
+	return rte_mp_action_register(LOG_MP, log_request);
+}
+
+void log_event(uint16_t port_id, uint32_t core, uint32_t index, uint32_t event)
+{
+	if (!log_flag){
+		pc802_log( core, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", index, event, event>>14, event&0x3FFF );
+		return;
+	}
+    struct pc802_log_blk *item;
+    if ( 0!= rte_mempool_get(log_pool, (void **)&item) )
+        return;
+
+    item->port = port_id;
+    item->core = core;
+    item->type = PC802_LOG_EVENT;
+    item->no = index;
+    item->event = event;
+
+    if (0!=rte_ring_enqueue(log_ring, (void *)item ))
+		rte_mempool_put(log_pool, (void *)item);
+}
+
+void log_buf(uint16_t port_id, uint32_t core, const char *fmt, ... )
+{
+	static uint32_t index=0;
+	if (!log_flag){
+
+		return;
+	}
+	va_list ap;
+    struct pc802_log_blk *item;
+    if ( 0 != rte_mempool_get(log_pool, (void **)&item) )
+        return;
+
+    item->port = port_id;
+    item->core = core;
+    item->type = PC802_LOG_PRINT;
+    item->no = index++;
+	va_start(ap, fmt);
+	vsnprintf(item->buf, sizeof(item->buf), fmt, ap);
+	va_end(ap);
+
+    if (0!=rte_ring_enqueue(log_ring, (void *)item ))
+		rte_mempool_put(log_pool, (void *)item);
+}
+
+void log_mb(uint16_t port_id, uint32_t core, uint32_t index, const magic_mailbox_t *mb)
+{
+	if (!log_flag){
+		pc802_log(core, "MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, index, mb->action, mb->num_args);
+		pc802_log(core, "  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[0], mb->arguments[1],
+			mb->arguments[2], mb->arguments[3]);
+		pc802_log(core, "  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[4], mb->arguments[5],
+			mb->arguments[6], mb->arguments[7]);
+		return;
+	}
+    struct pc802_log_blk *item;
+    if ( 0 != rte_mempool_get(log_pool, (void **)&item) ){
+		printf("failed to get mem:%s\n", strerror(rte_errno));
+        return;
+	}
+
+    item->port = port_id;
+    item->core = core;
+    item->type = PC802_LOG_MAILBOX;
+    item->no = index;
+
+	rte_memcpy(&item->mb, mb, sizeof(magic_mailbox_t)-sizeof(uint32_t)*(MB_NUM_ARGS-mb->num_args));
+
+    if (0!=rte_ring_enqueue(log_ring, (void *)item )){
+		printf("failed to rte_ring_enqueue:%s\n", strerror(rte_errno));
+		rte_mempool_put(log_pool, (void *)item);
 	}
 }

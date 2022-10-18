@@ -11,6 +11,7 @@
 enum PC802_LOG_TYPE {
 	PC802_LOG_EVENT,
 	PC802_LOG_PRINT,
+	PC802_LOG_MAILBOX,
 	PC802_LOG_VEC
 };
 
@@ -64,5 +65,42 @@ void pc802_log_flush(void);
 
 /* log init function shared by e1000 and igb drivers */
 void pc802_init_log(void);
+
+#define LOG_MP    "PC802_LOG"
+
+enum log_en_dis {
+	DISABLE = 0,
+	ENABLE = 1
+};
+
+struct pc802_log_request {
+	uint16_t ver;
+	uint16_t op;
+	struct rte_ring *ring;
+	struct rte_mempool *pool;
+};
+
+struct pc802_log_response {
+	uint16_t ver;
+	uint16_t res_op;
+	int32_t err_value;
+};
+
+struct pc802_log_blk {
+	uint16_t port;
+	uint16_t core;
+	uint32_t type;
+	uint32_t no;
+	union {
+		magic_mailbox_t mb;
+		uint32_t event;
+		char buf[96];
+	};
+} __rte_cache_aligned;
+
+int log_server_init(void);
+void log_event(uint16_t port_id, uint32_t core, uint32_t index, uint32_t event);
+void log_buf(uint16_t port_id, uint32_t core, const char *fmt, ... );
+void log_mb(uint16_t port_id, uint32_t core, uint32_t index, const magic_mailbox_t *mb);
 
 #endif /* _PC802_LOGS_H_ */

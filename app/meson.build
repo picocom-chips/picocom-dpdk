@@ -3,6 +3,7 @@
 
 apps = [
         'pdump',
+        'pico-log',
         'proc-info',
         'test-acl',
         'test-bbdev',
