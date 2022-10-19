@@ -14,7 +14,7 @@ stages:
 
 default:
   tags:
-    - linux64
+    - nujiang
 
 before_script:
   - "export BUILD_PATH=${PWD}"
