@@ -1,0 +1,49 @@
+DPDK_21 {
+	global:
+
+	pc802_get_socket_id;
+	pc802_get_count;
+	pc802_get_port_id;
+	picocom_pc802_version;
+	pc802_create_rx_queue;
+	pc802_create_tx_queue;
+	pc802_alloc_tx_mem_block;
+	pc802_free_mem_block;
+	pc802_rx_mblk_burst;
+	pc802_tx_mblk_burst;
+	pc802_get_debug_mem;
+	pc802_access_ep_mem;
+	pc802_show_pcie_counter;
+	pc802_show_tx_info;
+	pc802_show_rx_info;
+	pc802_show_tx_data;
+	pc802_show_rx_data;
+	pc802_kni_print_stats;
+	pc802_check_dma_timeout;
+	pc802_set_ul_dma_count;
+	pc802_vec_read;
+	pc802_vec_dump;
+	pc802_get_sfn_slot;
+	pcxxCtrlOpen;
+	pcxxCtrlClose;
+	pcxxDataOpen;
+	pcxxDataClose;
+	pcxxSendStart;
+	pcxxSendEnd;
+	pcxxCtrlAlloc;
+	pcxxCtrlSend;
+	pcxxCtrlRecv;
+	pcxxDataAlloc;
+	pcxxDataSend;
+	pcxxDataRecv;
+	pcxxCtrlDestroy;
+	pcxxDataDestroy;
+	pcxx_oam_init;
+	pcxx_oam_register;
+	pcxx_oam_unregister;
+	pcxx_oam_sub_msg_register;
+	pcxx_oam_sub_msg_unregister;
+	pcxx_oam_send_msg;
+
+	local: *;
+};

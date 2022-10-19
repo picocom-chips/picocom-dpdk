@@ -48,6 +48,7 @@ drivers = [
         'octeontx',
         'octeon_ep',
         'pcap',
+        'pc802',
         'pfe',
         'qede',
         'ring',
