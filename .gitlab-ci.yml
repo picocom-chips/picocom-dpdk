@@ -1,0 +1,75 @@
+# use the official gcc image, based on debian
+# can use verions as well, like gcc:5.2
+# see https://hub.docker.com/_/gcc/
+image: gcc
+
+variables:
+  GIT_STRATEGY: fetch
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_LFS_SKIP_SMUDGE: "1"
+
+stages:
+  - checkout
+  - build
+
+default:
+  tags:
+    - nujiang
+
+before_script:
+  - "export BUILD_PATH=${PWD}"
+  - "export DPDK_BASE=${BUILD_PATH}/dpdk/pcie/user_space/DPDK"
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - dpdk/
+
+checkout:
+  stage: checkout
+  script:
+    - dpdk_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@glhk.picocomtech.com/tools/dpdk.git"
+    - echo ${dpdk_URL}
+    - if [ -d dpdk ]; then
+    -   pushd dpdk
+    -   git checkout ./
+    -   git pull ${dpdk_URL}
+    -   popd
+    - else
+    -   git clone ${dpdk_URL}
+    -   pushd dpdk
+    -   git log -2
+    -   git submodule update --init --recursive
+    -   popd
+    - fi
+    - git ls-remote --heads ${dpdk_URL} ${CI_COMMIT_REF_NAME}
+    - exit_code=0
+    - git ls-remote --heads ${dpdk_URL} ${CI_COMMIT_REF_NAME} | grep ${CI_COMMIT_REF_NAME} > /dev/null || exit_code=$?
+    - echo "Exit code $exit_code";
+    - >
+      if [ $exit_code -eq 0 ]; then
+        echo "Matching branch ${CI_COMMIT_REF_NAME} exists in dpdk";
+        pushd dpdk;
+        git checkout ${CI_COMMIT_REF_NAME};
+        meson build
+        ninja -C build
+        popd;
+      else
+        echo "Defaulting to dev branch of dpdk";
+        pushd dpdk;
+        git checkout ./
+        git pull ${dpdk_URL}
+        echo "Building DPDK Start"
+        meson build
+        ninja -C build
+        echo "Building DPDK End"
+        popd;
+      fi
+
+build:
+  stage: build
+  script:
+    - echo ${DPDK_BASE}
+  tags:
+    - nujiang
+  needs: ["checkout"]
