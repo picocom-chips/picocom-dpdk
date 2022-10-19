@@ -11,14 +11,15 @@ variables:
 stages:
   - checkout
   - build
+  - build_oranic
 
 default:
   tags:
-    - linux64
+    - dpdk
 
 before_script:
   - "export BUILD_PATH=${PWD}"
-  - "export DPDK_BASE=${BUILD_PATH}/dpdk/pcie/user_space/DPDK"
+  - "export DPDK_BASE=${BUILD_PATH}/dpdk"
 
 cache:
   key: ${CI_COMMIT_REF_SLUG}
@@ -46,30 +47,39 @@ checkout:
     - exit_code=0
     - git ls-remote --heads ${dpdk_URL} ${CI_COMMIT_REF_NAME} | grep ${CI_COMMIT_REF_NAME} > /dev/null || exit_code=$?
     - echo "Exit code $exit_code";
-    - >
-      if [ $exit_code -eq 0 ]; then
-        echo "Matching branch ${CI_COMMIT_REF_NAME} exists in dpdk";
-        pushd dpdk;
-        git checkout ${CI_COMMIT_REF_NAME};
-        meson build
-        ninja -C build
-        popd;
-      else
-        echo "Defaulting to dev branch of dpdk";
-        pushd dpdk;
-        git checkout ./
-        git pull ${dpdk_URL}
-        echo "Building DPDK Start"
-        meson build
-        ninja -C build
-        echo "Building DPDK End"
-        popd;
-      fi
+    - if [ $exit_code -eq 0 ]; then
+    -   echo "Matching branch ${CI_COMMIT_REF_NAME} exists in dpdk";
+    -   pushd dpdk
+    -   git checkout ${CI_COMMIT_REF_NAME};
+    -   popd
+    - else
+    -   echo "Defaulting to dev branch of dpdk";
+    -   pushd dpdk
+    -   git checkout ./
+    -   git pull ${dpdk_URL}
+    -   popd
+    - fi
 
 build:
   stage: build
   script:
-    - echo ${DPDK_BASE}
-  tags:
-    - nujiang
+    - pushd dpdk
+    - echo "Building DPDK Start"
+    - rm build -rf
+    - meson build
+    - ninja -C build
+    - echo "Building DPDK End"
+    - popd
+  needs: ["checkout"]
+
+build_oranic:
+  stage: build_oranic
+  script:
+    - pushd dpdk
+    - echo "Building DPDK Start"
+    - rm build -rf
+    - meson build -Denable_multi_pc802=true
+    - ninja -C build
+    - echo "Building DPDK End"
+    - popd
   needs: ["checkout"]
