@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <rte_common.h>
+#include <dev_driver.h>
 #include <rte_ethdev.h>
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
@@ -28,7 +29,7 @@ static void signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
     .rxmode = {
-        .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+        .mtu = RTE_ETHER_MTU,
     },
 };
 

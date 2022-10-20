@@ -87,12 +87,6 @@ signal_handler(int signum)
     }
 }
 
-static const struct rte_eth_conf dev_conf = {
-        .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
-        },
-    };
-
 #ifdef MULTI_PC802
 #define PCXX_CALL0(fun,dev) fun(dev)
 #define PCXX_CALL(fun,dev,cell) fun(dev,cell)
@@ -116,12 +110,6 @@ uint16_t g_cell_index = 0;
 
 static int port_init( uint16_t pc802_index )
 {
-    struct rte_mempool *mbuf_pool;
-    //const struct rte_eth_conf dev_conf;
-    struct rte_eth_dev_info dev_info;
-    struct rte_eth_txconf tx_conf;
-    //const struct rte_eth_rxconf rx_conf;
-    char temp_name[32] = {0};
     uint16_t cell = g_cell_index;
     int port = pc802_get_port_id(pc802_index);
     if ( port < 0 )

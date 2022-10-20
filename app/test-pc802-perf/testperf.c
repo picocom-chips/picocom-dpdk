@@ -46,6 +46,7 @@
 #include <rte_ethdev.h>
 #include <rte_dev.h>
 #include <rte_string_fns.h>
+#include <dev_driver.h>
 
 #include <cmdline_rdline.h>
 #include <cmdline_parse.h>
@@ -70,7 +71,7 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
         .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+            .mtu = RTE_ETHER_MTU,
         },
     };
 

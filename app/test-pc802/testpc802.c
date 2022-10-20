@@ -44,6 +44,7 @@
 #include <rte_interrupts.h>
 #include <rte_pci.h>
 #include <rte_ether.h>
+#include <dev_driver.h>
 #include <rte_ethdev.h>
 #include <rte_dev.h>
 #include <rte_string_fns.h>
@@ -89,7 +90,7 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
         .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+            .mtu = RTE_ETHER_MTU,
         },
     };
 

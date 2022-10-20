@@ -44,6 +44,7 @@
 #include <rte_interrupts.h>
 #include <rte_pci.h>
 #include <rte_ether.h>
+#include <dev_driver.h>
 #include <rte_ethdev.h>
 #include <rte_dev.h>
 #include <rte_string_fns.h>
@@ -89,7 +90,7 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
         .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+            .mtu = RTE_ETHER_MTU,
         },
     };
 
@@ -109,8 +110,6 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 #endif
 
-static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
 
@@ -123,7 +122,6 @@ static int port_init( uint16_t pc802_index )
     //const struct rte_eth_rxconf rx_conf;
     char temp_name[32] = {0};
     int socket_id;
-    uint16_t cell;
     int port = pc802_get_port_id(pc802_index);
     if ( port < 0 )
         rte_exit( EXIT_FAILURE, "pc802 %d is notexist !\n", pc802_index );
