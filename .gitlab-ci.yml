@@ -70,6 +70,9 @@ build:
     - ninja -C build
     - echo "Building DPDK End"
     - popd
+  tags:
+    - bjsys08
+    - nujiang
   needs: ["checkout"]
 
 build:oranic:
@@ -82,4 +85,7 @@ build:oranic:
     - ninja -C build
     - echo "Building DPDK End"
     - popd
+  tags:
+    - bjsys08
+    - nujiang
   needs: ["checkout"]
