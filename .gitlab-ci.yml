@@ -14,7 +14,7 @@ stages:
 
 default:
   tags:
-    - nujiang
+    - dpdk
 
 before_script:
   - "export BUILD_PATH=${PWD}"
@@ -69,8 +69,6 @@ build:
     - ninja -C build
     - echo "Building DPDK End"
     - popd
-  tags:
-    - nujiang
   needs: ["checkout"]
 
 build:oranic:
@@ -83,6 +81,4 @@ build:oranic:
     - ninja -C build
     - echo "Building DPDK End"
     - popd
-  tags:
-    - nujiang
   needs: ["checkout"]
