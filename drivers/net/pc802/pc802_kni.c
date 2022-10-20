@@ -167,7 +167,7 @@ int pc802_kni_init(void)
     struct rte_eth_conf dev_conf = {
         .rxmode =
             {
-                .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+                .mtu = RTE_ETHER_MTU,
             },
     };
     int ret;
