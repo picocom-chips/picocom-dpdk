@@ -2836,7 +2836,6 @@ static void * pc802_debug(__rte_unused void *data)
                 num += pc802_mailbox(pc802_devices[i]);
             if ((pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) && (idle > 4 * 100)) {
                 num += pc802_process_phy_test_vectors(pc802_devices[i]);
-                idle = 0;
             }
         }
         if ( 0 == num ) {
