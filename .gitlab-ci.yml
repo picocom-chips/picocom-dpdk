@@ -14,7 +14,6 @@ stages:
 
 default:
   tags:
-    - bjsys08
     - nujiang
 
 before_script:
@@ -71,7 +70,6 @@ build:
     - echo "Building DPDK End"
     - popd
   tags:
-    - bjsys08
     - nujiang
   needs: ["checkout"]
 
@@ -86,6 +84,5 @@ build:oranic:
     - echo "Building DPDK End"
     - popd
   tags:
-    - bjsys08
     - nujiang
   needs: ["checkout"]
