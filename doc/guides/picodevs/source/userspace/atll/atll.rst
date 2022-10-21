@@ -19,8 +19,9 @@ Data channel
 OAM channel
 -----------
 
-.. doxygenfunction:: pcxxOamOpen
-.. doxygenfunction:: pcxxOamClose
-.. doxygenfunction:: pcxxOamAlloc
-.. doxygenfunction:: pcxxOamSend
-.. doxygenfunction:: pcxxOamRecv
+.. doxygenfunction:: pcxx_oam_init
+.. doxygenfunction:: pcxx_oam_register
+.. doxygenfunction:: pcxx_oam_unregister
+.. doxygenfunction:: pcxx_oam_sub_msg_register
+.. doxygenfunction:: pcxx_oam_sub_msg_unregister
+.. doxygenfunction:: pcxx_oam_send_msg
