@@ -1,0 +1,60 @@
+/*
+ * PICOCOM PROPRIETARY INFORMATION
+ *
+ * This software is supplied under the terms of a license agreement or
+ * nondisclosure agreement with PICOCOM and may not be copied
+ * or disclosed except in accordance with the terms of that agreement.
+ *
+ * Copyright PICOCOM.
+ */
+
+body {
+    background-color: #fff;
+    color: #08495E;
+    font-family: Roboto, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.875;
+    margin: 0;
+    overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: 'Roboto', Helvetica, Arial, sans-serif;
+    font-weight: 500;
+    line-height: 1.2;
+    margin: 0 0 10px;
+}
+
+h1 {
+    font-size: 24px;
+}
+
+h2 {
+    font-size: 20px;
+}
+
+h3 {
+    font-size: 18px;
+}
+
+div.wy-side-nav-search {
+    background-color: #15C3CC;
+}
+
+nav.wy-nav-side {
+    background-color: #15C3CC;
+}
+
+div.wy-menu-vertical {
+    background-color: #08495E;
+}
+
+div.version {
+    color: #08495E !important
+}
