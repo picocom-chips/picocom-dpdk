@@ -9,4 +9,3 @@ API Reference
     gettingstart
     introduction
     userspace/index
-    kernelspace/index
