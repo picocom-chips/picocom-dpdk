@@ -1,13 +1,13 @@
 System Requirements
 ===================
 
-This chapter describes the packages required to compile the PC802_UDriver.
+This section describes the packages required to compile the PC802_UDriver.
 
-BIOS Setting Prerequisite on x86
+BIOS setting prerequisite on x86
 --------------------------------
 
 For the majority of platforms, no special BIOS settings are needed to use PC802 PCIe driver.
-However, for power management functionality, and high performance of small packets, BIOS setting changes may be needed.
+However, for power management functionality and high performance of small packets, BIOS setting changes may be needed.
 
 .. note::
     If UEFI secure boot is enabled, the Linux kernel may disallow the use of UIO on the system.
@@ -19,11 +19,11 @@ Linux OS
 
 *   Kernel version >= 4.4
 
-    The kernel version required is based on the oldest long term stable kernel available
+    The kernel version required is based on the oldest long-term stable kernel available
     at kernel.org.
     Compatibility for recent distribution kernels will be kept, notably RHEL/CentOS 7.
 
-    The kernel version in use can be checked using the command::
+    The kernel version in use can be checked by using the command::
 
        uname -r
 
@@ -35,10 +35,10 @@ DPDK
 ----
 **Required:**
 
-X86 plateform:
+X86 platform:
 
     DPDK Version `DPDK 21.08.0 <http://fast.dpdk.org/rel/dpdk-21.08.tar.xz>`_
 
-LXP LS1046A plateform:
+LXP LS1046A platform:
 
     DPDK Version in `LSDK 21.08 <https://www.nxp.com/design/software/embedded-software/linux-software-and-development-tools/layerscape-software-development-kit-v21-08:LAYERSCAPE-SDK>`_

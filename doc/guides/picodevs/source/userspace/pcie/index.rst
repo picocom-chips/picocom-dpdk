@@ -1,7 +1,7 @@
 .. _PCIe_driver_info:
 
-PCIe driver
-###########
+PC802 PCIe driver
+#################
 
 .. toctree::
    :maxdepth: 5

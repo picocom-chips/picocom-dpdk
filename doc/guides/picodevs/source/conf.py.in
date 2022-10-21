@@ -18,12 +18,12 @@
 # -- Project information -----------------------------------------------------
 
 project = 'PCOMware_NPU_Driver_User_Guides'
-copyright = '2021, Picocom'
+copyright = '2022, Picocom'
 author = 'Picocom'
 
 # The full version, including alpha/beta/rc tags
 release = '1'
-version = 'v1.0'
+version = 'v1.1'
 
 # -- General configuration ---------------------------------------------------
 
@@ -113,6 +113,8 @@ html_context = {
 latex_logo = '@CMAKE_SOURCE_DIR@/_static/images/picocom.png'
 
 latex_elements = {
+    'classoptions': ',openany,oneside',
+    'babel' : '\\usepackage[english]{babel}', 
     'preamble': r'''
 \usepackage[sfdefault]{roboto}
 \usepackage{xcolor}

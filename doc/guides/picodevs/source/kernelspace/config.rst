@@ -1,38 +1,38 @@
 .. _config_board:
 
-Configure Board
-===============
+Configuring the Board
+=====================
 
-Configure MAC address for ethernet in uboot
+Configuring MAC address for Ethernet in uboot
 -------------------------------------------
 
-Press any key in u-boot stage to enter u-boot shell, then run the following command line::
+Press any key in u-boot stage to enter the u-boot shell, and then run the following command line::
 
     setenv ethaddr 00:04:9F:03:05:E4
     saveenv
 
-Configure static IP for the board
----------------------------------
+Configuring static IP address for the board
+---------------------------------------------
 
-In ubuntu shell after the board booted to Ubuntu::
+In the ubuntu shell after the board is booted to Ubuntu, run the following command::
 
     ifconfig fm1-mac5 192.168.1.90/24
     
-In u-boot shell::
+In the u-boot shell, run the following commands::
 
     setenv ipaddr 192.168.1.90
     setenv netmask 255.255.255.0
     saveenv
 
 
-Configure the board to get IP from DHCP server
-----------------------------------------------
+Configuring the board to get IP address from DHCP server
+----------------------------------------------------------
 
-In ubuntu shell after the board booted to Ubuntu::
+In the ubuntu shell after the board is booted to Ubuntu, run the following command::
   
     dhclient -v fm1-mac5
 
-In u-boot shell::
+In the u-boot shell, run the following command::
 
     dhcp
 
