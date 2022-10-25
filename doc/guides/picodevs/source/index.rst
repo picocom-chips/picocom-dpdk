@@ -9,3 +9,4 @@ API Reference
     gettingstart
     introduction
     userspace/index
+    userspace/releases/index
