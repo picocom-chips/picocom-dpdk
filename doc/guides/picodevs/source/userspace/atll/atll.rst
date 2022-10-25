@@ -15,12 +15,3 @@ Data channel
 .. doxygenfunction:: pcxxDataAlloc
 .. doxygenfunction:: pcxxDataSend
 .. doxygenfunction:: pcxxDataRecv
-
-OAM channel
------------
-
-.. doxygenfunction:: pcxxOamOpen
-.. doxygenfunction:: pcxxOamClose
-.. doxygenfunction:: pcxxOamAlloc
-.. doxygenfunction:: pcxxOamSend
-.. doxygenfunction:: pcxxOamRecv
