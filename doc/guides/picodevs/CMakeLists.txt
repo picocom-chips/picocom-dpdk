@@ -14,7 +14,7 @@ set(PICO_DOCBUILD TRUE)
 
 project(picoos-doc LANGUAGES)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(DOXYGEN_SKIP_DOT True)
 find_package(Doxygen REQUIRED)
@@ -31,7 +31,7 @@ if(${LATEXMK} STREQUAL LATEXMK-NOTFOUND)
   message(WARNING "The 'latexmk' command was not found. Targets to build PDF will not be available.")
 endif()
 
-set(SOURCE_REPO ${CMAKE_SOURCE_DIR}/..)
+set(SOURCE_REPO ${CMAKE_SOURCE_DIR}/../../../)
 set(DOXYFILE_IN ${CMAKE_CURRENT_LIST_DIR}/picoos.doxyfile.in)
 set(DOXYFILE_OUT ${CMAKE_CURRENT_BINARY_DIR}/picoos.doxyfile)
 set(DOXY_OUT ${CMAKE_CURRENT_BINARY_DIR}/doxygen)
