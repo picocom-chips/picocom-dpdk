@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define  ENABLE_CHECK_PC802_UL_TIMING   1
+
 #define  DBLOG(format, ...) \
     printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
 

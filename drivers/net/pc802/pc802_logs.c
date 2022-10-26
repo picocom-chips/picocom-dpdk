@@ -192,3 +192,108 @@ void pc802_init_log(void) {
 		pc802_log_initialized = 1;
 	}
 }
+
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+static Stat_t* gpStats;
+static int gNumOfStats;
+
+int STAT_InitPool(uint32_t num_of_stat)
+{
+    gpStats = rte_zmalloc(NULL, num_of_stat * sizeof(Stat_t), RTE_CACHE_LINE_SIZE);
+    assert(gpStats != NULL);
+    gNumOfStats = num_of_stat;
+
+    return 0;
+}
+
+int STAT_Reset(int stat_no)
+{
+    Stat_t* p = gpStats;
+    if ((0 <= stat_no) && (stat_no < gNumOfStats)) {
+        p += stat_no;
+        p->sum = 0;
+        p->sum2 = 0;
+        p->max = 0;
+        p->min = -1;
+        p->n = p->N;
+        return 0;
+    }
+    return -1;
+}
+
+int STAT_Alloc(uint32_t max_sample_num, const char *name)
+{
+    Stat_t* p = gpStats;
+    int k;
+    if (p == NULL)
+        return -1;
+    for (k = 0; k < gNumOfStats; k++, p++) {
+        if (p->isUsed == 0) {
+            p->N = max_sample_num;
+            p->n = max_sample_num;
+            p->sum = 0;
+            p->sum2 = 0;
+            p->max = 0;
+            p->min = -1;
+            p->isUsed = 1;
+            snprintf(p->name, sizeof(p->name), "%s", name);
+            p->name[15] = 0;
+            return k;
+        }
+    }
+    return -2;
+}
+
+int STAT_Free(int stat_no)
+{
+    Stat_t* p = gpStats;
+    if ((0 <= stat_no) && (stat_no < gNumOfStats)) {
+        memset(p + stat_no, 0, sizeof(Stat_t));
+        return 0;
+    }
+    return -1;
+}
+
+int STAT_Sample(int stat_no, uint32_t sample)
+{
+    Stat_t* p = gpStats + stat_no;
+    if (p->n == 0)
+        return -1;
+    p->max = (sample > p->max) ? sample : p->max;
+    p->min = (sample < p->min) ? sample : p->min;
+    p->sum += sample;
+    p->sum2 += (uint64_t)sample * sample;
+    p->n--;
+    if (p->n == 0) {
+        p->average = p->sum / p->N;
+        p->std_dev = (uint32_t)sqrtf((float)(p->sum2) / p->N - p->average * p->average);
+    }
+    return p->n;
+}
+
+int STAT_CheckResult(int stat_no)
+{
+    Stat_t* p;
+    if ((0 <= stat_no) && (stat_no < gNumOfStats)) {
+        p = gpStats + stat_no;
+        return p->n;
+    }
+    return -1;
+}
+
+int STAT_GetResult(int stat_no, StatResult_t* pResult)
+{
+    Stat_t* p;
+    if ((0 <= stat_no) && (stat_no < gNumOfStats)) {
+        p = gpStats + stat_no;
+        if (p->n > 0)
+            return -1;
+        pResult->average = p->average;
+        pResult->max = p->max;
+        pResult->min = p->min;
+        pResult->std_dev = p->std_dev;
+        return 0;
+    }
+    return -2;
+}
+#endif

@@ -40,8 +40,38 @@ static int openCtrlState = 0;
 static int openOamState = 0;
 static int openDataState = 0;
 
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+#define RTE_RDTSC(a) do { a = rte_rdtsc(); } while(0)
+static uint32_t cycles_of_a_slot;
+static const char *stat_names[NUM_STATS] =
+    {"Ctrl_Poll", "Ctrl_Recv", "Ctrl_Proc", "Data_Proc", "Func_Proc",
+    "CTRL_BURST_GOT", "CTRL_BURST_NULL", "DATA_BURST_GOT", "DATA_BURST_NULL", "Ctrl_Data"};
+static uint32_t max_sample_nums[NUM_STATS] =
+    {200000000, 10000, 10000, 10000, 10000, 10000, 100000000, 10000, 100000000, 10000};
+static int stat_nos[NUM_STATS];
+static uint32_t stat_cnts[NUM_STATS];
+static uint64_t stat_t[NUM_STATS];
+#else
+#define RTE_RDTSC(a)
+#endif
+
 int pcxxCtrlOpen(const pcxxInfo_s* info)
 {
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+    uint64_t hz = rte_get_timer_hz();
+    DBLOG("PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
+    DBLOG("NPU CPU Hz = %lu\n", hz);
+
+    cycles_of_a_slot = hz / 2000;
+    STAT_InitPool(NUM_STATS);
+    uint32_t k;
+    for (k = 0; k < NUM_STATS; k++) {
+         stat_nos[k] = STAT_Alloc(max_sample_nums[k], stat_names[k]);
+         stat_cnts[k] = 0;
+         stat_t[k] = 0;
+    }
+#endif
+
     if (openCtrlState != 0) {
         printf("open Ctrl State = %d \n", openCtrlState);
         return -1;
@@ -213,6 +243,68 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen)
     return 0;
 }
 
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+static void stat_and_check(uint32_t stat_no)
+{
+    StatResult_t stat_result;
+    uint64_t tins;
+    uint64_t tdiff_64;
+    uint32_t tdiff = 0;
+
+    tins = rte_rdtsc();
+    stat_cnts[stat_no]++;
+    if (stat_cnts[stat_no] >= 2) {
+        tdiff_64 = tins - stat_t[stat_no];
+        if (tdiff_64 > (uint64_t)0xFFFFFFFF) {
+            DBLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
+            tdiff = 0xFFFFFFFF;
+        } else {
+            tdiff = (uint32_t)tdiff_64;
+        }
+    }
+    stat_t[stat_no] = tins;
+    if (stat_cnts[stat_no] <= 3)
+        return;
+    if (tdiff > (cycles_of_a_slot * 5/4)) {
+        DBLOG("ERROR: %s[%u] tdiff = %u > 1.25 slot\n", stat_names[stat_no], stat_cnts[stat_no]-1, tdiff);
+    }
+    if (0 == STAT_Sample(stat_nos[stat_no], tdiff)) {
+        STAT_GetResult(stat_nos[stat_no], &stat_result);
+        STAT_Reset(stat_nos[stat_no]);
+        DBLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
+            stat_result.max, stat_result.min, stat_result.average, stat_result.std_dev);
+    }
+}
+
+void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
+{
+    StatResult_t stat_result;
+    uint32_t tdiff;
+
+    if (tdiff_64 > (uint64_t)0xFFFFFFFF) {
+        DBLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
+        tdiff = 0xFFFFFFFF;
+    } else {
+        tdiff = (uint32_t)tdiff_64;
+    }
+
+    stat_cnts[stat_no]++;
+    if (tdiff > (cycles_of_a_slot * 9/10)) {
+        DBLOG("ERROR: %s[%u] cycles = %u > 0.9 slot\n", stat_names[stat_no],
+            stat_cnts[stat_no]-1, tdiff);
+    }
+    if (0 == STAT_Sample(stat_nos[stat_no], tdiff)) {
+        STAT_GetResult(stat_nos[stat_no], &stat_result);
+        STAT_Reset(stat_nos[stat_no]);
+        DBLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
+            stat_result.max, stat_result.min, stat_result.average, stat_result.std_dev);
+    }
+}
+#else
+#define stat_and_check(a)
+#define check_proc_time(a, b)
+#endif
+
 int pcxxCtrlRecv(void)
 {
     PC802_Mem_Block_t *mblk_ctrl;
@@ -222,26 +314,60 @@ int pcxxCtrlRecv(void)
     uint32_t offset;
     int ret;
     static uint32_t ctrlCnt = 0;
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+    uint64_t tstart, tend;
+    uint64_t tstart0, tend0;
+    uint64_t tstart1, tend1;
+    uint64_t t_rx_data;
+    uint64_t tdiff_64;
+
+    stat_and_check(NO_CTRL_POLL);
+    tstart0 = RTE_RDTSC();
+#endif
 
     if (NULL == rx_ctrl_buf) {
         num_rx = pc802_rx_mblk_burst(0, QID_CTRL, &mblk_ctrl, 1);
-        if (num_rx)
+        if (num_rx) {
             rx_ctrl_buf = (char *)&mblk_ctrl[1];
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+            stat_and_check(NO_CTRL_RECV);
+            if (1 == mblk_ctrl->pkt_type) {
+                RTE_RDTSC(stat_t[NO_CTRL_DATA]);
+            }
+#endif
+        }
     }
     if (NULL == rx_ctrl_buf)
         return -1;
     mblk_ctrl = (PC802_Mem_Block_t *)(rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
     if (1 == mblk_ctrl->pkt_type) {
         num_rx = pc802_rx_mblk_burst(0, QID_DATA, &mblk_data, 1);
-        if (0 == num_rx)
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+        RTE_RDTSC(t_rx_data);
+        tdiff_64 = t_rx_data - stat_t[NO_CTRL_DATA];
+#endif
+        if (0 == num_rx) {
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+            if (tdiff_64 > cycles_of_a_slot/2) {
+                DBLOG("ERROR: No Data, Interval of ctrl and data = %lu > 1/2 slot\n", tdiff_64);
+            }
+#endif
             return -1;
+        }
         rx_data_buf = (char *)&mblk_data[1];
+        check_proc_time(NO_CTRL_DATA, tdiff_64);
     }
 
     if (rx_data_buf) {
         mblk_data = (PC802_Mem_Block_t *)(rx_data_buf - sizeof(PC802_Mem_Block_t));
         if (NULL != pccxxReadHandle[PCXX_DATA]) {
+            RTE_RDTSC(tstart1);
             pccxxReadHandle[PCXX_DATA](rx_data_buf, mblk_data->pkt_length);
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+            RTE_RDTSC(tend1);
+            tdiff_64 = tend1 - tstart1;
+            check_proc_time(NO_DATA_PROC, tdiff_64);
+#endif
         }
     }
     uint32_t _len = mblk_ctrl->pkt_length;
@@ -250,6 +376,7 @@ int pcxxCtrlRecv(void)
     }
     offset = 0;
     uint32_t subCnt = 0;
+    RTE_RDTSC(tstart);
     while (_len > 0) {
         if (NULL == pccxxReadHandle[PCXX_CTRL])
             break;
@@ -266,6 +393,11 @@ int pcxxCtrlRecv(void)
             printf("Number of Sub Ctrl msgs[%2u] = %u > 5\n", ctrlCnt, subCnt);
         }
     }
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+    RTE_RDTSC(tend);
+    tdiff_64 = tend - tstart;
+    check_proc_time(NO_CTRL_PROC, tdiff_64);
+#endif
     ctrlCnt++;
 
     RTE_ASSERT(0 == _len);
@@ -276,6 +408,12 @@ int pcxxCtrlRecv(void)
         pc802_free_mem_block(mblk_data);
         rx_data_buf = NULL;
     }
+
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+    RTE_RDTSC(tend0);
+    tdiff_64 = tend0 - tstart0;
+    check_proc_time(NO_FUNC_PROC, tdiff_64);
+#endif
 
     return 0;
 }

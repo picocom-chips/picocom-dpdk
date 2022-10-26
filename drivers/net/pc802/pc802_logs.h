@@ -65,4 +65,50 @@ void pc802_log_flush(void);
 /* log init function shared by e1000 and igb drivers */
 void pc802_init_log(void);
 
+struct stStat {
+    uint64_t sum; // accumulated sum = s0 + s1 + s2 + ......
+    uint64_t sum2; // accumulated square sum = s0*s0 + s1*s1 + s2*s2 + ......
+    uint32_t max;
+    uint32_t min;
+    uint32_t average;
+    uint32_t std_dev; //starndard deviation
+    uint32_t N; // total number of samples for statistics output
+    uint32_t n; // number of samples to be collect before output, its initial value is N, and then decrease to 0
+    uint8_t isUsed;
+    char name[16];
+} __attribute__((__aligned__(64)));
+
+typedef struct stStat Stat_t;
+
+typedef struct {
+    uint32_t max;
+    uint32_t min;
+    uint32_t average;
+    uint32_t std_dev; //starndard deviation
+} StatResult_t;
+
+int STAT_InitPool(uint32_t num_of_stat);
+int STAT_Reset(int stat_no);
+int STAT_Alloc(uint32_t max_sample_num, const char *name);
+int STAT_Free(int stat_no);
+int STAT_Sample(int stat_no, uint32_t sample);
+int STAT_CheckResult(int stat_no);
+int STAT_GetResult(int stat_no, StatResult_t* pResult);
+
+enum STAT_No_e {
+    NO_CTRL_POLL,
+    NO_CTRL_RECV,
+    NO_CTRL_PROC,
+    NO_DATA_PROC,
+    NO_FUNC_PROC,
+    NO_CTRL_BURST_GOT,
+    NO_CTRL_BURST_NULL,
+    NO_DATA_BURST_GOT,
+    NO_DATA_BURST_NULL,
+    NO_CTRL_DATA,
+    NUM_STATS
+};
+
+void check_proc_time(uint32_t stat_no, uint64_t tdiff_64);
+
 #endif /* _PC802_LOGS_H_ */
