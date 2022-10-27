@@ -573,6 +573,14 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rte_wmb();
     *txq->trccnt_reg_addr = tx_id;
 
+#ifdef ENABLE_CHECK_PC802_DL_TIMING
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        stat_and_check(NO_DL_CTRL_SEND);
+    } else if (PC802_TRAFFIC_5G_EMBB_DATA == queue_id) {
+        stat_and_check(NO_DL_DATA_SEND);
+    }
+#endif
+
     return nb_tx;
 }
 

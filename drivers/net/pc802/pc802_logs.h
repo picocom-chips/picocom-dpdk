@@ -75,7 +75,7 @@ struct stStat {
     uint32_t N; // total number of samples for statistics output
     uint32_t n; // number of samples to be collect before output, its initial value is N, and then decrease to 0
     uint8_t isUsed;
-    char name[16];
+    char name[32];
 } __attribute__((__aligned__(64)));
 
 typedef struct stStat Stat_t;
@@ -106,9 +106,12 @@ enum STAT_No_e {
     NO_DATA_BURST_GOT,
     NO_DATA_BURST_NULL,
     NO_CTRL_DATA,
+    NO_DL_CTRL_SEND,
+    NO_DL_DATA_SEND,
     NUM_STATS
 };
 
+void stat_and_check(uint32_t stat_no);
 void check_proc_time(uint32_t stat_no, uint64_t tdiff_64);
 
 #endif /* _PC802_LOGS_H_ */

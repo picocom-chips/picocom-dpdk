@@ -1,7 +1,9 @@
 #include <stdint.h>
 
 #include <rte_debug.h>
+#include <rte_cycles.h>
 
+#include "pc802_logs.h"
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
 #include "pcxx_ipc.h"
@@ -44,10 +46,11 @@ static int openDataState = 0;
 #define RTE_RDTSC(a) do { a = rte_rdtsc(); } while(0)
 static uint32_t cycles_of_a_slot;
 static const char *stat_names[NUM_STATS] =
-    {"Ctrl_Poll", "Ctrl_Recv", "Ctrl_Proc", "Data_Proc", "Func_Proc",
-    "CTRL_BURST_GOT", "CTRL_BURST_NULL", "DATA_BURST_GOT", "DATA_BURST_NULL", "Ctrl_Data"};
+    {"UL_Ctrl_Poll", "UL_Ctrl_Rx", "UL_Ctrl_Proc", "UL_Data_Proc", "UL_pcxxCtrlRecv_Proc",
+    "UL_Ctrl_Burst_Got", "UL_Ctrl_Burst_Null", "UL_Data_Burst_Got", "UL_Data_Burst_Null", "UL_Ctrl_Data_Intv",
+    "DL_Ctrl_Tx", "DL_Data_Tx"};
 static uint32_t max_sample_nums[NUM_STATS] =
-    {200000000, 10000, 10000, 10000, 10000, 10000, 100000000, 10000, 100000000, 10000};
+    {200000000, 10000, 10000, 10000, 10000, 10000, 100000000, 10000, 100000000, 10000, 10000, 10000};
 static int stat_nos[NUM_STATS];
 static uint32_t stat_cnts[NUM_STATS];
 static uint64_t stat_t[NUM_STATS];
@@ -243,8 +246,8 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen)
     return 0;
 }
 
-#ifdef ENABLE_CHECK_PC802_UL_TIMING
-static void stat_and_check(uint32_t stat_no)
+#ifdef ENABLE_CHECK_PC802_TIMING
+void stat_and_check(uint32_t stat_no)
 {
     StatResult_t stat_result;
     uint64_t tins;
@@ -253,7 +256,7 @@ static void stat_and_check(uint32_t stat_no)
 
     tins = rte_rdtsc();
     stat_cnts[stat_no]++;
-    if (stat_cnts[stat_no] >= 2) {
+    if (stat_cnts[stat_no] > 3) { // ignore the first 3 messages
         tdiff_64 = tins - stat_t[stat_no];
         if (tdiff_64 > (uint64_t)0xFFFFFFFF) {
             DBLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
@@ -322,7 +325,7 @@ int pcxxCtrlRecv(void)
     uint64_t tdiff_64;
 
     stat_and_check(NO_CTRL_POLL);
-    tstart0 = RTE_RDTSC();
+    RTE_RDTSC(tstart0);
 #endif
 
     if (NULL == rx_ctrl_buf) {

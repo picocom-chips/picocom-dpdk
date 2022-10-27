@@ -5,8 +5,11 @@
 #include <termios.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <assert.h>
+#include <math.h>
 #include <syslog.h>
 #include <rte_version.h>
+#include <rte_malloc.h>
 #define __RTE_VERSION RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR, RTE_VER_RELEASE)
 #if __RTE_VERSION >= RTE_VERSION_NUM(20, 11, 0, 0)
 #include <eal_log.h>
@@ -193,7 +196,7 @@ void pc802_init_log(void) {
 	}
 }
 
-#ifdef ENABLE_CHECK_PC802_UL_TIMING
+#ifdef ENABLE_CHECK_PC802_TIMING
 static Stat_t* gpStats;
 static int gNumOfStats;
 
@@ -237,7 +240,7 @@ int STAT_Alloc(uint32_t max_sample_num, const char *name)
             p->min = -1;
             p->isUsed = 1;
             snprintf(p->name, sizeof(p->name), "%s", name);
-            p->name[15] = 0;
+            p->name[sizeof(p->name) - 1] = 0;
             return k;
         }
     }
