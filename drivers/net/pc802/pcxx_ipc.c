@@ -50,7 +50,7 @@ static const char *stat_names[NUM_STATS] =
     "UL_Ctrl_Burst_Got", "UL_Ctrl_Burst_Null", "UL_Data_Burst_Got", "UL_Data_Burst_Null", "UL_Ctrl_Data_Intv",
     "DL_Ctrl_Tx", "DL_Data_Tx"};
 static uint32_t max_sample_nums[NUM_STATS] =
-    {200000000, 10000, 10000, 10000, 10000, 10000, 100000000, 10000, 100000000, 10000, 10000, 10000};
+    {200000000, 40000, 40000, 40000, 40000, 40000, 100000000, 40000, 100000000, 40000, 40000, 40000};
 static int stat_nos[NUM_STATS];
 static uint32_t stat_cnts[NUM_STATS];
 static uint64_t stat_t[NUM_STATS];

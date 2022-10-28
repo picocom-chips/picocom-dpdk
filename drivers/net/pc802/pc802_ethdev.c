@@ -422,7 +422,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
-#ifdef ENABLE_CHECK_PC802_UL_TIMING
+#if 0
     uint64_t tstart, tend, tdiff;
     tstart = rte_rdtsc();
 #endif
@@ -498,7 +498,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
     rxq->nb_rx_hold = nb_hold;
 
-#ifdef ENABLE_CHECK_PC802_UL_TIMING
+#if 0
     tend = rte_rdtsc();
     tdiff = tend - tstart;
     uint32_t stat_no = 0xFF;
@@ -576,8 +576,6 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
 #ifdef ENABLE_CHECK_PC802_DL_TIMING
     if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
         stat_and_check(NO_DL_CTRL_SEND);
-    } else if (PC802_TRAFFIC_5G_EMBB_DATA == queue_id) {
-        stat_and_check(NO_DL_DATA_SEND);
     }
 #endif
 
