@@ -1,4 +1,4 @@
-.. _atll_api:
+.. _oam_api:
 
 OAM lib interfaces
 ###############
