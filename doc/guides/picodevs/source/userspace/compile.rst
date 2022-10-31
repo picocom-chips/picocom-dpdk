@@ -13,7 +13,7 @@ The source code can be cloned as follows:
 
 build igb_uio
 
-    .. code-block:: console
+.. code-block:: console
 
        cd path/to/git/repo/dpdk-kmods/linux/igb_uio
        make
@@ -28,41 +28,38 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
 
 #. X86 Platform:
 
-   .. code-block:: console
+.. code-block:: console
 
         cd ${your_DPDK_PATH}
-        patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
-        meson build
-        ninja -C build
-        cd build
+        patch -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
+        meson build -Denable_multi_pc802=true
         #default path is /usr/local
-        ninja install
+        ninja -C build install
 
 #. ARM Platform:
 
-   .. code-block:: console
+.. code-block:: console
 
         cd ${your_flexbuild_lsdk2108_PATH}
         cd components/apps/networking/dpdk
         patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-flexbuild-lsdk2108.patch
         meson aarch64-build-gcc --cross-file config/arm/arm64_armv8_linux_gcc
-        cd aarch64-build-gcc
-        #cross compile libs output to "dpdk_arm_libs"
-        meson configure -Dprefix=~/dpdk_arm_libs
-        ninja
-        ninja install
+        meson configure -Dprefix=~/dpdk_arm_libs -Denable_multi_pc802=true aarch64-build-gcc
+        #cross compile libs output to "~/dpdk_arm_libs"
+        ninja -C aarch64-build-gcc install
 
 More information on how to compile the DPDK, see `DPDK Documentation <https://www.dpdk.org/>`_ .
 
 .. note:: If no source code, please contact `Picocom <info@picocom.com>`_ to get PC-002897-DC-A-PC802_UDriver_libs
+.. note:: The new version supports multiple PC802. If you don't need this function, you can compile without the "-Denable_multi_pc802=true" option, and the interface is the same as before.
 
 Compiling DPDK application using cmake with link static libraries
 -----------------------------------------------------------------
 
-Please refer to the CMakeLists.txt to compile the DPDK application through CMake. 
+Please refer to the CMakeLists.txt to compile the DPDK application through CMake.
 
 Example of CMakeLists.txt::
-   
+
    set (PCIE_DRIVER_LIBS
     -L/usr/local/lib/x86_64-linux-gnu
     -Wl,--as-needed
@@ -304,7 +301,7 @@ Check if PC802 is active
 ------------------------
 
 .. code-block:: console
-    
+
     cd ${your_DPDK_PATH}
     ./usertools/dpdk-devbind.py -s
 
@@ -312,7 +309,7 @@ Check if PC802 is active
 
     Network devices using kernel driver
     ===================================
-    ... 
+    ...
     Other Network devices
     =====================
     0000:01:00.0 'Device 0802' unused=vfio-pci
@@ -330,13 +327,13 @@ Optional driver ``01: 00.0`` appears::
     usertools/dpdk-devbind.py -b igb_uio 01:00.0
 
 .. code-block:: console
-    
+
     Network devices using DPDK-compatible driver
     ============================================
     0000:01:00.0 'Device 0802' drv=igb_uio unused=vfio-pci
     Network devices using kernel driver
     ===================================
-    ... 
+    ...
     No 'Crypto' devices detected
     ============================
     No 'Eventdev' devices detected
