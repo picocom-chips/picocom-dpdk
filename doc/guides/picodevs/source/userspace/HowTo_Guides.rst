@@ -12,8 +12,31 @@ Then the ret_eal_init( ) will probe these devices and allocate their port IDs.
 The port IDs are allocated by DPDK EAL. All PCIe devices are bound to DPDK driver and a port ID is allocated for each DPDK virtual device.
 For all DPDK bound PCIe Ethernet devices (including PC802), their port IDs are in the increasing order of their specific value computed by their PCIe address.
 The value = (domain << 24) | (bus << 16) | (device << 8 ) | function.  The larger this value is, the larger the port ID is.
+You can enter the index of the PC802 through the pc802_get_port_id interface to get the port ID.
 
 .. code-block:: c
+
+    int main(int argc, char** argv)
+    {
+        int diag;
+        int pc802_index = 0;
+
+        ...
+
+        diag = rte_eal_init(argc, argv);
+        if (diag < 0)
+            rte_panic("Cannot init EAL\n");
+
+        pcxx_oam_init();
+        for ( pc802_index=0; pc802_index<pcxxGetDevCount(); pc802_index++ )
+        {
+            port_init(pc802_index);
+        }
+
+        ...
+
+        return 0;
+    }
 
     static int port_init(uint16_t pc802_index){
         struct rte_mempool* mbuf_pool;
@@ -56,11 +79,12 @@ Create an infinite loop of task to poll the ctrl channels. Because data is an ac
 .. code-block:: c
 
     while (1) {
-        pcxxCtrlRecv();
+        pcxxCtrlRecv(pc802_index, cell_index);
     }
 
-Create an infinite loop of task to poll the oam channels
+To enable the OAM function, you need to call pcxx_oam_init for initialization. Then call OAM lib interfaces, Register the callback function to receive OAM messages and send OAM messages.
 
+.. note:: OAM messages are defined in document PC-003615-DC-1-NR_PHY_OAM_API_Specification, please contact `Picocom <info@picocom.com>`_.
 
 Data exchange process
 ---------------------

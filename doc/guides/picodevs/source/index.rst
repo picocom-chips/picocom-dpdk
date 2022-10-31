@@ -9,4 +9,5 @@ API Reference
     gettingstart
     introduction
     userspace/index
-    userspace/releases/index
+    kernelspace/index
+    releases/index
