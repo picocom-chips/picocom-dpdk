@@ -198,6 +198,16 @@ struct pc802_adapter {
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
 
+#define PC802_CORE_COUNT    (16+16+3)
+#define MB_COUNT_PERIOD     30
+#define MB_MAX_COUNT_STOP   (PC802_CORE_COUNT*3)
+#define MB_MAX_COUNT_PRINT  (10*MB_COUNT_PERIOD)
+#define MB_MAX_COUNT_OTHER  (1*MB_COUNT_PERIOD)
+
+static uint32_t mb_count_stop = 0;
+static uint32_t mb_count_print[PC802_CORE_COUNT] = {0};
+static uint32_t mb_count_other[PC802_CORE_COUNT] = {0};
+
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
 static int pc802_download_boot_image(uint16_t port);
 static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
@@ -2345,10 +2355,11 @@ static int pc802_tracer(void *data)
 
     for (core = 0; core < 32; core++) {
         epcnt = PC802_READ_REG(ext->TRACE_EPCNT[core].v);
-        while (rccnt[core] != epcnt) {
+        while ((rccnt[core] != epcnt) && (num<MB_MAX_COUNT_PRINT) ) {
             idx = rccnt[core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext->TRACE_DATA[core].d[idx]);
-            handle_trace_data(core, rccnt[core], trc_data);
+            if( 0xFFFFFFFF != trc_data )
+                handle_trace_data(core, rccnt[core], trc_data);
             rccnt[core]++;
             num++;
         }
@@ -2406,9 +2417,29 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     return;
 }
 
+static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
+{
+    uint32_t num_args = PC802_READ_REG(mb->num_args);
+    if (1 == num_args) {
+        DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
+    } else if (3 == num_args) {
+        const char *func_name = mb_get_string(mb->arguments[1], core);
+        DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
+            num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
+    } else {
+        DBLOG("EXIT(%u): core %u args:\n", num_args, core);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[0], mb->arguments[1],
+            mb->arguments[2], mb->arguments[3]);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb->arguments[4], mb->arguments[5],
+            mb->arguments[6], mb->arguments[7]);
+    }
+    return;
+}
+
 static int handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
     int num = 0;
+    int flag = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
     volatile uint32_t num_args;
@@ -2417,20 +2448,36 @@ static int handle_mailbox(magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
         if (MB_EMPTY != action ) {
             num++;
             if (MB_PRINTF == action) {
-                handle_mb_printf(&mb[n], core);
+                mb_count_print[core]++;
+                if (mb_count_print[core] < MB_MAX_COUNT_PRINT)
+                    handle_mb_printf(&mb[n], core);
+                else
+                    flag = 1;
+            } else if (MB_SIM_STOP == action) {
+                mb_count_stop++;
+                handle_mb_sim_stop(&mb[n], core);
+                if (mb_count_stop > MB_MAX_COUNT_STOP) {
+                    DBLOG("Exit process by pc802 %d stop(%d).\n", core, mb_count_stop);
+                    exit(1);
+                } else
+                    flag = 1;
             } else {
-                num_args = PC802_READ_REG(mb[n].num_args);
-                DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
-                    mb[n].arguments[2], mb[n].arguments[3]);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
-                    mb[n].arguments[6], mb[n].arguments[7]);
+                mb_count_other[core]++;
+                if (mb_count_other[core] < MB_MAX_COUNT_OTHER) {
+                    num_args = PC802_READ_REG(mb[n].num_args);
+                    DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
+                    DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
+                          mb[n].arguments[2], mb[n].arguments[3]);
+                    DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
+                          mb[n].arguments[6], mb[n].arguments[7]);
+                } else
+                    flag = 1;
             }
             rte_mb();
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
         }
-    } while (MB_EMPTY != action);
+    } while ((MB_EMPTY != action) && (!flag));
     *idx = n;
     return num;
 }
@@ -2482,6 +2529,8 @@ static int pc802_mailbox(void *data)
 static void * pc802_debug(void *data)
 {
     int num = 0;
+    uint64_t last = rte_rdtsc();
+    uint64_t period = MB_COUNT_PERIOD*rte_get_tsc_hz();
     struct pc802_adapter *adapter = (struct pc802_adapter *)data;
     struct timespec req;
     req.tv_sec = 0;
@@ -2489,6 +2538,13 @@ static void * pc802_debug(void *data)
 
     while(1)
     {
+        if (rte_rdtsc() - last > period) {
+            mb_count_stop = 0;
+            memset(mb_count_print, 0, sizeof(mb_count_print));
+            memset(mb_count_other, 0, sizeof(mb_count_other));
+            last = rte_rdtsc();
+        }
+
         num = 0;
         if (g_debug_flag&(1<<PC802_LOG_EVENT))
             num += pc802_tracer(adapter);
