@@ -86,8 +86,8 @@ int pcxxCtrlOpen(const pcxxInfo_s* info)
     pccxxReadHandle[PCXX_CTRL] = info->readHandle;
     pccxxWriteHandle[PCXX_CTRL] = info->writeHandle;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(0, QID_CTRL, 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(0, QID_CTRL, 256*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(0, QID_CTRL, 256*1024, 2048, 1024));
+    RTE_ASSERT(0 == pc802_create_rx_queue(0, QID_CTRL, 256*1024, 2048, 1024));
 
     openCtrlState = 1;
     return 0;
@@ -134,8 +134,8 @@ int pcxxDataOpen(const pcxxInfo_s* info)
     pccxxReadHandle[PCXX_DATA] = info->readHandle;
     pccxxWriteHandle[PCXX_DATA] = info->writeHandle;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(0, QID_DATA, 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(0, QID_DATA, 256*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(0, QID_DATA, 256*1024, 2048, 1024));
+    RTE_ASSERT(0 == pc802_create_rx_queue(0, QID_DATA, 256*1024, 2048, 1024));
 
     openDataState = 1;
     return 0;
