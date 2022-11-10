@@ -215,6 +215,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
+static void * pc802_vec(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1706,6 +1707,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("WARN: No PCIe based printf output !\n");
     }
     pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, adapter);
+    pc802_ctrl_thread_create( &tid, "PC802-vec", NULL, pc802_vec, adapter);
 
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
@@ -2539,7 +2541,6 @@ static void * pc802_debug(void *data)
     while(1)
     {
         if (rte_rdtsc() - last > period) {
-            mb_count_stop = 0;
             memset(mb_count_print, 0, sizeof(mb_count_print));
             memset(mb_count_other, 0, sizeof(mb_count_other));
             last = rte_rdtsc();
@@ -2550,11 +2551,28 @@ static void * pc802_debug(void *data)
             num += pc802_tracer(adapter);
         if (g_debug_flag&(1<<PC802_LOG_PRINT))
             num += pc802_mailbox(adapter);
+
+        if ( 0 == num ) {
+            pc802_log_flush();
+            nanosleep(&req, NULL);
+        }
+    }
+    return NULL;
+}
+
+static void * pc802_vec(void *data)
+{
+    int num = 0;
+    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 100*1000*1000;
+
+    while(1) {
         if (g_debug_flag&(1<<PC802_LOG_VEC))
             num += pc802_process_phy_test_vectors(adapter);
 
         if ( 0 == num ) {
-            pc802_log_flush();
             nanosleep(&req, NULL);
         }
     }
