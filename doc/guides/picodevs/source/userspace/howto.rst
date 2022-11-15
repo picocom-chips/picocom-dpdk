@@ -1,0 +1,127 @@
+HowTo Guides
+============
+
+This section describes how to use some features of PC802_UDriver.
+
+The features is integrated in the PC802_UDriver, and is supported by all NPU applications that are compiled with PC802_UDriver, such as dpdk-testpc802 in ${DPDK_PATH}app/test-PC802/.
+
+PC802 log function
+------------------
+
+PC802_UDriver supports PC802 log output for debugging purposes.
+
+This function default enable when PC802 is initialized, and save in syslog.
+
+example:
+
+.. code-block:: console
+
+    #Boot up dpdk-testpc802 enable log:
+    dpdk-testpc802
+
+Observe syslog:
+
+.. code-block:: console
+
+    tail -f /var/log/syslog
+    Apr 24 04:43:56 localhost dpdk-testpc802[904]: PFI 0 event[00000]: 0x4B3C2D1E(0x12CF0, 11550)
+    Apr 24 04:43:56 localhost dpdk-testpc802[904]: PFI 0 event[00001]: 0x881F8C97(0x2207E, 3223)
+    Apr 24 04:43:56 localhost dpdk-testpc802[904]: PFI 0 event[00002]: 0x0000018C(0x00000, 0396)
+    Apr 24 04:43:56 localhost dpdk-testpc802[904]: PFI 0 event[00003]: 0x00000190(0x00000, 0400)
+    Apr 24 04:43:56 localhost dpdk-testpc802[904]: PFI 0 event[00004]: 0x1E2D3C4B(0x078B4, 15435)
+    Apr 24 06:14:59 localhost dpdk-testpc802[857]: PFI 0 event[00000]: 0x4B3C2D1E(0x12CF0, 11550)
+    Apr 24 06:14:59 localhost dpdk-testpc802[857]: PFI 0 event[00001]: 0x881F8C97(0x2207E, 3223)
+    Apr 24 06:14:59 localhost dpdk-testpc802[857]: PFI 0 event[00002]: 0x0000018C(0x00000, 0396)
+    Apr 24 06:14:59 localhost dpdk-testpc802[857]: PFI 0 event[00003]: 0x00000190(0x00000, 0400)
+    Apr 24 06:14:59 localhost dpdk-testpc802[857]: PFI 0 event[00004]: 0x1E2D3C4B(0x078B4, 15435)
+    Apr 24 06:15:00 localhost dpdk-testpc802[857]: PFI 0 PRINTF: run_from_ilm : 58 : cid =  0
+
+
+You can disable by adding "--log-level=pc802.printf:1" to the EAL argument:
+
+.. code-block:: console
+
+    #Boot up dpdk-testpc802 disable log:
+    dpdk-testpc802 --log-level=pc802.printf:1
+
+
+Eanble KNI function
+-------------------
+
+PC802_UDriver supports PC802 ethernet traffic forward to virtual KNI port.
+
+When this feature is enabled, will create a KNI Linux virtual network interface for PC802.
+
+Packets sent to the KNI Linux interface will be received by the PC802_UDriver, and PC802_UDriver may forward packets to PC802 eCPRI interface, and forward between two.
+
+Using this function requires KNI kernel module be inserted.
+
+You can enable by adding "--vdev=net_kni0" to the EAL argument.
+
+example:
+
+.. code-block:: console
+
+    #build with kmods
+    meson -Denable_kmods=true build
+    ninja -C build install
+    #insert rte_kni.ko
+    insmod /lib/modules/$(uname -r)/extra/dpdk/rte_kni.ko carrier=on
+    #Boot up dpdk-testpc802 forward PC802 ethernet traffic to kni0 virtual port:
+    dpdk-testpc802 --vdev=net_kni0
+
+
+Observe Linux interfaces:
+
+.. code-block:: console
+
+    ifconfig kni0
+    kni0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2034
+            inet 192.168.1.1  netmask 255.255.255.0  broadcast 192.168.1.255
+            inet6 fe80::14d9:d3ff:fe2b:d796  prefixlen 64  scopeid 0x20<link>
+            ether 16:d9:d3:2b:d7:96  txqueuelen 1000  (Ethernet)
+            RX packets 119  bytes 9938 (9.9 KB)
+            RX errors 0  dropped 0  overruns 0  frame 0
+            TX packets 119  bytes 9938 (9.9 KB)
+            TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+
+Capturing PC802 PCIe queue data
+---------------------------------
+
+PC802_UDriver supports capture data on PC802 PCIe queues using the dpdk-pdump tool.
+
+dpdk-pdump usage instructions refer to the `DPDK documentation <https://doc.dpdk.org/guides/tools/pdump.html>`_.
+
+Some parameter descriptions:
+
+* queue: queue mask, 2-7 bits are valid (queue 0 is ethernet, which can be captured directly through the network port), input * means all queues
+
+example:
+
+.. code-block:: console
+
+    #Boot up dpdk-testpc802 enable log:
+    dpdk-testpc802
+
+    #in another terminal
+    #Capturing PC802 PCIe queue data to file:
+    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=/tmp/pc802.pcap,tx-dev=/tmp/pc802.pcap,mbuf-size=32768'
+    #Capturing PC802 PCIe queue data to interface:
+    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=lo,tx-dev=lo,mbuf-size=32768'
+
+
+capture data description:
+
+* The capture data is saved as a pcap file;
+* The captured queue data is stored in the UDP payload;
+* Different queues are distinguished by destination ports, and queues 1-6 correspond to ports 6881-6886 respectively;
+* The uplink source port is 8021, and the downlink source port is 8022;
+* The option of the ip header contains the ip.opt.time_stamp field, which records the original sending and receiving time stamp of the message, and the unit is us.
+
+
+.. capture_data:
+
+.. figure:: img/capture_data.*
+
+   Captured PC802 PCIe queue data
