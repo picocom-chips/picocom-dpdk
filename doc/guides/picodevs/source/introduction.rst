@@ -8,11 +8,12 @@ Feature overview
 
 The PC802 driver has the following features:
 
-* Support 5G EMBB data exchange between PHY and MAC.
-* Support 4G LTE data exchange between PHY and MAC.
-* Support 5G URLLC data exchange between PHY and MAC.
-* Support NIC (Network interface card) function.
-* Support OAM (operation and maintenance) channel.
+* 2 * C/U split traffic channels
+* 1 * legacy(none C/U split) traffic channel
+* Ethernet channel
+* OAM channel
+* PC802 debugging function
+
 
 To support the above features, a different queue is designed for each feature. In this way, the application can use different tasks to operate queues, which makes parallel processing possible and convenient:
 
@@ -33,7 +34,7 @@ To support the above features, a different queue is designed for each feature. I
     |              +-------------------+----------------+----------------------------------------------+
     |              |  TRAFFIC CTRL 1   | 256k           | CELL 0 FAPI Control Message                  |
     |              +-------------------+----------------+----------------------------------------------+
-    |              |  TRAFFIC_5G_URLLC | 16k            | URLLC FAPI Control/Data Message              |
+    |              |  LEGACY           | 16k            | Legacy(none C/U split) cell Message          |
     |              +-------------------+----------------+----------------------------------------------+
     |              |  TRAFFIC DATA 2   | 256k           | CELL 1 FAPI PDSCH/PUSCH data                 |
     |              +-------------------+----------------+----------------------------------------------+
