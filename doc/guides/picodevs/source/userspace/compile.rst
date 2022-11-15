@@ -3,7 +3,7 @@
 Compiling the PC802 PCIe driver from source code
 ================================================
 
-You need insmod igb_uio.ko to bind PC802 to linux kernel:
+If you use igb_uio.ko to bind PC802 to linux kernel:
 
 The source code can be cloned as follows:
 
@@ -51,7 +51,7 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
 More information on how to compile the DPDK, see `DPDK Documentation <https://www.dpdk.org/>`_ .
 
 .. note:: If no source code, please contact `Picocom <info@picocom.com>`_ to get PC-002897-DC-A-PC802_UDriver_libs
-.. note:: The new version supports multiple PC802. If you don't need this function, you can compile without the "-Denable_multi_pc802=true" option, and the interface is the same as before.
+.. note:: The new version supports multiple PC802. If you don't need this function, you can compile without the "-Denable_multi_pc802=true" option, and the interface is the same as release 1.
 
 Compiling DPDK application using cmake with link static libraries
 -----------------------------------------------------------------

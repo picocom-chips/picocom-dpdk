@@ -18,3 +18,4 @@ The chapter describes how to compile and run a application based on PC802_UDrive
     system
     compile
     program_guide
+    howto

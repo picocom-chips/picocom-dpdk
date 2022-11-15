@@ -89,6 +89,31 @@ To enable the OAM function, you need to call pcxx_oam_init for initialization. T
 Data exchange process
 ---------------------
 
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
+   |
 .. _figure_mac_phy_data_exchange:
 
 .. figure:: img/mac_phy_data_exchange.*
