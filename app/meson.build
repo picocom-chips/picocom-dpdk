@@ -14,6 +14,7 @@ apps = [
         'test-fib',
         'test-flow-perf',
         'test-gpudev',
+        'test-pico-bha',
         'test-pipeline',
         'test-pmd',
         'test-regex',

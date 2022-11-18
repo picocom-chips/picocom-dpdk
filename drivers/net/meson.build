@@ -48,6 +48,7 @@ drivers = [
         'octeontx_ep',
         'pcap',
         'pfe',
+        'pico_bha',
         'qede',
         'ring',
         'sfc',
