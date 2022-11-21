@@ -2449,7 +2449,12 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
         }
     }
     *ps = 0;
-    assert(arg_idx == num_args);
+    if (arg_idx != num_args) {
+        DBLOG("core %u (arg_idx = %u num_args = %u): format = %s\n",
+            core, arg_idx, num_args, arg0_bak);
+        DBLOG("PC802 Core %u printf: %s\n", core, str);
+        assert(0);
+    }
     PC802_LOG( core, RTE_LOG_INFO, "%s", str );
     return;
 }
