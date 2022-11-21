@@ -17,6 +17,9 @@
 #define  DBLOG(format, ...) \
     printf("%s : %u : " format, __func__, __LINE__, ##__VA_ARGS__)
 
+#define NPU_SYSLOG(format, ...) \
+    syslog(RTE_LOG_INFO, "NPU: %s : %u " format, __func__, __LINE__, ##__VA_ARGS__)
+
 #define  DBLOG_INFO(format, ...)
 
 #define DIR_PCIE_DMA_DOWNLINK   1

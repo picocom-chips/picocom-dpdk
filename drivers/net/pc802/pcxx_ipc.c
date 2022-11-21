@@ -259,7 +259,7 @@ void stat_and_check(uint32_t stat_no)
     if (stat_cnts[stat_no] > 3) { // ignore the first 3 messages
         tdiff_64 = tins - stat_t[stat_no];
         if (tdiff_64 > (uint64_t)0xFFFFFFFF) {
-            DBLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
+            NPU_SYSLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
             tdiff = 0xFFFFFFFF;
         } else {
             tdiff = (uint32_t)tdiff_64;
@@ -269,12 +269,12 @@ void stat_and_check(uint32_t stat_no)
     if (stat_cnts[stat_no] <= 3)
         return;
     if (tdiff > (cycles_of_a_slot * 5/4)) {
-        DBLOG("ERROR: %s[%u] tdiff = %u > 1.25 slot\n", stat_names[stat_no], stat_cnts[stat_no]-1, tdiff);
+        NPU_SYSLOG("ERROR: %s[%u] tdiff = %u > 1.25 slot\n", stat_names[stat_no], stat_cnts[stat_no]-1, tdiff);
     }
     if (0 == STAT_Sample(stat_nos[stat_no], tdiff)) {
         STAT_GetResult(stat_nos[stat_no], &stat_result);
         STAT_Reset(stat_nos[stat_no]);
-        DBLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
+        NPU_SYSLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
             stat_result.max, stat_result.min, stat_result.average, stat_result.std_dev);
     }
 }
@@ -285,7 +285,7 @@ void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
     uint32_t tdiff;
 
     if (tdiff_64 > (uint64_t)0xFFFFFFFF) {
-        DBLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
+        NPU_SYSLOG("ERROR: %s Overtime = %lu = 0x%lx\n", stat_names[stat_no], tdiff_64, tdiff_64);
         tdiff = 0xFFFFFFFF;
     } else {
         tdiff = (uint32_t)tdiff_64;
@@ -293,13 +293,13 @@ void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
 
     stat_cnts[stat_no]++;
     if (tdiff > (cycles_of_a_slot * 9/10)) {
-        DBLOG("ERROR: %s[%u] cycles = %u > 0.9 slot\n", stat_names[stat_no],
+        NPU_SYSLOG("ERROR: %s[%u] cycles = %u > 0.9 slot\n", stat_names[stat_no],
             stat_cnts[stat_no]-1, tdiff);
     }
     if (0 == STAT_Sample(stat_nos[stat_no], tdiff)) {
         STAT_GetResult(stat_nos[stat_no], &stat_result);
         STAT_Reset(stat_nos[stat_no]);
-        DBLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
+        NPU_SYSLOG("Info: %s : Max = %u Min = %u Mean = %u Devi = %u\n", stat_names[stat_no],
             stat_result.max, stat_result.min, stat_result.average, stat_result.std_dev);
     }
 }
