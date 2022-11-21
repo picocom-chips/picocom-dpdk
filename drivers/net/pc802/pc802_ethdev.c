@@ -2415,6 +2415,7 @@ static void handle_mb_printf(magic_mailbox_t *mb, uint32_t core)
     char str[2048];
     char formatter[16];
     const char *arg0 = mb_get_string(mb->arguments[0], core);
+    const char *arg0_bak = arg0;
     char *ps = &str[0];
     uint32_t arg_idx = 1;
     const char *sub_str;
