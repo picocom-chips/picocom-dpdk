@@ -87,6 +87,7 @@ struct bha_tx_queue {
 };
 
 
+void bha_dev_clear_and_reset_queues(struct rte_eth_dev *dev);
 void bha_dev_free_queues(struct rte_eth_dev *dev);
 
 

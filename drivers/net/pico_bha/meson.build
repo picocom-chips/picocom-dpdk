@@ -10,10 +10,10 @@ endif
 runcmd_ret = run_command('sh', '-c', 'echo $BHA_MODEL_PATH', check: true)
 bha_model_path = runcmd_ret.stdout().strip()
 if bha_model_path == ''
-  message('########pc bha runcmd ret null and exit ########')
+  message('########pico bha runcmd ret null and exit ########')
   assert(false, 'NULL env variable $BHA_MODEL_PATH, please set it first')
 else
-  message('########pc bha env $BHA_MODEL_PATH: @0@ ########'.format(bha_model_path))
+  message('########pico bha env $BHA_MODEL_PATH: @0@ ########'.format(bha_model_path))
 endif
 
 #bha model headers include
@@ -27,25 +27,23 @@ includes += include_directories(bha_model_headers)
 
 #bha model static lib
 bha_model_lib_path = bha_model_path+'/target/release-lto/'
-message('########pc bha bha model find path: @0@ ########'.format(bha_model_lib_path))
+message('########pico bha bha model find path: @0@ ########'.format(bha_model_lib_path))
 bha_model_lib = cc.find_library('bha_model', dirs : [bha_model_lib_path], static: true, required: true)
-message('########pc bha bha model lib: @0@ ########'.format(bha_model_lib))
+message('########pico bha bha model lib: @0@ ########'.format(bha_model_lib))
 ext_deps += bha_model_lib
 
 #bha model pcaps
 bha_model_pcaps_in_path = bha_model_path+'/pcaps/'
 bha_model_pcaps_out_path = bha_model_path+'/pcaps/tmp/'
-pcaps_in_file = bha_model_pcaps_in_path+'ecpri_20_pkts.pcap'
-pcaps_out_file = bha_model_pcaps_out_path+'example.pcap'
-if run_command('[', '-e', pcaps_in_file, ']').returncode() == 0
-  message('######## bha model input pcaps files exists, continue ########')
+if run_command('[', '-d', bha_model_pcaps_in_path, ']').returncode() == 0
+  message('######## bha model pcaps files folder exists, continue ########')
 else
-  assert(false, 'bha model input pcaps files not exists, please check it first: @0@'.format(pcaps_in_file))
+  assert(false, 'bha model pcaps files folder not exists, please check it first: @0@'.format(bha_model_pcaps_in_path))
 endif
-message('########pc bha pcaps in file: @0@ ########'.format(pcaps_in_file))
-message('########pc bha pcaps out file: @0@ ########'.format(pcaps_out_file))
-dpdk_conf.set('BHA_DRV_PCAPS_IN', '"'+pcaps_in_file+'"')
-dpdk_conf.set('BHA_DRV_PCAPS_OUT', '"'+pcaps_out_file+'"')
+message('########pico bha pcaps in path: @0@ ########'.format(bha_model_pcaps_in_path))
+message('########pico bha pcaps out path: @0@ ########'.format(bha_model_pcaps_out_path))
+dpdk_conf.set('BHA_PCAPS_IN_PATH', '"'+bha_model_pcaps_in_path+'"')
+dpdk_conf.set('BHA_PCAPS_OUT_PATH', '"'+bha_model_pcaps_out_path+'"')
 
 #bha driver
 cflags += '-DRTE_NET_BHA_MODEL_EN'

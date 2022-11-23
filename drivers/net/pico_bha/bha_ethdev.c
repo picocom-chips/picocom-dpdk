@@ -191,10 +191,12 @@ eth_bha_stop(struct rte_eth_dev* dev)
 
     //stop adapter
 
+    //clear and reset queues
+    bha_dev_clear_and_reset_queues(dev);
+
     /* Clear stored conf */
 	dev->data->scattered_rx = 0;
 	dev->data->lro = 0;
-
     dev->data->dev_started = 0;
 
     return 0;
@@ -204,7 +206,15 @@ static int
 eth_bha_close(struct rte_eth_dev* dev)
 {
     BHA_LOG(DEBUG, "ethdev bha[%d] close", dev->data->port_id);
-    eth_bha_stop(dev);
+
+    if (rte_eal_process_type() != RTE_PROC_PRIMARY)
+        return 0;
+
+    if (dev->data->dev_started != 0)
+        eth_bha_stop(dev);
+
+    //mac_addrs point to adapter mac_addrs. Free it if independent allocated mem.
+    dev->data->mac_addrs = NULL;
     bha_dev_free_queues(dev);
 
     return 0;
@@ -239,21 +249,23 @@ rte_pmd_bha_probe(struct rte_vdev_device* vdev)
     name = rte_vdev_device_name(vdev);
     BHA_LOG(DEBUG, "Initializing pmd bha for %s", name);
 
+    //vdev set defaut socket id any, update to the real numa node
+    vdev->device.numa_node = rte_socket_id();
+    BHA_LOG(DEBUG, "vdev device numa node %d", vdev->device.numa_node);
     eth_dev = rte_eth_vdev_allocate(vdev, sizeof(*adapter));
     if (!eth_dev) {
         BHA_LOG(ERR, "bha fails to alloc device");
         return -ENOMEM;
     }
+    BHA_LOG(DEBUG, "ethdev bha name %s", eth_dev->data->name);
+    BHA_LOG(DEBUG, "ethdev bha rte_device name %s", vdev->device.name);
 
     //setup bha info
     data = eth_dev->data;
     adapter = eth_dev->data->dev_private;
     adapter->dev = eth_dev;
-
-    //vdev set defaut socket id any
-    data->numa_node = rte_socket_id();
+    //vdev set defaut socket id any, and same to vdev numa_node
     BHA_LOG(DEBUG, "bha ethdev numa node %d", data->numa_node);
-
     adapter->port_id = data->port_id;
 
     //setup default mac addrs
@@ -283,13 +295,13 @@ rte_pmd_bha_remove(struct rte_vdev_device* vdev)
     //struct bha_adapter *adapter;
     int ret;
 
+    BHA_LOG(DEBUG, "bha remove name %s", rte_vdev_device_name(vdev));
     /* find the ethdev entry */
     eth_dev = rte_eth_dev_allocated(rte_vdev_device_name(vdev));
     if (eth_dev == NULL)
         return -ENODEV;
 
-    //release bha alloced resources, maybe include simulator resources by kernel driver or uio
-    //dev = eth_dev->data->dev_private;
+    //adapter = eth_dev->data->dev_private;
 
     ret = rte_eth_dev_release_port(eth_dev);
     if (ret != 0)

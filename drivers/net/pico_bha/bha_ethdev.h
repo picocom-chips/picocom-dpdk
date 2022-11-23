@@ -24,14 +24,14 @@ int eth_bha_rx_queue_setup(struct rte_eth_dev* dev,
     uint16_t queue_idx,
     uint16_t nb_desc,
     unsigned int socket_id,
-    const struct rte_eth_rxconf* rx_conf __rte_unused,
+    const struct rte_eth_rxconf* rx_conf,
     struct rte_mempool* mp);
 
 int eth_bha_tx_queue_setup(struct rte_eth_dev* dev,
     uint16_t queue_idx,
     uint16_t nb_desc,
     unsigned int socket_id,
-    const struct rte_eth_txconf* tx_conf __rte_unused);
+    const struct rte_eth_txconf* tx_conf);
 
 
 void eth_bha_rx_queue_release(struct rte_eth_dev* dev, uint16_t qid);

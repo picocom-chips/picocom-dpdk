@@ -54,12 +54,13 @@
 
 #include <bha_model.h>
 #include <rte_pmd_bha.h>
+#include <test_bha.h>
 
-//log conf
+
+
+//global variable
 int testbha_logtype;
-
-#define TESTBHA_LOG(level, fmt, args...) \
-    rte_log(RTE_LOG_##level, testbha_logtype, "testbha: " fmt, ##args)
+uint16_t bha_portid = 0;
 
 static void
 signal_handler(int signum)
@@ -73,6 +74,57 @@ signal_handler(int signum)
     }
 }
 
+static int
+is_port_id_invalid(uint16_t port_id, bool warn_en)
+{
+    uint16_t ptid;
+
+    RTE_ETH_FOREACH_DEV(ptid)
+        if (port_id == ptid)
+            return 0;
+
+    if (warn_en)
+        fprintf(stderr, "Invalid port %d\n", port_id);
+
+    return 1;
+}
+
+void
+test_bha_ethdev_stop(void)
+{
+    uint16_t port_id;
+
+    RTE_ETH_FOREACH_DEV(port_id) {
+        if (is_port_id_invalid(port_id, true))
+            return;
+        printf("\nStopping port %d...\n", port_id);
+        fflush(stdout);
+        rte_eth_dev_stop(port_id);
+    }
+}
+
+void
+test_bha_ethdev_close(void)
+{
+    uint16_t port_id;
+
+    RTE_ETH_FOREACH_DEV(port_id) {
+        if (is_port_id_invalid(port_id, true))
+            return;
+        printf("\nShutting down port %d...\n", port_id);
+        fflush(stdout);
+        rte_eth_dev_close(port_id);
+    }
+}
+
+void
+test_bha_exit(void)
+{
+    test_bha_ethdev_stop();
+    test_bha_ethdev_close();
+}
+
+
 int main(int argc, char** argv)
 {
     int diag;
@@ -81,24 +133,6 @@ int main(int argc, char** argv)
     uint16_t nb_ports;
     uint16_t port_id;
     uint16_t ports_ids[RTE_MAX_ETHPORTS];
-    uint16_t bha_portid = 0;
-    struct rte_eth_dev_info dev_info;
-    int socket_id;
-    struct rte_eth_txconf tx_conf;
-    struct rte_eth_rxconf rxq_conf0, rxq_conf1;
-    struct filter_conf_s fconf0, fconf1;
-    struct rte_mempool* mbuf_pool;
-    struct rte_mempool* tx_mbuf_pool;
-    char mbufp_name[32] = { 0 };
-    struct rte_eth_conf dev_conf = {
-        .rxmode = {
-            .mtu = RTE_ETHER_MAX_LEN, //1518
-        },
-    };
-    uint16_t nb_rx_pkts = 0;
-    struct rte_mbuf *pkts_burst[64];
-    static uint32_t pkt_cnt = 0;
-
 
     testbha_logtype = rte_log_register("testbha");
     if (testbha_logtype < 0)
@@ -140,91 +174,13 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
+    test_bha_cmdline();
 
-    //bha model pcaps file mode
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev bha modle enable pcap file input mode\n", bha_portid);
-    bha_simulate_pcap(BHA_DRV_PCAPS_IN, BHA_DRV_PCAPS_OUT);
-
-
-    rte_eth_dev_info_get(bha_portid, &dev_info);
-    //vdev default eth_dev->device->numa_node = SOCKET_ID_ANY (-1), get current numa node id
-    socket_id = rte_eth_dev_socket_id(bha_portid);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev info numa node id %d, device name %s, driver name %s\n", bha_portid, socket_id, dev_info.device->name, dev_info.driver_name);
-    tx_conf = dev_info.default_txconf;
-
-    //nb_tx_q 1. nb_rx_q 2, the sample use one queue to recv specific eth type pkts, the other one queue recv others pkts
-    ret = rte_eth_dev_configure(bha_portid, 2, 1, &dev_conf);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev configure done. ret %d\n", bha_portid, ret);
-
-    //tx mbuf pool setup
-    sprintf(mbufp_name, "MBP_BHA%d_TXQ_%d", bha_portid, 0);
-    //mbuf nb 256, mbuf cache 128B, mbuf data size (2048+128)B
-    tx_mbuf_pool = rte_pktmbuf_pool_create(mbufp_name, 256,
-        128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
-    if (tx_mbuf_pool == NULL)
-        rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on %s Line %d\n", __func__, __LINE__);
-    //tx queue id 0, nb desc 32
-    ret = rte_eth_tx_queue_setup(bha_portid, 0, 32, socket_id, &tx_conf);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev tx queue setup done. ret %d\n", bha_portid, ret);
-
-    //rx queue 0 mbuf pool create. For specific ether type pkts
-    sprintf(mbufp_name, "MBP_BHA%d_RXQ_%d", bha_portid, 0);
-    //mbuf nb 256, mbuf cache 128B, mbuf data size (2048+128)B
-    mbuf_pool = rte_pktmbuf_pool_create(mbufp_name, 256,
-        128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
-    if (mbuf_pool == NULL)
-        rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on %s Line %d\n", __func__, __LINE__);
-    //conf rx queue, tmp use the reserved zone in struct for bha specific rx queue conf
-    //uint64_t reserved_64s[2];
-    //void *reserved_ptrs[2]; //tmp in use
-    rxq_conf0 = dev_info.default_rxconf;
-    fconf0.et_conf.filter_id = 0; //ether type filter id 0 to bonding rxq id
-    fconf0.et_conf.ether_type = 0xaefe; //ecpri pkts
-    fconf0.et_conf.congestion_action = CA_OPS_BLOCKING;
-    rxq_conf0.reserved_ptrs[0] = (void *)&fconf0;
-    //rx queue 0, nb desc 32
-    ret = rte_eth_rx_queue_setup(bha_portid, 0, 32, socket_id, &rxq_conf0, mbuf_pool);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev rx queue 0 setup done. ret %d\n", bha_portid, ret);
-
-    //rx queue 1 mbuf pool create. For other pkts recv which are not specific ether type pkts
-    sprintf(mbufp_name, "MBP_BHA%d_RXQ_%d", bha_portid, 1);
-    //mbuf nb 256, mbuf cache 128B, mbuf data size (2048+128)B
-    mbuf_pool = rte_pktmbuf_pool_create(mbufp_name, 256,
-        128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
-    if (mbuf_pool == NULL)
-        rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on %s Line %d\n", __func__, __LINE__);
-    rxq_conf1 = dev_info.default_rxconf;
-    fconf1.et_conf.filter_id = 4; //ether type filter id 4(default filter id) to bonding rxq id
-    fconf1.et_conf.ether_type = 0; //any pkts exclude ecpri pkts
-    fconf1.et_conf.congestion_action = CA_OPS_BLOCKING;
-    rxq_conf1.reserved_ptrs[0] = (void *)&fconf1;
-    //rx queue 1, nb desc 32
-    ret = rte_eth_rx_queue_setup(bha_portid, 1, 32, socket_id, &rxq_conf1, mbuf_pool);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev rx queue 1 setup done. ret %d\n", bha_portid, ret);
-
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev startup...\n", bha_portid);
-    ret = rte_eth_dev_start(bha_portid);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev startup done. ret %d\n", bha_portid, ret);
-
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst\n", bha_portid);
-    while (pkt_cnt < 20) {
-        nb_rx_pkts = rte_eth_rx_burst(bha_portid, 0, (pkts_burst + pkt_cnt), (20 - pkt_cnt));
-        if (nb_rx_pkts != 0) {
-            pkt_cnt += nb_rx_pkts;
-            TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst nb %d, total %d\n", bha_portid, nb_rx_pkts, pkt_cnt);
-        }
-    }
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
-    nb_rx_pkts = rte_eth_tx_burst(bha_portid, 0, pkts_burst, pkt_cnt);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst nb %d\n", bha_portid, nb_rx_pkts);
-
-
-    while (1) {
-        usleep(1000);
-    }
+    rte_eal_mp_wait_lcore();
+    ret = rte_eal_cleanup();
+    if (ret != 0)
+        rte_exit(EXIT_FAILURE,
+            "EAL cleanup failed: %s\n", strerror(-ret));
 
     return EXIT_SUCCESS;
 }

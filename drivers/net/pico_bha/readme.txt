@@ -23,5 +23,13 @@
     1) Configure HugePage
         On my testing server, I reserved one 1GB hugepage
     
-    2) For my running cmd
+    2) Example for running test case
         sudo ./build/app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha  
+        BHA>> pcap ecpri
+        BHA>> quit
+
+        If run other case, please repeat the upper command and processing.
+        Currently support test case:
+        # pcap ecpri
+        # pcap default
+        # pcap jumbo
