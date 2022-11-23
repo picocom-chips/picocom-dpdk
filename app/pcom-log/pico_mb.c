@@ -1,4 +1,6 @@
+#include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -7,10 +9,7 @@
 #include <string.h>
 #include <elf.h>
 
-#include <rte_malloc.h>
-
-#include "rte_pmd_pc802.h"
-#include "pc802_mailbox.h"
+#include "pico_mb.h"
 
 #define ELF_MAGIC_SIZE 4
 #define ELF_MAGIC      "\x7f""ELF"
@@ -71,16 +70,16 @@ static int mb_string_common(void)
     assert(fd > 0);
     struct stat statbuf;
     fstat(fd, &statbuf);
-    pc802_img = rte_zmalloc("PC802_STR_IMG", statbuf.st_size, RTE_CACHE_LINE_MIN_SIZE);
+    pc802_img = malloc(statbuf.st_size);
     assert(NULL != pc802_img);
-    DBLOG("PC802_STR_IMG: fd = %d Size = %lu\n", fd, statbuf.st_size);
+    printf("PC802_STR_IMG: fd = %d Size = %lu\n", fd, statbuf.st_size);
     assert(statbuf.st_size == read(fd, pc802_img, statbuf.st_size));
     close(fd);
     if (memcmp(ELF_MAGIC, pc802_img, ELF_MAGIC_SIZE)) {
-        DBLOG("pc802.img is format of NR_DU_Release !\n");
+        printf("pc802.img is format of NR_DU_Release !\n");
         return 0;
     } else {
-        DBLOG("pc802.img is format of develop !\n");
+        printf("pc802.img is format of develop !\n");
         return 1;
     }
 }
@@ -101,30 +100,30 @@ static int mb_string_init_N(void)
         addr = phdr[k].dst_addr;
         if (addr == 0x1A000000) {
             dsp_img[0] = pc802_img + phdr[k].offset;
-            DBLOG("dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
         } else if (addr == 0x1A800000) {
             dsp_img[1] = pc802_img + phdr[k].offset;
-            DBLOG("dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
         } else if (addr == 0x1B000000) {
             dsp_img[2] = pc802_img + phdr[k].offset;
-            DBLOG("dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
         } else if ((addr & 0xFF000000) == 0x03000000) { //PFI CIM+CDM
-            DBLOG("PFI CLM[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", pidx,
+            printf("PFI CLM[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", pidx,
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
             phdr_pfi[pidx++] = &phdr[k];
         } else if ((addr & 0xFF000000) == 0x07000000) { //eCPRI CIM+CDM
-            DBLOG("eCPRI CLM[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", eidx,
+            printf("eCPRI CLM[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", eidx,
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
             phdr_ecpri[eidx++] = &phdr[k];
         } else if (addr == 0x13800000) { //local memory
             n_local_mem = pc802_img + phdr[k].offset;
-            DBLOG("Andes Local Memory = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("Andes Local Memory = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
         } else {
-            DBLOG("Global Memroy[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", n_global,
+            printf("Global Memroy[%u] = %u @ 0x%08X -> 0x%08X # 0x%08X\n", n_global,
                 k, phdr[k].offset, phdr[k].dst_addr, phdr[k].file_size);
             phdr_global[n_global++] = &phdr[k];
         }
@@ -160,36 +159,36 @@ static int mb_string_init_d(void)
         addr = e_phdr[k].p_paddr;
         if (addr == 0x1A000000) {
             dsp_img[0] = pc802_img + e_phdr[k].p_offset;
-            DBLOG("dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if (addr == 0x1A200000) {
-            DBLOG("Discard dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("Discard dsp[0].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if (addr == 0x1A800000) {
             dsp_img[1] = pc802_img + e_phdr[k].p_offset;
-            DBLOG("dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if (addr == 0x1AA00000) {
-            DBLOG("Discard dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("Discard dsp[1].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if (addr == 0x1B000000) {
             dsp_img[2] = pc802_img + e_phdr[k].p_offset;
-            DBLOG("dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if (addr == 0x1B200000) {
-            DBLOG("Discard dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
+            printf("Discard dsp[2].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n",
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
         } else if ((addr & 0xFF000000) == 0x02000000) { //PFI CIM+CDM
-            DBLOG("PFI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_pfi,
+            printf("PFI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_pfi,
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
             e_phdr[k].p_paddr |= 0x03000000; // 0x02******-> 0x03******
             e_phdr_pfi[e_num_pfi++] = &e_phdr[k];
         } else if ((addr & 0xFF000000) == 0x03000000) { //PFI CIM+CDM
-            DBLOG("PFI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_pfi,
+            printf("PFI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_pfi,
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
             e_phdr_pfi[e_num_pfi++] = &e_phdr[k];
         } else if ((addr & 0xFF000000) == 0x05000000) { //eCPRI CIM+CDM
-            DBLOG("eCPRI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_ecpri, k,
+            printf("eCPRI CLM [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_ecpri, k,
                 e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
             e_phdr[k].p_paddr |= 0x07000000; // 0x05******-> 0x07******
             e_phdr_ecpri[e_num_ecpri++] = &e_phdr[k];
@@ -197,17 +196,17 @@ static int mb_string_init_d(void)
             uint32_t first_core = e_phdr[k].p_type & 0xFF;
             uint32_t last_core = (e_phdr[k].p_type >> 8) & 0xFF;
             if ((first_core < 16) && (last_core < 16)) {
-                DBLOG("PFI [%u : %u] Local[%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", first_core, last_core, e_num_pfi_local,
+                printf("PFI [%u : %u] Local[%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", first_core, last_core, e_num_pfi_local,
                     k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
                 e_phdr_pfi_local[e_num_pfi_local++] = &e_phdr[k];
             }
             if ((first_core >= 16) && (last_core >= 16)) {
-                DBLOG("eCPRI [%u : %u] Local [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", first_core, last_core, e_num_ecpri_local,
+                printf("eCPRI [%u : %u] Local [%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", first_core, last_core, e_num_ecpri_local,
                     k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
                 e_phdr_ecpri_local[e_num_ecpri_local++] = &e_phdr[k];
             }
         } else {
-            DBLOG("Golbal[%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_global,
+            printf("Golbal[%u].offset = %u @ 0x%08X -> 0x%08X # 0x%08X\n", e_num_global,
                 k, e_phdr[k].p_offset, e_phdr[k].p_paddr, e_phdr[k].p_filesz);
             e_phdr_global[e_num_global++] = &e_phdr[k];
         }
@@ -215,7 +214,7 @@ static int mb_string_init_d(void)
     return 0;
 }
 
-int mb_string_init(void)
+int pico_mb_init(void)
 {
     int re;
     if (0 == mb_string_common()) {
@@ -352,7 +351,7 @@ static const char * mb_get_string_d(uint32_t addr, uint32_t core)
     return unknown;
 }
 
-const char *mb_get_string(uint32_t addr, uint32_t core)
+const char *pico_mb_get(uint32_t addr, uint32_t core)
 {
     return (*get_mb_string)(addr, core);
 }

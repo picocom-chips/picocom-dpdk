@@ -5,15 +5,17 @@
 #ifndef _PC802_LOGS_H_
 #define _PC802_LOGS_H_
 
-#include <syslog.h>
 #include <rte_log.h>
 
 enum PC802_LOG_TYPE {
 	PC802_LOG_EVENT,
-	PC802_LOG_PRINT,
 	PC802_LOG_MAILBOX,
-	PC802_LOG_VEC
+	PC802_LOG_VEC,
+	PC802_LOG_PRINT,
+	PC802_LOG_HEAD = 255
 };
+
+#define PC802_LOG_PATH        "/var/tmp/pc802log"
 
 extern int pc802_logtype_init;
 #define PMD_INIT_LOG(level, fmt, args...) \
@@ -51,56 +53,25 @@ extern int pc802_logtype_driver;
 #define PMD_DRV_LOG(level, fmt, args...) \
 	PMD_DRV_LOG_RAW(level, fmt "\n", ## args)
 
-extern const char* pc802_core_name[];
-void pc802_log( uint32_t core, const char *format, ... );
-int  pc802_log_get_level( int type );
-void pc802_log_set_core( uint32_t core, bool flag);
-void pc802_log_change_core( uint32_t core );
-void pc802_log_flush(void);
-#define PC802_LOG( port, core, type, fmt, args...) \
-	do { \
-		syslog( type, "PC802_%d %s " fmt, port, pc802_core_name[core], ## args); \
-		pc802_log( core, "PC802_%d %s " fmt, port, pc802_core_name[core], ## args); \
-	}while (0)
-
 /* log init function shared by e1000 and igb drivers */
 void pc802_init_log(void);
-
-#define LOG_MP    "PC802_LOG"
-
-enum log_en_dis {
-	DISABLE = 0,
-	ENABLE = 1
-};
-
-struct pc802_log_request {
-	uint16_t ver;
-	uint16_t op;
-	struct rte_ring *ring;
-	struct rte_mempool *pool;
-};
-
-struct pc802_log_response {
-	uint16_t ver;
-	uint16_t res_op;
-	int32_t err_value;
-};
 
 struct pc802_log_blk {
 	uint16_t port;
 	uint16_t core;
-	uint32_t type;
+	uint16_t type;
+	uint16_t len;
 	uint32_t no;
 	union {
 		magic_mailbox_t mb;
 		uint32_t event;
-		char buf[96];
+		char buf[116];
 	};
 } __rte_cache_aligned;
 
-int log_server_init(void);
+void log_flush(void);
 void log_event(uint16_t port_id, uint32_t core, uint32_t index, uint32_t event);
 void log_buf(uint16_t port_id, uint32_t core, const char *fmt, ... );
-void log_mb(uint16_t port_id, uint32_t core, uint32_t index, const magic_mailbox_t *mb);
+void log_mb(uint16_t port_id, uint32_t core, uint32_t index,  uint32_t action, uint32_t num, uint32_t *args);
 
 #endif /* _PC802_LOGS_H_ */

@@ -36,7 +36,6 @@
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
 #include "pc802_logs.h"
-#include "pc802_mailbox.h"
 
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
@@ -1818,8 +1817,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("mz_s->addr = %p\n", mz_s->addr);
         return 0;
     }
-    if (1 == num_pc802s)
-        log_server_init( );
 
     data = eth_dev->data;
     data->nb_rx_queues = 1;
@@ -1853,12 +1850,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         rte_mb();
     }
 
-    printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
-        pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
     adapter->port_index = num_pc802s-1;
 
-    if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
+    if (NULL != pci_dev->mem_resource[1].addr) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
         if (adapter->DEVRDY < 2) {
             pc802_bar_memset((uint32_t *)pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len / sizeof(uint32_t));
@@ -1907,9 +1902,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->SFN_SLOT_0, 0xFFFFFFFF);
     PC802_WRITE_REG(bar->SFN_SLOT_1, 0xFFFFFFFF);
 
-    if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
-        adapter->log_flag  |= (1<<PC802_LOG_EVENT);
-    }
+    adapter->log_flag  |= (1<<PC802_LOG_EVENT);
 
     tsize = sizeof(PC802_Descs_t);
     sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
@@ -1949,9 +1942,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     pc802_download_boot_image(data->port_id);
 
-    if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
-        adapter->log_flag  |= (1<<PC802_LOG_VEC);
-    }
+    adapter->log_flag  |= (1<<PC802_LOG_VEC);
 
     return 0;
 }
@@ -2573,20 +2564,17 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 
 static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
-    uint32_t i;
     int num = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
-    magic_mailbox_t temp_mb;
+    volatile uint32_t num_args;
+
     do {
         action = PC802_READ_REG(mb[n].action);
         if (MB_EMPTY != action ) {
             num++;
-            temp_mb.action = action;
-            temp_mb.num_args = PC802_READ_REG(mb[n].num_args);
-            for( i=0; i<temp_mb.num_args; i++ )
-                temp_mb.arguments[i] = PC802_READ_REG(mb[n].arguments[i]);
-            log_mb(port_id, core, n, &temp_mb);
+            num_args = PC802_READ_REG(mb[n].num_args);
+            log_mb(port_id, core, n, action, num_args, mb[n].arguments );
             rte_mb();
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
@@ -2700,7 +2688,6 @@ static int pc802_mailbox(void *data)
         adapter[port_index] = (struct pc802_adapter *)data;
         mb_pfi[port_index] = adapter[port_index]->mailbox_pfi;
         mb_ecpri[port_index] = adapter[port_index]->mailbox_ecpri;
-        //mb_string_init();
 
         for (core = 0; core < 16; core++) {
             pfi_idx[port_index][core] = 0;
@@ -2710,7 +2697,6 @@ static int pc802_mailbox(void *data)
             mb_dsp[port_index][core] = adapter[port_index]->mailbox_dsp[core];
             dsp_idx[port_index][core] = 0;
             num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
-            pc802_log_flush();
         }
 
         for (core = 0; core < 16; core++) {
@@ -2720,7 +2706,6 @@ static int pc802_mailbox(void *data)
                 num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_pfi[port_index][core].m_cpu_to_host[0], pfi_idx[port_index][core], core);
                 mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_pfi[core].m_next_c2h);
             } while (mb_idx != pfi_idx[port_index][core]);
-            pc802_log_flush();
 
             mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
             do {
@@ -2728,7 +2713,6 @@ static int pc802_mailbox(void *data)
                 num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_ecpri[port_index][core].m_cpu_to_host[0], ecpri_idx[port_index][core], core+16);
                 mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
             } while (mb_idx != ecpri_idx[port_index][core]);
-            pc802_log_flush();
         }
     }
 
@@ -2743,7 +2727,6 @@ static int pc802_mailbox(void *data)
     for (core = 0; core < 3; core++) {
         if (MB_MAX_C2H_MAILBOXES == dsp_idx[port_index][core]) {
             num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
-            //pc802_log_flush();
         } else {
             num += handle_mailbox(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
         }
@@ -2757,30 +2740,28 @@ static void * pc802_debug(__rte_unused void *data)
     int i = 0;
     int num = 0;
     int idle = 0;
-    struct timespec req;
+   struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
 
-    while( 1 )
-    {
+    log_flush();
+    while( 1 ) {
         num = 0;
-        for ( i=0; i<num_pc802s; i++ )
-        {
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(i, pc802_devices[i]->port_id);
+        for ( i=0; i<num_pc802s; i++ ) {
+            num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
-            if ((pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) && (idle > 4 * 100)) {
+            if (idle > 4 * 100)
                 num += pc802_process_phy_test_vectors(pc802_devices[i]);
-            }
         }
-        if ( 0 == num ) {
-            pc802_log_flush();
+
+        if (num > 0) {
+            log_flush();
+            idle = 0;
+        } else {
             nanosleep(&req, NULL);
             idle++;
         }
-        else
-            idle = 0;
     }
     return NULL;
 }

@@ -3,7 +3,6 @@
 
 apps = [
         'pdump',
-        'pico-log',
         'proc-info',
         'test-acl',
         'test-bbdev',
@@ -71,5 +70,6 @@ foreach app:apps
 endforeach
 
 # special case the autotests
+subdir('pcom-log')
 subdir('test')
 subdir('test-pc802-mp')

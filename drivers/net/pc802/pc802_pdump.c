@@ -132,7 +132,7 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
 
         pkt_len += IP_HDR_SIZE;
         ((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp =
-            rte_cpu_to_be_32((pkg->tsc - start_tsc) * 100000 / rte_get_tsc_hz());
+            rte_cpu_to_be_32((pkg->tsc - start_tsc) * 1000000 / rte_get_tsc_hz());
         ip_hdr->total_length = rte_cpu_to_be_16(pkt_len);
         ip_hdr->hdr_checksum = 0;
 		ip_hdr->hdr_checksum = rte_ipv4_cksum(ip_hdr);

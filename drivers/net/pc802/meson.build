@@ -24,7 +24,6 @@ sources = files(
         'pc802_logs.c',
         'pcxx_ipc.c',
         'pcxx_oam.c',
-        'pc802_mailbox.c'
 )
 
 headers = files(
