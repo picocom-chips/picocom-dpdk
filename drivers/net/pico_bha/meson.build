@@ -32,18 +32,6 @@ bha_model_lib = cc.find_library('bha_model', dirs : [bha_model_lib_path], static
 message('########pico bha bha model lib: @0@ ########'.format(bha_model_lib))
 ext_deps += bha_model_lib
 
-#bha model pcaps
-bha_model_pcaps_in_path = bha_model_path+'/pcaps/'
-bha_model_pcaps_out_path = bha_model_path+'/pcaps/tmp/'
-if run_command('[', '-d', bha_model_pcaps_in_path, ']').returncode() == 0
-  message('######## bha model pcaps files folder exists, continue ########')
-else
-  assert(false, 'bha model pcaps files folder not exists, please check it first: @0@'.format(bha_model_pcaps_in_path))
-endif
-message('########pico bha pcaps in path: @0@ ########'.format(bha_model_pcaps_in_path))
-message('########pico bha pcaps out path: @0@ ########'.format(bha_model_pcaps_out_path))
-dpdk_conf.set('BHA_PCAPS_IN_PATH', '"'+bha_model_pcaps_in_path+'"')
-dpdk_conf.set('BHA_PCAPS_OUT_PATH', '"'+bha_model_pcaps_out_path+'"')
 
 #bha driver
 cflags += '-DRTE_NET_BHA_MODEL_EN'
