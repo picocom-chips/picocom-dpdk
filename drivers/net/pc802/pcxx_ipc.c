@@ -299,6 +299,7 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     uint32_t offset;
     int ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+#if 0
     uint32_t sfn_slot;
 
     sfn_slot = pc802_get_sfn_slot(pcxx_devs[dev_index].port_id, cell_index);
@@ -318,7 +319,7 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
         ret = cell->pcxx_ctrl_ul_handle((const char *)&sfn_slot_1, sizeof(sfn_slot_1));
 #endif
     }
-
+#endif
     if (NULL == cell->rx_ctrl_buf) {
         num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index], &mblk_ctrl, 1);
         if (num_rx)
