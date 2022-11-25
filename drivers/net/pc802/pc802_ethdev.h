@@ -462,6 +462,6 @@ enum {
 
 int pc802_pdump_init(void);
 int pc802_pdump_uninit(void);
-uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks);
+uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc);
 
 #endif /* _PC802_ETHDEV_H_ */
