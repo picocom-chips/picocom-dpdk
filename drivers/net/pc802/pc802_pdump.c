@@ -24,6 +24,7 @@ struct ip_options_timestamp {
 	uint8_t  pointer;
 	uint8_t  OF_FL;
 	uint32_t time_stamp;
+	uint32_t time_stamp1;
 };
 
 #define IP_HDR_SIZE (sizeof(struct rte_ipv4_hdr) + sizeof(struct ip_options_timestamp))
@@ -87,10 +88,12 @@ struct pdump_pkg {
 	uint16_t queue_id;
 	uint32_t rxtx_flag;
 	uint64_t tsc;
+	uint64_t tsc1;
 	PC802_Mem_Block_t *blk;
 };
 
 static uint64_t start_tsc;
+static uint64_t tsc_hz = 1000000;
 static rte_atomic32_t pdump_stop = RTE_ATOMIC32_INIT(0);
 static pthread_t pdump_tid;
 struct rte_ring *pdump_ring;
@@ -132,7 +135,12 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
 
         pkt_len += IP_HDR_SIZE;
         ((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp =
-            rte_cpu_to_be_32((pkg->tsc - start_tsc) * 100000 / rte_get_tsc_hz());
+            rte_cpu_to_be_32((pkg->tsc - start_tsc) * 1000000/tsc_hz);
+		if( pkg->tsc1 )
+			((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp1 =
+				rte_cpu_to_be_32((pkg->tsc1 - start_tsc) * 1000000/tsc_hz);
+		else
+			((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp1 = 0;
         ip_hdr->total_length = rte_cpu_to_be_16(pkt_len);
         ip_hdr->hdr_checksum = 0;
 		ip_hdr->hdr_checksum = rte_ipv4_cksum(ip_hdr);
@@ -153,7 +161,7 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
     }
 }
 
-uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks)
+uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc)
 {
     if (pdump_cfg.enable && (pc802_index == pdump_cfg.pc802_idx)
 		&& ((1<<queue_id) & pdump_cfg.queue) && (rxtx_flag & pdump_cfg.flags)) {
@@ -174,6 +182,7 @@ uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, P
 			pkg->queue_id  = queue_id;
 			pkg->rxtx_flag = rxtx_flag;
 			pkg->tsc = tsc;
+			pkg->tsc1 = last_tsc;
 			pkg->blk = blks[i];
 		}
 
@@ -191,10 +200,10 @@ uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, P
 static inline uint16_t ipv4_header_init(struct rte_ipv4_hdr *ip_hdr, uint64_t tsc )
 {
 	static rte_be16_t id=0;
-	static uint32_t src_addr = IPV4_ADDR(1, 1, 1, 1);
-	static uint32_t dst_addr = IPV4_ADDR(2, 2, 2, 2);
+	static uint32_t src_addr = IPV4_ADDR(127, 0, 0, 1);
+	static uint32_t dst_addr = IPV4_ADDR(127, 0, 0, 1);
 
-	uint32_t us = (tsc-start_tsc)*100000/rte_get_tsc_hz();
+	uint32_t us = (tsc-start_tsc)*1000000/tsc_hz;
 	struct ip_options_timestamp *opt = (struct ip_options_timestamp *)&ip_hdr[1];
 
 	ip_hdr->version_ihl = RTE_IPV4_VHL_DEF+sizeof(struct ip_options_timestamp)/4;
@@ -210,9 +219,10 @@ static inline uint16_t ipv4_header_init(struct rte_ipv4_hdr *ip_hdr, uint64_t ts
 
 	opt->type = 0x44;
 	opt->length = sizeof(struct ip_options_timestamp);
-	opt->pointer = 1;
+	opt->pointer = 2;
 	opt->OF_FL = 0;
 	opt->time_stamp = rte_cpu_to_be_32(us);
+	opt->time_stamp1 = 0;
 
 	return 0;
 }
@@ -267,6 +277,7 @@ static void *pc802_pdump( __rte_unused void *arg)
 static int pc802_pdump_start(void)
 {
 	start_tsc = rte_rdtsc();
+	tsc_hz = rte_get_tsc_hz();
 
 	//init mbuf eth ip head
 	rte_mempool_obj_iter(pdump_cfg.mp, mbuf_init, NULL);

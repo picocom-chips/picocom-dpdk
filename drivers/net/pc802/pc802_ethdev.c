@@ -543,6 +543,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
+    static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM] = {0};
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
@@ -614,7 +615,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
     rxq->nb_rx_hold = nb_hold;
     if( nb_rx )
-        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks);
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
+    last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
     return nb_rx;
 }
 
@@ -640,7 +642,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
-    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks);
+    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks, 0);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
         idx = tx_id & mask;
