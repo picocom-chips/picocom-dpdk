@@ -18,7 +18,7 @@
 
 #define PC802_CACHE_LINE_SZ 32
 
-#define PC802_DEBUG_BUF_SIZE    (160 * 1024 * 1024)
+#define PC802_DEBUG_BUF_SIZE    (30 * 1024 * 1024)
 
 struct PC802_CacheLine_t{
     uint32_t _a[8];

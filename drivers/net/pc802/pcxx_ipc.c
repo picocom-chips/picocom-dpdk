@@ -11,11 +11,26 @@
 PC802_Traffic_Type_e QID_DATA[2] = { PC802_TRAFFIC_5G_EMBB_DATA, PC802_TRAFFIC_4G_LTE_DATA};
 PC802_Traffic_Type_e QID_CTRL[2] = { PC802_TRAFFIC_5G_EMBB_CTRL, PC802_TRAFFIC_4G_LTE_CTRL};
 
-#define DATA_QUEUE_BLOCK_SIZE   (256*1024)
+#define DATA_QUEUE_BLOCK_SIZE   (128*1024)
 
 #define NUM_DATA_BUF    64
 #define NUM_SFN_IDX     4
 #define SFN_IDX_MASK    (NUM_SFN_IDX - 1)
+
+typedef struct SimULSlotMsg_st{
+    uint8_t msgNum;
+    uint8_t opaque;
+    uint16_t rev;
+    uint32_t msgId;
+    uint32_t msgSize;
+    union {
+        uint32_t sfnSlot;
+        struct {
+            uint16_t SFN;
+            uint16_t Slot;
+        };
+   };
+} SimULSlotMsg_t;
 
 typedef struct {
     uint32_t sfn_idx;
@@ -23,6 +38,7 @@ typedef struct {
     char     *ctrl_buf;
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
+    SimULSlotMsg_t slot_msg;
 
     char     *data_buf[NUM_SFN_IDX][NUM_DATA_BUF];
     int      data_num[NUM_SFN_IDX];
@@ -70,8 +86,15 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 256*1024, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue( port_id, QID_CTRL[cell_index], 128*1024, 128, 64));
+    RTE_ASSERT(0 == pc802_create_rx_queue( port_id, QID_CTRL[cell_index], 128*1024, 128, 64));
+
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.msgNum = 1;
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.opaque = cell_index;
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.rev = 0;
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.msgId = 0x82;
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.msgSize = 0x4;
+    pcxx_devs[dev_index].cell_info[cell_index].slot_msg.sfnSlot = 0xFFFFFFFF;
 
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
@@ -116,8 +139,8 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 128, 64));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 128, 64));
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
     cell_info->pcxx_data_dl_handle = info->writeHandle;
@@ -248,39 +271,6 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
-typedef struct SimULSlotMsg_st{
-    uint8_t msgNum;
-    uint8_t opaque;
-    uint16_t rev;
-    uint32_t msgId;
-    uint32_t msgSize;
-    union {
-        uint32_t sfnSlot;
-        struct {
-            uint16_t SFN;
-            uint16_t Slot;
-        };
-   };
-} SimULSlotMsg_t;
-
-static SimULSlotMsg_t sfn_slot_0 = {
-    .msgNum = 1,
-    .opaque = 0,
-    .rev = 0,
-    .msgId = 0x82,
-    .msgSize = 0x4,
-    .sfnSlot = 0xFFFFFFFF,
-};
-
-static SimULSlotMsg_t sfn_slot_1 = {
-    .msgNum = 1,
-    .opaque = 1,
-    .rev = 0,
-    .msgId = 0x82,
-    .msgSize = 0x4,
-    .sfnSlot = 0xFFFFFFFF,
-};
-
 #ifndef MULTI_PC802
 int pcxxCtrlRecv(void)
 {
@@ -300,20 +290,12 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     uint32_t sfn_slot;
 
     sfn_slot = pc802_get_sfn_slot(pcxx_devs[dev_index].port_id, cell_index);
-    if ((0 ==  cell_index) && (sfn_slot != sfn_slot_0.sfnSlot)) {
-        sfn_slot_0.sfnSlot = sfn_slot;
+    if ( sfn_slot != cell->slot_msg.sfnSlot) {
+        cell->slot_msg.sfnSlot = sfn_slot;
 #ifdef MULTI_PC802
-        ret = cell->pcxx_ctrl_ul_handle((const char *)&sfn_slot_0, sizeof(sfn_slot_0), dev_index, 0);
+        ret = cell->pcxx_ctrl_ul_handle((const char *)&cell->slot_msg, sizeof(cell->slot_msg), dev_index, cell_index);
 #else
-        ret = cell->pcxx_ctrl_ul_handle((const char *)&sfn_slot_0, sizeof(sfn_slot_0));
-#endif
-    }
-    if ((1 ==  cell_index) && (sfn_slot != sfn_slot_1.sfnSlot)) {
-        sfn_slot_1.sfnSlot = sfn_slot;
-#ifdef MULTI_PC802
-        ret = cell->pcxx_ctrl_ul_handle((const char *)&sfn_slot_1, sizeof(sfn_slot_1), dev_index, 1);
-#else
-        ret = cell->pcxx_ctrl_ul_handle((const char *)&sfn_slot_1, sizeof(sfn_slot_1));
+        ret = cell->pcxx_ctrl_ul_handle((const char *)&cell->slot_msg, sizeof(cell->slot_msg));
 #endif
     }
 
