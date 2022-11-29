@@ -257,6 +257,14 @@ struct stPC802_EP_Counter_Mirror_t {
         PC802_CacheLine_t   cache_line_repcnt;
         volatile uint32_t REPCNT[MAX_UL_CH_NUM];
     };
+    union {
+        PC802_CacheLine_t   cache_sfn_slot_0;
+        volatile uint32_t SFN_SLOT_0;
+    };
+    union {
+        PC802_CacheLine_t   cache_sfn_slot_1;
+        volatile uint32_t SFN_SLOT_1;
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;

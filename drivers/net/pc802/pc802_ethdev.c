@@ -2725,12 +2725,16 @@ static void * pc802_debug(__rte_unused void *data)
 
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
 {
-    PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_Descs_t *descs = adapter->pDescs;
+
     uint32_t sfn_slot;
     if (0 == cell_index) {
-        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_0);
+        sfn_slot = descs->mr.SFN_SLOT_0;
     } else if (1 == cell_index) {
-        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_1);
+        sfn_slot = descs->mr.SFN_SLOT_1;
     } else {
         sfn_slot = 0xFFFFFFFF;
     }
