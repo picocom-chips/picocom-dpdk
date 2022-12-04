@@ -204,6 +204,9 @@ struct pc802_adapter {
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
 
+static char DEFAULT_IMAGE_PATH[] = "/lib/firmware/pico";
+static char CUR_PATH[] = ".";
+
 int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
@@ -236,6 +239,11 @@ uint16_t pc802_get_count(void)
 #else
     return num_pc802s>0?1:0;
 #endif
+}
+
+static uint16_t pc802_get_port_index(uint16_t port_id)
+{
+    return PC802_DEV_PRIVATE(rte_eth_devices[port_id].data->dev_private)->port_index;
 }
 
 int pc802_get_port_id(uint16_t pc802_index)
@@ -2010,6 +2018,27 @@ char * picocom_pc802_version(void)
     return ver;
 }
 
+static FILE * get_image_file(uint16_t port, const char *image_name)
+{
+    char *path[] = {DEFAULT_IMAGE_PATH, CUR_PATH};
+    char file_name[PATH_MAX];
+    uint16_t index = pc802_get_port_index(port);
+    uint32_t i;
+    FILE *fp = NULL;
+
+    for (i = 0; i < RTE_DIM(path); i++) {
+        sprintf(file_name, "%s/pc802_%d/%s", path[i], index, image_name);
+        if (NULL != (fp = fopen(file_name, "rb")))
+            break;
+
+        sprintf(file_name, "%s/%s", path[i], image_name);
+        if (NULL != (fp = fopen(file_name, "rb")))
+            break;
+    }
+    DBLOG("Prepare pc802 %d image file:%s\n", index, file_name);
+    return fp;
+}
+
 static int pc802_download_boot_image(uint16_t port)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
@@ -2044,7 +2073,7 @@ static int pc802_download_boot_image(uint16_t port)
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
-    FILE *fp = fopen("/lib/firmware/pico/pc802.ssbl", "rb");
+    FILE *fp = get_image_file(port, "pc802.ssbl");
     if (NULL==fp) {
         DBLOG("Failed to open pc802.ssbl .\n");
         return -1;
@@ -2088,7 +2117,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download application(port=%hu) ... \n",
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
-    fp = fopen("/lib/firmware/pico/pc802.img", "rb");
+    fp = get_image_file(port, "pc802.img");
     if (NULL==fp) {
         DBLOG("Failed to open pc802.img .\n");
         return -1;
@@ -2239,6 +2268,49 @@ static int pc802_process_phy_test_vectors(void *data)
     return 0;
 }
 
+static char *get_vector_file_name(uint16_t port_id, uint32_t file_id, char *file_name)
+{
+    char *path[] = {getenv("PC802_TEST_VECTOR_DIR"), DEFAULT_IMAGE_PATH, CUR_PATH};
+    uint16_t pc802_index = pc802_get_port_index(port_id);
+    uint32_t i;
+
+    for (i = 0; i < RTE_DIM(path); i++) {
+        if (NULL != path[i]) {
+            sprintf(file_name, "%s/pc802_%d/%u.txt", path[i], pc802_index, file_id);
+            if (0 == access(file_name, F_OK))
+                return file_name;
+
+            sprintf(file_name, "%s/%u.txt", path[i], file_id);
+            if (0 == access(file_name, F_OK))
+                return file_name;
+        }
+    }
+
+    return NULL;
+}
+
+static char * get_vector_path(uint16_t port_id, char *file_path)
+{
+    char *path[] = {getenv("PC802_VECTOR_DUMP_DIR"), DEFAULT_IMAGE_PATH, CUR_PATH};
+    uint16_t pc802_index = pc802_get_port_index(port_id);
+    uint32_t i;
+
+    for (i = 0; i < RTE_DIM(path); i++) {
+        if (NULL != path[i]) {
+            sprintf(file_path, "%s/pc802_%d", path[i], pc802_index);
+            if (0 == access(file_path, W_OK))
+                return file_path;
+
+            sprintf(file_path, "%s", path[i]);
+            if (0 == access(file_path, W_OK))
+                return file_path;
+        }
+    }
+
+    strcpy(file_path, ".");
+    return file_path;
+}
+
 static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
@@ -2247,23 +2319,14 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
         return -1;
     }
 
-    // Look for the testcase directory
-    char * tc_dir = getenv("PC802_TEST_VECTOR_DIR");
-    if (tc_dir == NULL) {
-        DBLOG("ERROR: PC802_TEST_VECTOR_DIR was not defined\n");
+    char file_name[PATH_MAX];
+    if ( NULL == get_vector_file_name(port_id, file_id, file_name) ) {
+        DBLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
-    // Check if the test vector file exists
-    char file_name[2048];
-    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
-    if (access(file_name, F_OK) != 0) {
-        DBLOG("ERROR: Failed to open test vector file %s\n", file_name);
-        return -3;
-    }
-
     // Parse the file
-    DBLOG("Reading vector file %s\n", file_name);
+    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2297,7 +2360,7 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     fclose(fh_vector);
 
     if (vec_cnt < end) {
-        DBLOG("ERROR: EOF! of %s\n", file_name);
+        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2334,20 +2397,11 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
        return -1;
     }
 
-    // Look for the testcase directory
-    char * tc_dir = getenv("PC802_VECTOR_DUMP_DIR");
-    if (tc_dir == NULL) {
-        DBLOG("ERROR: PC802_VECTOR_DUMP_DIR was not defined\n");
-        return -2;
-    }
-
     // Check if the golden vector file exists
-    char file_name[2048];
-    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
-    if (access(tc_dir, F_OK) != 0) {
-        DBLOG("ERROR: Failed to open dump dir %s\n", tc_dir);
-        return -3;
-    }
+    char file_path[PATH_MAX];
+    char file_name[PATH_MAX+NAME_MAX];
+    get_vector_path(port_id, file_path);
+    sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
@@ -2369,7 +2423,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
 
     // Parse the file
-    DBLOG("Dumping to file %s\n", file_name);
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
     FILE         * fh_vector  = fopen(file_name, "w");
 
     fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
@@ -2395,23 +2449,14 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         return -1;
     }
 
-    // Look for the testcase directory
-    char * tc_dir = getenv("PC802_TEST_VECTOR_DIR");
-    if (tc_dir == NULL) {
-        DBLOG("ERROR: PC802_TEST_VECTOR_DIR was not defined\n");
+    char file_name[PATH_MAX];
+    if ( NULL == get_vector_file_name( port_id, file_id, file_name) ) {
+        DBLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
-    // Check if the test vector file exists
-    char file_name[2048];
-    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
-    if (access(file_name, F_OK) != 0) {
-        DBLOG("ERROR: Failed to open test vector file %s\n", file_name);
-        return -3;
-    }
-
     // Parse the file
-    DBLOG("Reading vector file %s\n", file_name);
+    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2445,7 +2490,7 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     fclose(fh_vector);
 
     if (vec_cnt < end) {
-        DBLOG("ERROR: EOF! of %s\n", file_name);
+        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2477,20 +2522,10 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
        return -1;
     }
 
-    // Look for the testcase directory
-    char * tc_dir = getenv("PC802_VECTOR_DUMP_DIR");
-    if (tc_dir == NULL) {
-        DBLOG("ERROR: PC802_VECTOR_DUMP_DIR was not defined\n");
-        return -2;
-    }
-
-    // Check if the golden vector file exists
-    char file_name[2048];
-    sprintf(file_name, "%s/%u.txt", tc_dir, file_id);
-    if (access(tc_dir, F_OK) != 0) {
-        DBLOG("ERROR: Failed to open dump dir %s\n", tc_dir);
-        return -3;
-    }
+    char file_path[PATH_MAX];
+    char file_name[PATH_MAX+NAME_MAX];
+    get_vector_path(port_id, file_path);
+    sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
     PC802_WRITE_REG(bar->DBGEPADDR, address);
@@ -2506,7 +2541,7 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
     } while (EPCNT != RCCNT);
 
     // Parse the file
-    DBLOG("Dumping to file %s\n", file_name);
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
     FILE         * fh_vector  = fopen(file_name, "w");
 
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
