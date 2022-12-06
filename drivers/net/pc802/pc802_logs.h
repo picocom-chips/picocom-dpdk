@@ -94,4 +94,24 @@ int STAT_Free(int stat_no);
 int STAT_Sample(int stat_no, uint32_t sample);
 int STAT_CheckResult(int stat_no);
 int STAT_GetResult(int stat_no, StatResult_t* pResult);
+
+enum STAT_No_e {
+    NO_CTRL_POLL,
+    NO_CTRL_RECV,
+    NO_CTRL_PROC,
+    NO_DATA_PROC,
+    NO_FUNC_PROC,
+    NO_CTRL_BURST_GOT,
+    NO_CTRL_BURST_NULL,
+    NO_DATA_BURST_GOT,
+    NO_DATA_BURST_NULL,
+    NO_CTRL_DATA,
+    NO_DL_CTRL_SEND,
+    NO_DL_DATA_SEND,
+    NUM_STATS
+};
+
+void stat_and_check(uint32_t stat_no);
+void check_proc_time(uint32_t stat_no, uint64_t tdiff_64);
+
 #endif /* _PC802_LOGS_H_ */
