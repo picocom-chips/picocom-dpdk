@@ -9,7 +9,7 @@
 #include "rte_pmd_pc802.h"
 
 #define MIN_DESC_NUM    8
-#define MAX_DESC_NUM  128
+#define MAX_DESC_NUM  4096
 
 #define MAX_DL_CH_NUM   PC802_TRAFFIC_NUM
 #define MAX_UL_CH_NUM   PC802_TRAFFIC_NUM
