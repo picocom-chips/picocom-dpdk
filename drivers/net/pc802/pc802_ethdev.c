@@ -2285,15 +2285,23 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    uint32_t *pd;
+    uint32_t data_size;
+    uint32_t buf_full;
 
-    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+__next_non_pfi_0_vec_read:
+    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    data_size = 0;
+    buf_full = 0;
+    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
             // In scope
             if (vec_cnt >= offset && vec_cnt < end) {
                 *pd++ = data;
+                data_size += sizeof(uint32_t);
+                buf_full = (data_size >= PC802_DEBUG_BUF_SIZE);
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
@@ -2309,16 +2317,14 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     }
     //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
-    fclose(fh_vector);
-
-    if (vec_cnt < end) {
+    if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s\n", file_name);
         return -5;
     }
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
     PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
+    PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
     RCCNT++;
@@ -2329,6 +2335,12 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
+    if (vec_cnt < end) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_read;
+    }
+
+    fclose(fh_vector);
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
