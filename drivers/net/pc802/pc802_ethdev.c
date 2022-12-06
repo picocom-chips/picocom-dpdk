@@ -2208,34 +2208,42 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
         return -3;
     }
 
+    DBLOG("Dumping to file %s\n", file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    uint32_t left = length;
+    uint32_t data_size;
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
-    uint32_t *pd = (uint32_t *)adapter->dbg;
-    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
-    volatile uint32_t vec_epcnt;
     uint32_t vec_rccnt;
     vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+
+    uint32_t *pd;
+__next_pfi_0_vec_dump:
+    pd = (uint32_t *)adapter->dbg;
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
+    vec_rccnt++;
+    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
+    volatile uint32_t vec_epcnt;
     do {
         usleep(1);
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
-    } while (vec_epcnt == vec_rccnt);
+    } while (vec_epcnt != vec_rccnt);
 
-    vec_rccnt++;
-    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
-
-    // Parse the file
-    DBLOG("Dumping to file %s\n", file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
-      unsigned int mem_data = *pd++;;
-      fprintf(fh_vector, "%08x\n", mem_data);
+    for (offset = 0; offset < data_size; offset += 4) {
+        unsigned int mem_data = *pd++;;
+        fprintf(fh_vector, "%08x\n", mem_data);
     }
+    left -= data_size;
+
+    if (left > 0)
+        goto __next_pfi_0_vec_dump;
 
     fclose(fh_vector);
 
