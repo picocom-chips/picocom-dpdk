@@ -2370,12 +2370,21 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
         DBLOG("ERROR: Failed to open dump dir %s\n", tc_dir);
         return -3;
     }
+    DBLOG("Dumping to file %s\n", file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
-    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+
+    uint32_t left = length;
+    uint32_t data_size;
+
+__next_non_pfi_0_vec_dump:
+    PC802_WRITE_REG(bar->DBGEPADDR, address);
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
+    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     RCCNT++;
     PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
     volatile uint32_t EPCNT;
@@ -2384,15 +2393,15 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
-    // Parse the file
-    DBLOG("Dumping to file %s\n", file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
+    for (offset = 0; offset < data_size; offset += 4) {
       unsigned int mem_data = *pd++;;
       fprintf(fh_vector, "%08x\n", mem_data);
+    }
+    left -= data_size;
+    if (left > 0) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_dump;
     }
 
     fclose(fh_vector);
