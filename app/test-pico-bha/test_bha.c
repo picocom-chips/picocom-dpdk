@@ -51,16 +51,20 @@
 #include <rte_pci.h>
 #include <rte_per_lcore.h>
 #include <rte_string_fns.h>
+#include <rte_cryptodev.h>
 
 #include <bha_model.h>
 #include <rte_pmd_bha.h>
 #include <test_bha.h>
 
 
+#define CRYPTODEV_NAME_PSEC_PMD		crypto_psec
+
 
 //global variable
 int testbha_logtype;
 uint16_t bha_portid = 0;
+uint8_t psec_cdevid = 0;
 
 static void
 signal_handler(int signum)
@@ -118,10 +122,30 @@ test_bha_ethdev_close(void)
 }
 
 void
+test_bha_cryptodev_stop(void)
+{
+    printf("\nStop crypto dev %d...\n", psec_cdevid);
+    rte_cryptodev_stop(psec_cdevid);
+}
+
+void
+test_bha_cryptodev_close(void)
+{
+    int ret;
+
+    printf("\nClose crypto dev %d...\n", psec_cdevid);
+    ret = rte_cryptodev_close(psec_cdevid);
+	if (ret)
+        printf("\nClose crypto dev %d fail and error\n", psec_cdevid);
+}
+
+void
 test_bha_exit(void)
 {
     test_bha_ethdev_stop();
     test_bha_ethdev_close();
+    test_bha_cryptodev_stop();
+    test_bha_cryptodev_close();
 }
 
 
@@ -133,6 +157,11 @@ int main(int argc, char** argv)
     uint16_t nb_ports;
     uint16_t port_id;
     uint16_t ports_ids[RTE_MAX_ETHPORTS];
+    uint32_t nb_devs;
+    uint8_t dev_id = 0;
+    int crypto_drv_id;
+    uint32_t i = 0;
+    struct rte_cryptodev_info info;
 
     testbha_logtype = rte_log_register("testbha");
     if (testbha_logtype < 0)
@@ -157,6 +186,7 @@ int main(int argc, char** argv)
     //iova don't care 0; iova_pa 1; iova_va 2
     TESTBHA_LOG(DEBUG, "Get iova mode %d\n", rte_eal_iova_mode());
 
+    //find ethdev port
     count = 0;
     RTE_ETH_FOREACH_DEV(port_id)
     {
@@ -174,8 +204,34 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
+    //find cryptodev
+    nb_devs = rte_cryptodev_count();
+	if (nb_devs < 1) {
+		TESTBHA_LOG(ERR, "No crypto devices found\n");
+		return EXIT_FAILURE;
+	}
+
+    crypto_drv_id = rte_cryptodev_driver_id_get(RTE_STR(CRYPTODEV_NAME_PSEC_PMD));
+    if (crypto_drv_id < 0) {
+		TESTBHA_LOG(ERR, "crypto pico sec device not found\n");
+		return EXIT_FAILURE;
+	}
+    TESTBHA_LOG(DEBUG, "Found crypto devices %d, psec drv id %d, name %s\n", nb_devs, crypto_drv_id, rte_cryptodev_driver_name_get(crypto_drv_id));
+
+    for (i = 0; i < nb_devs; i++) {
+        rte_cryptodev_info_get(i, &info);
+        if (info.driver_id == crypto_drv_id) {
+            dev_id = i;
+            break;
+        }
+	}
+    TESTBHA_LOG(DEBUG, "crypto pico sec device id %d\n", dev_id);
+    psec_cdevid = dev_id;
+
+
     test_bha_cmdline();
 
+    TESTBHA_LOG(DEBUG, "Exit cmdline of test pico bha\n");
     rte_eal_mp_wait_lcore();
     ret = rte_eal_cleanup();
     if (ret != 0)

@@ -21,6 +21,29 @@
 static struct cmdline *ctx_cmdline;
 
 
+//test bha crypto, aes256 gcm
+struct test_bha_aes_gcm_params {
+    cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t bha_aes_gcm_token_cmd = TOKEN_STRING_INITIALIZER(struct test_bha_aes_gcm_params, cmd, "aes gcm");
+
+static void cmd_test_bha_aes_gcm_cb(__rte_unused void *ptr_params, __rte_unused struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+    test_bha_crypto_aes256_gcm();
+}
+
+cmdline_parse_inst_t test_bha_aes_gcm_cmd = {
+    .f = cmd_test_bha_aes_gcm_cb,
+    .data = NULL,
+    .help_str = "aes gcm\n     bha crypto dev. testing aes256 gcm cmd",
+    .tokens = {
+        (void *)&bha_aes_gcm_token_cmd,
+        NULL
+    },
+};
+
+
 //test bha pcap mode, testing dfltq pkts cmd
 struct test_bha_pcap_mode_dfltq_params {
     cmdline_fixed_string_t cmd;
@@ -120,6 +143,7 @@ cmdline_parse_ctx_t bha_prompt_commands[] = {
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_ecpri_cmd,
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_dfltq_cmd,
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_jumbo_cmd,
+    (cmdline_parse_inst_t *)&test_bha_aes_gcm_cmd,
     (cmdline_parse_inst_t *)&test_bha_quit_cmd,
     NULL
 };

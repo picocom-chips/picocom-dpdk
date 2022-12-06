@@ -30,9 +30,11 @@ dpdk_conf.set('BHA_PCAPS_IN_PATH', '"'+test_bha_pcaps_in_path+'"')
 dpdk_conf.set('BHA_PCAPS_OUT_PATH', '"'+test_bha_pcaps_out_path+'"')
 
 
+cflags += '-DRTE_TEST_BHA_MODEL_EN'
 sources = files(
   'test_bha.c',
   'pcap_mode.c',
+  'crypto_dev.c',
   'cmdline.c',
 )
 
@@ -40,9 +42,15 @@ headers = files(
   'test_bha.h',
 )
 
-deps += ['ethdev', 'cmdline', 'bus_vdev']
+deps += ['eal', 'mempool', 'net', 'mbuf', 'bus_vdev', 'cmdline', 'ethdev', 'cryptodev', 'security', 'ipsec']
 if dpdk_conf.has('RTE_NET_PICO_BHA')
     deps += 'net_pico_bha'
+endif
+if dpdk_conf.has('RTE_CRYPTO_PICO_SEC')
+    deps += 'crypto_pico_sec'
+endif
+if dpdk_conf.has('RTE_CRYPTO_SCHEDULER')
+    deps += 'crypto_scheduler'
 endif
 
 includes = include_directories('.')

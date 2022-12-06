@@ -108,6 +108,7 @@ test_bha_model_pcap_file_cmp(void)
     usleep(100000); //wait for tx complete. or query consumer ptr or tx status empty
     if (bha_pcap_cmp(pcap_input_file, pcap_output_file, false))
         TESTBHA_LOG(ERR, "port[%d] ethdev testing pcap file cmp fail!!! \n", bha_portid);
+    bha_abort();
 }
 
 static void

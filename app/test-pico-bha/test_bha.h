@@ -17,6 +17,8 @@ extern int testbha_logtype;
 void test_bha_cmdline(void);
 void test_bha_ethdev_stop(void);
 void test_bha_ethdev_close(void);
+void test_bha_cryptodev_stop(void);
+void test_bha_cryptodev_close(void);
 void test_bha_exit(void);
 
 
@@ -24,6 +26,10 @@ void test_bha_exit(void);
 void test_bha_pcap_mode_ecpri_20pkts(void);
 void test_bha_pcap_mode_dfltq_pkts(void);
 void test_bha_pcap_mode_ecpri_jumbo_pkts(void);
+
+
+//crypto device testing
+void test_bha_crypto_aes256_gcm(void);
 
 
 

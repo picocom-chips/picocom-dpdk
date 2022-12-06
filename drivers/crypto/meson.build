@@ -17,6 +17,7 @@ drivers = [
         'null',
         'octeontx',
         'openssl',
+        'pico_sec',
         'scheduler',
         'virtio',
 ]
