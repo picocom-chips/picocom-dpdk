@@ -2532,7 +2532,6 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
 static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
     int num = 0;
-    int flag = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
     volatile uint32_t num_args;
@@ -2544,8 +2543,6 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                 mb_count_print[core]++;
                 if (mb_count_print[core] < MB_MAX_COUNT_PRINT)
                     handle_mb_printf(port_id, &mb[n], core);
-                else
-                    flag = 1;
             } else {
                 mb_count_other[core]++;
                 if (mb_count_other[core] < MB_MAX_COUNT_OTHER) {
@@ -2555,14 +2552,13 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                           mb[n].arguments[2], mb[n].arguments[3]);
                     DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
                           mb[n].arguments[6], mb[n].arguments[7]);
-                } else
-                    flag = 1;
+                }
             }
             rte_mb();
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
         }
-    } while ((MB_EMPTY != action) && (!flag));
+    } while (MB_EMPTY != action);
     *idx = n;
     return num;
 }
