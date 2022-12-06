@@ -2491,7 +2491,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 
     for (core = 0; core < 32; core++) {
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
-        while (rccnt[port_index][core] != epcnt) {
+        while ((rccnt[port_index][core] != epcnt) && (num<MB_MAX_COUNT_PRINT)) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
             handle_trace_data(port_id, core, rccnt[port_index][core], trc_data);
