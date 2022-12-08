@@ -1843,6 +1843,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(data->port_id);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
+        pthread_t tid;
         adapter->log_flag  |= (1<<PC802_LOG_VEC);
         pc802_ctrl_thread_create( &tid, "PC802-VEC", NULL, pc802_vec_access, adapter);
     }

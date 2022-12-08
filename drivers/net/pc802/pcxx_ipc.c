@@ -374,7 +374,7 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
-ifdef ENABLE_CHECK_PC802_TIMING
+#ifdef ENABLE_CHECK_PC802_TIMING
 void stat_and_check(uint32_t stat_no)
 {
     StatResult_t stat_result;
