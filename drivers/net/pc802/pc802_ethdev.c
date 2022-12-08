@@ -1846,7 +1846,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     DBLOG("PC802_BAR[0].vaddr = %p\n", pci_dev->mem_resource[0].addr);
     if (adapter->DEVRDY < 2) {
-        pc802_bar_memset((uint32_t *)&bar[1], 0, (pci_dev->mem_resource[0].len - sizeof(bar[0])) / sizeof(uint32_t));
+        pc802_bar_memset((uint32_t *)((char *)bar+PC802_CACHE_LINE_SZ), 0, (pci_dev->mem_resource[0].len - PC802_CACHE_LINE_SZ) / sizeof(uint32_t));
         DBLOG("Finish clearing reset of BAR 0\n");
         rte_mb();
     }
