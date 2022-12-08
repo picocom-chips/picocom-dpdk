@@ -70,21 +70,8 @@ static uint64_t stat_t[NUM_STATS];
 #define RTE_RDTSC(a)
 #endif
 
-#ifndef MULTI_PC802
-int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
+static int __pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-    //va_list ap;
-    //va_start(ap, info);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
-
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
     uint64_t hz = rte_get_timer_hz();
     DBLOG("PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
@@ -124,30 +111,13 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     return 0;
 }
 
-#ifndef MULTI_PC802
-void pcxxCtrlClose(void)
+static void __pcxxCtrlClose( _UNUSED_ uint16_t dev_index, uint16_t cell_index )
 {
-     uint16_t dev_index = 0;
-     uint16_t cell_index = 0;
-#else
-void pcxxCtrlClose( _UNUSED_ uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
 }
 
-#ifndef MULTI_PC802
-int pcxxOamOpen(const pcxxInfo_s* info, ...)
+static int __pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
 {
-    uint16_t dev_index = 0;
-    //va_list ap;
-    //va_start(ap, info);
-    //dev_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
-{
-#endif
     RTE_ASSERT(dev_index<DEV_INDEX_MAX);
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
@@ -170,32 +140,13 @@ int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-void pcxxOamClose(void)
+static void __pcxxOamClose( _UNUSED_ uint16_t dev_index )
 {
-    uint16_t dev_index = 0;
-#else
-void pcxxOamClose( _UNUSED_ uint16_t dev_index )
-{
-#endif
     RTE_ASSERT(dev_index<DEV_INDEX_MAX);
 }
 
-
-#ifndef MULTI_PC802
-int pcxxDataOpen(const pcxxInfo_s* info, ...)
+static int __pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-    //va_list ap;
-    //va_start(ap, info);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
@@ -219,28 +170,14 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     return 0;
 }
 
-#ifndef MULTI_PC802
-void pcxxDataClose(void)
+static void __pcxxDataClose( uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-void pcxxDataClose( uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
 }
 
-#ifndef MULTI_PC802
-int pcxxSendStart(void)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
+static int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
-#endif
     PC802_Mem_Block_t *mblk;
     int k;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -257,16 +194,10 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxSendEnd(void)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
+static int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
-#endif
+
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -310,20 +241,8 @@ int pcxxOamSendEnd(uint16_t dev_index)
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
+static int __pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-    //va_list ap;
-    //va_start(ap, availableSize);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -341,20 +260,8 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
+static int __pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-    //va_list ap;
-    //va_start(ap, bufLen);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -436,15 +343,10 @@ void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
 #define check_proc_time(a, b)
 #endif
 
-#ifndef MULTI_PC802
-int pcxxCtrlRecv(void)
-{
-    uint16_t dev_index = 0, cell_index = 0;
-#else
-int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
+static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
-#endif
+
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     uint16_t num_rx;
@@ -562,18 +464,8 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...)
+static int __pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
 {
-    uint16_t dev_index = 0;
-    //va_list ap;
-    //va_start(ap, availableSize);
-    //dev_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
-{
-#endif
     RTE_ASSERT(dev_index<DEV_INDEX_MAX);
     PC802_Mem_Block_t *mblk;
     if (NULL == pcxx_devs[dev_index].oam_buf) {
@@ -590,18 +482,8 @@ int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxOamSend(const char* buf, uint32_t bufLen, ...)
+static int __pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
 {
-    uint16_t dev_index = 0;
-    //va_list ap;
-    //va_start(ap, bufLen);
-    //dev_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
-{
-#endif
     RTE_ASSERT(dev_index<DEV_INDEX_MAX);
     uint32_t ret;
     RTE_ASSERT(0 == (bufLen & 3));
@@ -620,15 +502,9 @@ int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxOamRecv(void)
-{
-    uint16_t dev_index = 0;
-#else
-int pcxxOamRecv(uint16_t dev_index )
+static int __pcxxOamRecv(uint16_t dev_index )
 {
     RTE_ASSERT(dev_index<DEV_INDEX_MAX);
-#endif
     char *rx_oam_buf = NULL;
     PC802_Mem_Block_t *mblk_oam;
     uint16_t num_rx;
@@ -670,19 +546,8 @@ int pcxxOamRecv(uint16_t dev_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
+static int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0, cell_index = 0;
-    //va_list ap;
-    //va_start(ap, offset);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -696,19 +561,8 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
+static int __pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0, cell_index = 0;
-    //va_list ap;
-    //va_start(ap, bufLen);
-    //dev_index = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -736,19 +590,8 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
-#ifndef MULTI_PC802
-void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
+static void* __pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
 {
-    uint16_t dev_index = 0, cell_index = 0;
-    //va_list ap;
-    //va_start(ap, len);
-    //dev_index  = va_arg(ap, int);
-    //cell_index = va_arg(ap, int);
-    //va_end(ap);
-#else
-void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->rx_data_buf)
@@ -759,6 +602,91 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t c
 }
 
 #ifndef MULTI_PC802
+int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
+{
+    return __pcxxCtrlOpen(info, 0, 0);
+}
+
+void pcxxCtrlClose(void)
+{
+    __pcxxCtrlClose(0, 0);
+}
+
+int pcxxOamOpen(const pcxxInfo_s* info, ...)
+{
+    return __pcxxOamOpen(info, 0);
+}
+
+void pcxxOamClose(void)
+{
+    __pcxxOamClose(0);
+}
+
+int pcxxDataOpen(const pcxxInfo_s* info, ...)
+{
+    return __pcxxDataOpen(info, 0, 0);
+}
+
+void pcxxDataClose(void)
+{
+    __pcxxDataClose(0, 0);
+}
+
+int pcxxSendStart(void)
+{
+    return __pcxxSendStart(0, 0);
+}
+
+int pcxxSendEnd(void)
+{
+    return __pcxxSendEnd(0, 0);
+}
+
+int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
+{
+    return __pcxxCtrlAlloc(buf, availableSize, 0, 0);
+}
+
+int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
+{
+    return __pcxxCtrlSend(buf, bufLen, 0, 0);
+}
+
+int pcxxCtrlRecv(void)
+{
+    return __pcxxCtrlRecv(0, 0);
+}
+
+int pcxxOamAlloc(char** buf, uint32_t* availableSize, ...)
+{
+    return __pcxxOamAlloc(buf, availableSize, 0);
+}
+
+int pcxxOamSend(const char* buf, uint32_t bufLen, ...)
+{
+    return __pcxxOamSend(buf, bufLen, 0);
+}
+
+int pcxxOamRecv(void)
+{
+    return __pcxxOamRecv(0);
+}
+
+int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
+{
+    return __pcxxDataAlloc(bufSize, buf, offset, 0, 0);
+}
+
+int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
+{
+    return __pcxxDataSend(offset, bufLen, 0, 0);
+}
+
+void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
+{
+    return __pcxxDataRecv(offset, len, 0, 0);
+}
+
 int pcxxCtrlDestroy(void)
 {
     return 0;
@@ -774,6 +702,91 @@ int pcxxDataDestroy(void)
     return 0;
 }
 #else
+int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxCtrlOpen(info, dev_index, cell_index);
+}
+
+void pcxxCtrlClose( _UNUSED_ uint16_t dev_index, uint16_t cell_index )
+{
+    __pcxxCtrlClose(dev_index, cell_index);
+}
+
+int pcxxOamOpen(const pcxxInfo_s* info, uint16_t dev_index )
+{
+    return __pcxxOamOpen(info, dev_index);
+}
+
+void pcxxOamClose( _UNUSED_ uint16_t dev_index )
+{
+    __pcxxOamClose(dev_index);
+}
+
+int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxDataOpen(info, dev_index, cell_index);
+}
+
+void pcxxDataClose( uint16_t dev_index, uint16_t cell_index )
+{
+    __pcxxDataClose(dev_index, cell_index);
+}
+
+int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxSendStart(dev_index, cell_index);
+}
+
+int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxSendEnd(dev_index, cell_index);
+}
+
+int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxCtrlAlloc(buf, availableSize, dev_index, cell_index);
+}
+
+int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxCtrlSend(buf, bufLen, dev_index, cell_index);
+}
+
+int pcxxCtrlRecv(uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxCtrlRecv(dev_index, cell_index);
+}
+
+int pcxxOamAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index )
+{
+    return __pcxxOamAlloc(buf, availableSize, dev_index);
+}
+
+int pcxxOamSend(const char* buf, uint32_t bufLen, uint16_t dev_index )
+{
+    return __pcxxOamSend(buf, bufLen, dev_index);
+}
+
+int pcxxOamRecv(uint16_t dev_index )
+{
+    return __pcxxOamRecv(dev_index);
+}
+
+int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxDataAlloc(bufSize, buf, offset, dev_index, cell_index);
+}
+
+int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxDataSend(offset, bufLen, dev_index, cell_index);
+}
+
+void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
+{
+    return __pcxxDataRecv(offset, len, dev_index, cell_index);
+}
+
 int pcxxCtrlDestroy( uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
