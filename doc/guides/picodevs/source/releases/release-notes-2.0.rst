@@ -42,3 +42,15 @@ API Changes
   * ``pcxxCtrlRecv``
   * ``pcxxDataAlloc``
   * ``pcxxDataSend``
+
+PC802 driver 2.0.1
+##################
+
+New features
+************
+* SI-1017: Added support for Different firmware&vector file for different chip in ORANIC
+* SI-1337: Optimized PCIe msg jitter
+
+Bug fixes
+*********
+* SI-1013: Fix PC802 driver(v2.0) PCIe channel failure on FSBL V0
