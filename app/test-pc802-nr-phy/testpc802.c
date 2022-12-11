@@ -258,66 +258,18 @@ static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
     return 0;
 }
 
-#if 0
-static int check_single_same(uint32_t *a, uint32_t *b)
+static int check_ul_msg(const char *buf)
 {
-    uint32_t k, N;
-    uint32_t err_cnt;
-    int res;
-    err_cnt = 0;
-    res = 0;
-    N = a[1] + 2;
-    for (k = 0; k < N; k++) {
-        if (a[k] != b[k]) {
-            res = -1;
-            DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
-                k, a[k], k, b[k]);
-            err_cnt++;
-            if (16 == err_cnt)
-                return -1;
-        }
-   }
-   return res;
-}
-
-static int check_same(uint32_t **a, uint16_t na, uint32_t *b)
-{
-    uint32_t *pa;
-    uint32_t N;
-    uint16_t k;
-    for (k = 0; k < na; k++) {
-        pa = a[k];
-        N = pa[1] + 2;
-        if (check_single_same(pa, b)) {
-            DBLOG("ERROR: k = %hu\n", k);
-            return -1;
-        }
-        b += N;
-    }
-    return 0;
-}
-
-static void swap_msg(uint32_t *a, uint32_t msgSz)
-{
-    uint32_t d;
-    while (msgSz) {
-        d = *a;
-        *a++ = ~d;
-        msgSz -= sizeof(uint32_t);
-    }
-    return;
-}
-#endif
-
-static int check_ul_msg(uint32_t *msg)
-{
+    uint32_t *msg = (uint32_t *)buf;
     uint32_t d = msg[0];
     uint32_t N = msg[1];
     uint32_t e = msg[2];
     int k;
+    int M = (int)N;
     uint32_t *p = &msg[3];
     e += d;
-    for (k = 1; k < N; k++) {
+
+    for (k = 1; k < M; k++) {
         if (p[0] != e)
             return k;
         p++;
@@ -331,21 +283,23 @@ extern PC802_Traffic_Type_e QID_DATA[];
 extern PC802_Traffic_Type_e QID_CTRL[];
 #define QID_OAM     PC802_TRAFFIC_OAM
 
+#define VOID(a) a = a
+
 static uint32_t __process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    (void *)buf;
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(buf);
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     return 0;
 }
 
 static uint32_t __process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     int r;
     r = check_ul_msg(buf);
@@ -358,39 +312,39 @@ static uint32_t __process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uin
 
 static uint32_t __process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
 {
-    (void *)buf;
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(buf);
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     return 0;
 }
 
 static uint32_t __process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    (void *)buf;
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(buf);
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     return payloadSize;
 }
 
 static uint32_t __process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    (void *)buf;
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(buf);
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     return 0;
 }
 
 static uint32_t __process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    (void)payloadSize;
-    (void)dev_index;
-    (void)cell_index;
+    VOID(payloadSize);
+    VOID(dev_index);
+    VOID(cell_index);
 
     int r;
     r = check_ul_msg(buf);
