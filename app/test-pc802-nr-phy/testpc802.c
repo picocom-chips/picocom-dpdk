@@ -311,6 +311,7 @@ extern PC802_Traffic_Type_e QID_DATA[];
 extern PC802_Traffic_Type_e QID_CTRL[];
 #define QID_OAM     PC802_TRAFFIC_OAM
 
+#if 0
 static union {
     const char *cc;
     uint32_t   *up;
@@ -323,70 +324,35 @@ static union {
 static uint32_t dl_oam_num[PC802_INDEX_MAX] = {0};
 
 static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
+#endif
 
 static uint32_t __process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    payloadSize = payloadSize;
-    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
-    dl_a_num[dev_index][cell_index]++;
     return 0;
 }
 
 static uint32_t __process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t *dl_msg;
-    dl_msg = dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index] - 1].up;
-    if (check_same(&dl_msg, 1, ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 1;
-    }
-    dl_a_num[dev_index][cell_index] = 0;
     return payloadSize;
 }
 
 static uint32_t __process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
 {
-    buf = buf;
-    payloadSize = payloadSize;
-    dl_oam[dev_index][dl_oam_num[dev_index]].cc = buf;
-    dl_oam_num[dev_index]++;
     return 0;
 }
 
 static uint32_t __process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_oam[dev_index][0].up;
-    if (check_same(dl_msg, dl_oam_num[dev_index], ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 4;
-    }
-    dl_oam_num[dev_index] = 0;
     return payloadSize;
 }
 
 static uint32_t __process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    payloadSize = payloadSize;
-    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
-    dl_a_num[dev_index][cell_index]++;
     return 0;
 }
 
 static uint32_t __process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_a[dev_index][cell_index][0].up;
-    if (check_same(dl_msg, dl_a_num[dev_index][cell_index] - 1, ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 2;
-    }
     return payloadSize;
 }
 
