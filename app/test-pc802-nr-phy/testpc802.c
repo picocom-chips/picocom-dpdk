@@ -478,9 +478,7 @@ int main(int argc, char** argv)
     int diag;
     int port_id = 0;
     int pc802_index = 0;
-
-    uint64_t hz = rte_get_timer_hz();
-    cycles_of_a_slot = hz / 2000;  //0.5ms
+    uint64_t hz;
 
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
@@ -491,6 +489,9 @@ int main(int argc, char** argv)
     diag = rte_eal_init(argc, argv);
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
+
+    hz = rte_get_timer_hz();
+    cycles_of_a_slot = hz / 2000;  //0.5ms
 
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
