@@ -53,4 +53,4 @@ New features
 
 Bug fixes
 *********
-* SI-1013: Fix PC802 driver(v2.0) PCIe channel failure on FSBL V0
+* SI-1369: Fix PC802 driver(v2.0) PCIe channel failure on FSBL V0
