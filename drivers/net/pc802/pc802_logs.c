@@ -268,7 +268,7 @@ int STAT_Sample(int stat_no, uint32_t sample)
     p->n--;
     if (p->n == 0) {
         p->average = p->sum / p->N;
-        p->std_dev = (uint32_t)sqrtf((float)(p->sum2) / p->N - p->average * p->average);
+        p->std_dev = (uint32_t)sqrtf((float)(p->sum2) / p->N - (uint64_t)(p->average) * p->average);
     }
     return p->n;
 }
