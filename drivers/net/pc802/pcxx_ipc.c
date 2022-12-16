@@ -73,6 +73,9 @@ static uint64_t stat_t[NUM_STATS];
 static int __pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
+    if ((dev_index > 0) || (cell_index > 0))
+        goto __Init_Timing_Stats_Finished;
+
     uint64_t hz = rte_get_timer_hz();
     DBLOG("PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
     DBLOG("NPU CPU Hz = %lu\n", hz);
@@ -85,6 +88,7 @@ static int __pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t c
          stat_cnts[k] = 0;
          stat_t[k] = 0;
     }
+__Init_Timing_Stats_Finished:
 #endif
 
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
@@ -361,7 +365,9 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     uint64_t t_rx_data;
     uint64_t tdiff_64;
 
-    stat_and_check(NO_CTRL_POLL);
+    if ((0 == dev_index) && (0 == cell_index))
+        stat_and_check(NO_CTRL_POLL);
+
     RTE_RDTSC(tstart0);
 #endif
     if (NULL == cell->rx_ctrl_buf) {
@@ -369,7 +375,8 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
         if (num_rx) {
             cell->rx_ctrl_buf = (char *)&mblk_ctrl[1];
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
-            stat_and_check(NO_CTRL_RECV);
+            if ((0 == dev_index) && (0 == cell_index))
+                stat_and_check(NO_CTRL_RECV);
             if (1 == mblk_ctrl->pkt_type) {
                 RTE_RDTSC(stat_t[NO_CTRL_DATA]);
             }
@@ -394,7 +401,8 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
             return -1;
         }
         cell->rx_data_buf = (char *)&mblk_data[1];
-        check_proc_time(NO_CTRL_DATA, tdiff_64);
+        if ((0 == dev_index) && (0 == cell_index))
+            check_proc_time(NO_CTRL_DATA, tdiff_64);
     }
 
     if (cell->rx_data_buf) {
@@ -409,7 +417,8 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
             RTE_RDTSC(tend1);
             tdiff_64 = tend1 - tstart1;
-            check_proc_time(NO_DATA_PROC, tdiff_64);
+            if ((0 == dev_index) && (0 == cell_index))
+                check_proc_time(NO_DATA_PROC, tdiff_64);
 #endif
         }
     }
@@ -443,7 +452,8 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
     RTE_RDTSC(tend);
     tdiff_64 = tend - tstart;
-    check_proc_time(NO_CTRL_PROC, tdiff_64);
+    if ((0 == dev_index) && (0 == cell_index))
+        check_proc_time(NO_CTRL_PROC, tdiff_64);
 #endif
     cell->ctrl_cnt++;
 
@@ -459,7 +469,8 @@ static int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 #ifdef ENABLE_CHECK_PC802_UL_TIMING
     RTE_RDTSC(tend0);
     tdiff_64 = tend0 - tstart0;
-    check_proc_time(NO_FUNC_PROC, tdiff_64);
+    if ((0 == dev_index) && (0 == cell_index))
+        check_proc_time(NO_FUNC_PROC, tdiff_64);
 #endif
     return 0;
 }
