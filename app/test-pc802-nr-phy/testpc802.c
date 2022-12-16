@@ -492,6 +492,7 @@ int main(int argc, char** argv)
 
     hz = rte_get_timer_hz();
     cycles_of_a_slot = hz / 2000;  //0.5ms
+    NPU_SYSLOG("NPU cycles_of_a_slot = %u\n", cycles_of_a_slot);
 
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
