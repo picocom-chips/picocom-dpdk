@@ -18,6 +18,7 @@
 #include <rte_byteorder.h>
 #include <rte_debug.h>
 #include <rte_pci.h>
+#include <rte_telemetry.h>
 #include <rte_bus_pci.h>
 #include <rte_version.h>
 #include <rte_ether.h>
@@ -2953,4 +2954,186 @@ uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
         sfn_slot = 0xFFFFFFFF;
     }
     return sfn_slot;
+}
+
+static void pc802_tel_add_reg_array(struct rte_tel_data *d, const char *name, uint32_t *reg_addr, int count)
+{
+	int i;
+	struct rte_tel_data *array = rte_tel_data_alloc();
+	rte_tel_data_start_array(array, RTE_TEL_U64_VAL);
+	for (i = 0; i < count; i++)
+		rte_tel_data_add_array_u64(array, PC802_READ_REG(reg_addr[i]));
+	rte_tel_data_add_dict_container(d, name, array, 0);
+}
+
+static int pc802_tel_handle_port_list(const char *cmd __rte_unused,
+                const char *params __rte_unused, struct rte_tel_data *d)
+{
+	int i;
+	rte_tel_data_start_array(d, RTE_TEL_INT_VAL);
+    for ( i=0; i<num_pc802s; i++ )
+		rte_tel_data_add_array_int(d, pc802_devices[i]->port_id);
+	return 0;
+}
+
+static int pc802_rel_handle_regs(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    #define ADD_DICT_REG(reg) rte_tel_data_add_dict_u64(d, #reg, PC802_READ_REG(bar->reg))
+    #define ADD_DICT_ARRAY(reg) pc802_tel_add_reg_array(d, #reg, bar->reg, sizeof(bar->reg)/sizeof(uint32_t))
+    struct pc802_adapter *adapter;
+    PC802_BAR_t *bar;
+	int dev_id=0;
+
+	/* Get dev ID from parameter string */
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+
+    sscanf( params, "%d", &dev_id);
+    if(dev_id >= num_pc802s)
+        return -1;
+
+    adapter = pc802_devices[dev_id];
+    bar = (PC802_BAR_t *)adapter->bar0_addr;
+
+	rte_tel_data_start_dict(d);
+    ADD_DICT_REG(DEVEN);
+    ADD_DICT_REG(DEVRDY);
+    ADD_DICT_REG(DBAL);
+    ADD_DICT_REG(DBAH);
+    ADD_DICT_REG(ULDMAN);
+    ADD_DICT_ARRAY(TDNUM);
+
+    ADD_DICT_ARRAY(TRCCNT);
+    ADD_DICT_ARRAY(TEPCNT);
+    ADD_DICT_ARRAY(RDNUM);
+    ADD_DICT_ARRAY(RRCCNT);
+    ADD_DICT_ARRAY(REPCNT);
+
+    ADD_DICT_REG(BOOTSRCL);
+    ADD_DICT_REG(BOOTSRCH);
+    ADD_DICT_REG(BOOTDST);
+    ADD_DICT_REG(BOOTSZ);
+    ADD_DICT_REG(BOOTRCCNT);
+    ADD_DICT_REG(BOOTRSPL);
+    ADD_DICT_REG(BOOTRSPH);
+    ADD_DICT_REG(BOOTEPCNT);
+    ADD_DICT_REG(BOOTERROR);
+    ADD_DICT_REG(BOOTDEBUG);
+    ADD_DICT_REG(MB_HANDSHAKE);
+    ADD_DICT_REG(MACADDRL);
+    ADD_DICT_REG(DBGRCAL);
+    ADD_DICT_REG(DBGRCAH);
+    ADD_DICT_REG(MB_ANDES_DIS);
+    ADD_DICT_REG(MB_DSP_DIS);
+    ADD_DICT_REG(DBGEPADDR);
+    ADD_DICT_REG(DBGBYTESNUM);
+    ADD_DICT_REG(DBGCMD);
+    ADD_DICT_REG(DBGRCCNT);
+    ADD_DICT_REG(DBGEPCNT);
+    ADD_DICT_REG(DRVSTATE);
+    ADD_DICT_REG(MEMCFGADDR);
+
+    ADD_DICT_ARRAY(ULDMA_TIMEOUT_FINISHED);
+    ADD_DICT_ARRAY(ULDMA_TIMEOUT_ERROR);
+    ADD_DICT_ARRAY(DLDMA_TIMEOUT_FINISHED);
+    ADD_DICT_ARRAY(DLDMA_TIMEOUT_ERROR);
+
+	return 0;
+}
+
+static int pc802_tel_handle_queue_stats(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    struct pc802_adapter *adapter;
+    struct pc802_tx_queue *txq;
+    struct pc802_rx_queue *rxq;
+	int dev_id=0, queue_id=0;
+
+	/* Get dev ID from parameter string */
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+
+    sscanf( params, "%d,%d", &dev_id, &queue_id);
+    if( (dev_id >= num_pc802s) || (queue_id >= PC802_TRAFFIC_NUM) )
+        return -1;
+
+    adapter = pc802_devices[dev_id];
+    txq = &adapter->txq[queue_id];
+    rxq = &adapter->rxq[queue_id];
+
+	rte_tel_data_start_dict(d);
+    rte_tel_data_add_dict_int(d, "dev", dev_id);
+    rte_tel_data_add_dict_int(d, "queue", queue_id);
+
+    rte_tel_data_add_dict_u64(d, "TX_rc_cnt",       txq->rc_cnt);
+    rte_tel_data_add_dict_int(d, "nb_tx_desc",      txq->nb_tx_desc);
+    rte_tel_data_add_dict_int(d, "tx_free_thresh",  txq->tx_free_thresh);
+    rte_tel_data_add_dict_int(d, "nb_tx_free",      txq->nb_tx_free);
+
+    rte_tel_data_add_dict_u64(d, "DL_RC", *txq->trccnt_reg_addr);
+    rte_tel_data_add_dict_u64(d, "DL_EP", *txq->tepcnt_mirror_addr);
+
+    rte_tel_data_add_dict_u64(d, "RX_rc_cnt",       rxq->rc_cnt);
+    rte_tel_data_add_dict_int(d, "nb_rx_desc",      rxq->nb_rx_desc);
+    rte_tel_data_add_dict_int(d, "nb_rx_hold",      rxq->nb_rx_hold);
+    rte_tel_data_add_dict_int(d, "rx_free_thresh",  rxq->rx_free_thresh);
+    rte_tel_data_add_dict_u64(d, "UL_RC", *rxq->rrccnt_reg_addr);
+    rte_tel_data_add_dict_u64(d, "UL_EP", *rxq->repcnt_mirror_addr);
+
+	return 0;
+}
+
+static int pc802_tel_handle_read_memory(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    struct pc802_adapter *adapter;
+	int dev_id, ret;
+    uint32_t addr, len;
+    char file[128] = {0};
+
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+    ret = sscanf( params, "%d,%x,%d,%s", &dev_id, &addr, &len, file);
+    if ((ret < 3) || (dev_id >= num_pc802s) || len<4 )
+        return -1;
+    adapter = pc802_devices[dev_id];
+
+    pc802_access_ep_mem(adapter->port_id, addr, len, DIR_PCIE_DMA_UPLINK);
+    uint32_t *p = (uint32_t *)pc802_get_debug_mem(adapter->port_id);
+
+    rte_tel_data_start_dict(d);
+    if(ret==3) {
+        uint32_t i;
+        char name[16], buf[40];
+        for (i = 0; i < len; i+=16 ) {
+            sprintf(name, "%08X:", addr+i);
+            sprintf(buf, "%08x, %08x, %08x, %08x", p[0], p[1], p[2], p[3]);
+            rte_tel_data_add_dict_string(d, name, buf);
+        }
+    }
+    else {
+        FILE  *fp = fopen(file, "wb");
+        if (fp == NULL) {
+            rte_tel_data_add_dict_string( d, "result", "Fopen error!");
+            return 0;
+        }
+        ret = fwrite( (char *)p, 1, len, fp);
+        fclose(fp);
+        rte_tel_data_add_dict_string( d, "result", "ok" );
+        rte_tel_data_add_dict_string( d, "file_name", file );
+    }
+    return 0;
+}
+
+RTE_INIT(pc802_init_telemetry)
+{
+	rte_telemetry_register_cmd("/pc802/list", pc802_tel_handle_port_list,
+			"Returns list of available pc802 dev. no parameters");
+	rte_telemetry_register_cmd("/pc802/regs", pc802_rel_handle_regs,
+			"Returns the bar0 regs for a pc802. Params: DevID");
+	rte_telemetry_register_cmd("/pc802/queue", pc802_tel_handle_queue_stats,
+			"Returns the stats for a pc802 queue. Params: DevID,QueueID");
+	rte_telemetry_register_cmd("/pc802/read_mem", pc802_tel_handle_read_memory,
+			"Read pc802 mem. Params: DevID,HexAddr,len,(file)");
 }
