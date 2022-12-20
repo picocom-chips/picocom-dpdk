@@ -7,6 +7,7 @@ cflags += '-DRTE_ENABLE_ASSERT'
 dpdk_conf.set('MULTI_PC802', get_option('enable_multi_pc802'))
 sources = files(
         'testpc802.c',
+        'cmdline.c'
 )
 
 deps += ['ethdev', 'cmdline', 'bus_pci']

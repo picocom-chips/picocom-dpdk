@@ -167,7 +167,17 @@ static int port_init( uint16_t pc802_index )
     return 0;
 }
 
-static int produce_random_dl_src_data(uint32_t *buf)
+static uint32_t random_dl_msg_length(void)
+{
+    uint32_t N;
+    N = (uint32_t)rand();
+    N &= 511;
+    if (N < 10) N = 10;
+    if (N > 500) N = 500;
+    return (N + 2)* sizeof(uint32_t);
+}
+
+static int produce_random_dl_src_data(uint32_t *buf, uint32_t msg_length)
 {
     //static uint32_t idx = 0;
     uint32_t N, s, d, k;
@@ -175,10 +185,7 @@ static int produce_random_dl_src_data(uint32_t *buf)
         s = (uint32_t)rand();
     } while (s == 0x4b3c2d1e);
     *buf++ = s;
-    N = (uint32_t)rand();
-    N &= 511;
-    if (N < 10) N = 10;
-    if (N > 500) N = 500;
+    N = msg_length / sizeof(uint32_t) - 2;
     *buf++ = N;
     d = (uint32_t)rand();
     //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
@@ -189,72 +196,9 @@ static int produce_random_dl_src_data(uint32_t *buf)
     return 0;
 }
 
-static int produce_fixed_dl_src_data_1(uint32_t *buf, uint16_t qId)
+static int produce_dl_src_data(uint32_t *buf, uint16_t qId, uint32_t msg_length)
 {
-    //static uint32_t idx = 0;
-    uint32_t N, s, d, k;
-    s = 0;
-    *buf++ = s;
-    N = 500;
-    *buf++ = N;
-    d = 0x11111111 * (1 + qId);
-    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_fixed_dl_src_data_2(uint32_t *buf, uint16_t qId)
-{
-    //static uint32_t idx = 0;
-    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    uint32_t N, s, d, k;
-    s = 1;
-    *buf++ = s;
-    N = 500;
-    *buf++ = N;
-    d = d0[qId];
-    d0[qId]++;
-    //printf("DL_MSG[1][%3u]: N=%3u S=0x%08X D=0x%08X\n", idx++, N, s, d);
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_fixed_dl_src_data_3(uint32_t *buf, uint16_t qId)
-{
-    static uint32_t d0[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-    static uint32_t L = 400;
-    uint32_t N, s, d, k;
-    s = 1;
-    *buf++ = s;
-    if (L >= 501) L = 400;
-    N = L++;
-    *buf++ = N;
-    d = d0[qId];
-    d0[qId]++;
-    for (k = 0; k < N; k++) {
-        *buf++ = d;
-        d += s;
-    }
-    return 0;
-}
-
-static int produce_dl_src_data(uint32_t *buf, uint16_t qId)
-{
-    if (0 == testpc802_data_mode) {
-        produce_random_dl_src_data(buf);
-    } else if (1 == testpc802_data_mode) {
-        produce_fixed_dl_src_data_1(buf, qId);
-    } else if (2 == testpc802_data_mode) {
-        produce_fixed_dl_src_data_2(buf, qId);
-    } else {
-        produce_fixed_dl_src_data_3(buf, qId);
-    }
+    produce_random_dl_src_data(buf, msg_length);
     return 0;
 }
 
@@ -417,6 +361,9 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
 }
 #endif
 
+int start_flag = 0;
+int quit_flag = 0;
+
 static int dl_worker(void *arg)
 {
     uint32_t *a[17];
@@ -429,24 +376,38 @@ static int dl_worker(void *arg)
     uint32_t cycle_diff;
     uint32_t N;
     uint32_t M;
+    int prev_start = start_flag;
 
     arg  = arg;
     M = N = 0;
     cycle_start = rte_rdtsc();
     do {
+        if ((0 != prev_start) && (0 == start_flag)) {
+            DBLOG("Have Tx %u slots before stopping \n", M);
+            prev_start = 0;
+        }
+        while (0 == start_flag);
+        prev_start = 1;
+
         PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
 
         for (k = 0; k < 16; k++) {
+            length = random_dl_msg_length();
             RTE_ASSERT(0 == pcxxDataAlloc(length, (char **)&a[k], &offset, g_pc802_index, g_cell_index));
-            produce_dl_src_data(a[k], QID_DATA[g_cell_index]);
-            length = sizeof(uint32_t) * (a[k][1] + 2);
+            produce_dl_src_data(a[k], QID_DATA[g_cell_index], length);
             pcxxDataSend(offset, length, g_pc802_index, g_cell_index);
         }
 
         RTE_ASSERT(0 == pcxxCtrlAlloc((char **)&a[k], &avail, g_pc802_index, g_cell_index));
-        produce_dl_src_data(a[k], QID_CTRL[g_cell_index]);
-        length = sizeof(uint32_t) * (a[k][1] + 2);
+        length = random_dl_msg_length();
+        produce_dl_src_data(a[k], QID_CTRL[g_cell_index], length);
         pcxxCtrlSend((const char *)a[k], length, g_pc802_index, g_cell_index);
+
+        do {
+            cycle_curr = rte_rdtsc();
+            cycle_diff = cycle_curr- cycle_start;
+        } while (cycle_diff < cycles_of_a_slot);
+        cycle_start += cycles_of_a_slot;
 
         PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
         N++;
@@ -455,22 +416,73 @@ static int dl_worker(void *arg)
             DBLOG("Have Tx %u slots\n", M);
             N = 0;
         }
-
-        do {
-            cycle_curr = rte_rdtsc();
-            cycle_diff = cycle_curr- cycle_start;
-        } while (cycle_diff < cycles_of_a_slot);
-        cycle_start += cycles_of_a_slot;
-    }while(1);
+    }while(0 == quit_flag);
 }
 
 static int ul_worker(void *arg)
 {
+    int prev_start = start_flag;
+    uint32_t N;
+    uint32_t M;
+
+    M = N = 0;
     arg = arg;
     do {
+        if ((0 != prev_start) && (0 == start_flag)) {
+            DBLOG("Have Rx %u slots before stopping \n", M);
+            prev_start = 0;
+        }
+        prev_start = start_flag;
+
         while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
-    } while(1);
+        N++;
+        M++;
+        if (N == 20000) { //10 seconds
+            DBLOG("Have Rx %u slots\n", M);
+            N = 0;
+        }
+    } while(0 == quit_flag);
     return 0;
+}
+
+extern cmdline_parse_ctx_t main_ctx[];
+static int prompt(void* arg)
+{
+    struct cmdline *cl;
+    arg = arg;
+
+    cl = cmdline_stdin_new(main_ctx, "PC802>> ");
+    if (cl == NULL) {
+        return -1;
+    }
+    cmdline_interact(cl);
+    cmdline_stdin_exit(cl);
+
+    return 0;
+}
+
+static unsigned int get_a_isolated_lcore(void)
+{
+    FILE *fp = NULL;
+    char buffer[128] = {0};
+    char *ret = NULL;
+    static unsigned int min = 0xFFFF;
+    static unsigned int max;
+    unsigned int lcore;
+
+    if (0xFFFF == min) {
+        fp = popen("cat /sys/devices/system/cpu/isolated", "r");
+        ret = fgets(buffer, sizeof(buffer), fp);
+        pclose(fp);
+        sscanf( buffer, "%u-%u", &min, &max);
+    }
+    if (min <= max) {
+        lcore = min;
+        min++;
+    } else {
+        lcore = max;
+    }
+    return lcore;
 }
 
 int main(int argc, char** argv)
@@ -479,6 +491,7 @@ int main(int argc, char** argv)
     int port_id = 0;
     int pc802_index = 0;
     uint64_t hz;
+    unsigned int lcore;
 
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
@@ -502,10 +515,20 @@ int main(int argc, char** argv)
 
         port_init(pc802_index);
     }
-    rte_eal_remote_launch(dl_worker, NULL, 4);
-    rte_eal_remote_launch(ul_worker, NULL, 5);
 
-    while(1) {
+    lcore = get_a_isolated_lcore();
+    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
+    DBLOG("thread cmdline prompt is running on lcore = %u\n", lcore);
+
+    lcore = get_a_isolated_lcore();
+    rte_eal_remote_launch(dl_worker, NULL, lcore);
+    DBLOG("thread dl_worker is running on lcore = %u\n", lcore);
+
+    lcore = get_a_isolated_lcore();
+    rte_eal_remote_launch(ul_worker, NULL, lcore);
+    DBLOG("thread ul_worker is running on lcore = %u\n", lcore);
+
+    while(0 == quit_flag) {
         usleep(10);
     }
 
