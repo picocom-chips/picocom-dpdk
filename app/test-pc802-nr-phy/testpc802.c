@@ -361,8 +361,8 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
 }
 #endif
 
-int start_flag = 0;
-int quit_flag = 0;
+volatile int start_flag = 0;
+volatile int quit_flag = 0;
 
 static int dl_worker(void *arg)
 {
