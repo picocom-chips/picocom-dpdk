@@ -380,13 +380,15 @@ static int dl_worker(void *arg)
 
     arg  = arg;
     M = N = 0;
-    cycle_start = rte_rdtsc();
+
     do {
         if ((0 != prev_start) && (0 == start_flag)) {
             DBLOG("Have Tx %u slots before stopping \n", M);
             prev_start = 0;
         }
         while (0 == start_flag);
+        if (0 == prev_start)
+             cycle_start = rte_rdtsc();
         prev_start = 1;
 
         PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
