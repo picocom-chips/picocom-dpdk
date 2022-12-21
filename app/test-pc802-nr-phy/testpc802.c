@@ -412,6 +412,8 @@ static int dl_worker(void *arg)
         PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
         N++;
         M++;
+        if (M == 16)
+            while(1);
         if (N == 20000) { //10 seconds
             DBLOG("Have Tx %u slots\n", M);
             N = 0;
