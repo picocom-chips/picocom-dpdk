@@ -495,6 +495,13 @@ int main(int argc, char** argv)
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
 
+#ifdef ENABLE_CHECK_PC802_UL_TIMING
+    printf("ENABLE_CHECK_PC802_UL_TIMING is defined.\n");
+#endif
+#ifdef ENABLE_CHECK_PC802_DL_TIMING
+    printf("ENABLE_CHECK_PC802_DL_TIMING is defined.\n");
+#endif
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
