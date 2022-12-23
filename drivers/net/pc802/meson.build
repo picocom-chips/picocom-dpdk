@@ -16,6 +16,8 @@ message('version: @0@'.format(version))
 dpdk_conf.set('PC802_UDRIVER_VERSION', '"'+version+'"')
 cflags += '-DRTE_ENABLE_ASSERT'
 dpdk_conf.set('MULTI_PC802', get_option('enable_multi_pc802'))
+dpdk_conf.set('ENABLE_CHECK_PC802_UL_TIMING', get_option('enable_check_pc802_ul_timing'))
+dpdk_conf.set('ENABLE_CHECK_PC802_DL_TIMING', get_option('enable_check_pc802_dl_timing'))
 
 sources = files(
         'pc802_ethdev.c',

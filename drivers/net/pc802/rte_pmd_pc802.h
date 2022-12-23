@@ -11,9 +11,6 @@
 extern "C" {
 #endif
 
-#define  ENABLE_CHECK_PC802_UL_TIMING   1
-#define  ENABLE_CHECK_PC802_DL_TIMING   1
-
 #if defined(ENABLE_CHECK_PC802_UL_TIMING) || defined(ENABLE_CHECK_PC802_DL_TIMING)
 #define ENABLE_CHECK_PC802_TIMING
 #endif
