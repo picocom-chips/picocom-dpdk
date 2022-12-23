@@ -42,3 +42,30 @@ API Changes
   * ``pcxxCtrlRecv``
   * ``pcxxDataAlloc``
   * ``pcxxDataSend``
+
+PC802 driver 2.0.1
+##################
+
+New features
+************
+* SI-1017: Added support for Different firmware&vector file for different chip in ORANIC
+* SI-1337: Optimized PCIe msg jitter
+
+Bug fixes
+*********
+* SI-1369: Fix PC802 driver(v2.0) PCIe channel failure on FSBL V0
+
+
+PC802 driver 2.1
+##################
+
+New features
+************
+* SI-1331 Added PC802 PCIe message timing statistics and checks
+* SI-1326 Added PC802 dpdk-telemetry debug command
+* SI-1309 Reduced debugging memory
+* SI-1300 Support max 4096 descriptors per PCIe queue
+
+
+Bug fixes
+*********

@@ -45,6 +45,35 @@ You can disable by adding "--log-level=pc802.printf:1" to the EAL argument:
     dpdk-testpc802 --log-level=pc802.printf:1
 
 
+PC802 Telemetry commands
+------------------------
+
+PC802_UDriver supports DPDK Telemetry,Telemetry usage instructions refer to the `DPDK documentation <https://doc.dpdk.org/guides/howto/telemetry.html>`_.
+
+Telemetry commands added by PC802_UDriver:
+    /pc802/list
+    /pc802/queue
+    /pc802/regs
+    /pc802/read_mem
+
+example:
+
+.. code-block:: console
+
+    root@bj-nr-19:/home/test# dpdk-telemetry.py
+    Connecting to /var/run/dpdk/rte/dpdk_telemetry.v2
+    {"version": "DPDK 21.08.0", "pid": 2919, "max_output_len": 16384}
+    Connected to application: "nrTestMAC"
+    --> /pc802/list
+    {"/pc802/list": [0, 1, 2]}
+    --> /pc802/regs,0
+    {"/pc802/regs": {"DEVEN": 1, "DEVRDY": 8, "DBAL": 1979252736, "DBAH": 2, "ULDMAN": 4, "TDNUM": [128, 128, 32, 0, 128, 32, 64], "TRCCNT": [0, 13865, 23114, 0, 0, 0, 0], "TEPCNT": [0, 13865, 23114, 0, 0, 0, 0], "RDNUM": [128, 128, 32, 0, 128, 32, 64], "RRCCNT": [0, 4620, 23112, 0, 0, 0, 0], "REPCNT": [0, 4620, 23112, 0, 0, 0, 0], "BOOTSRCL": 1977380608, "BOOTSRCH": 2, "BOOTDST": 0, "BOOTSZ": 0, "BOOTRCCNT": 4294967295, "BOOTRSPL": 0, "BOOTRSPH": 0, "BOOTEPCNT": 0, "BOOTERROR": 0, "BOOTDEBUG": 0, "MB_HANDSHAKE": 0, "MACADDRL": 0, "DBGRCAL": 1979318272, "DBGRCAH": 2, "MB_ANDES_DIS": 0, "MB_DSP_DIS": 0, "DBGEPADDR": 0, "DBGBYTESNUM": 0, "DBGCMD": 0, "DBGRCCNT": 0, "DBGEPCNT": 0, "DRVSTATE": 3, "MEMCFGADDR": 51444336, "ULDMA_TIMEOUT_FINISHED": [0, 0, 0, 0], "ULDMA_TIMEOUT_ERROR": [0, 0, 0, 0], "DLDMA_TIMEOUT_FINISHED": [0, 0, 0, 0], "DLDMA_TIMEOUT_ERROR": [0, 0, 0, 0]}}
+    --> /pc802/queue,0,1
+    {"/pc802/queue": {"dev": 0, "queue": 1, "TX_rc_cnt": 13865, "nb_tx_desc": 128, "tx_free_thresh": 32, "nb_tx_free": 37, "DL_RC": 13865, "DL_EP": 13865, "RX_rc_cnt": 4620, "nb_rx_desc": 128, "nb_rx_hold": 0, "rx_free_thresh": 32, "UL_RC": 4620, "UL_EP": 4620}}
+    --> /pc802/read_mem,0,0x10040000,16
+    {"/pc802/read_mem": {"10040000:": "00000001, 00000008, 75f90000, 00000002"}}
+
+
 Eanble KNI function
 -------------------
 
