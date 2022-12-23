@@ -553,6 +553,11 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
     static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM] = {0};
+#if 0
+    uint64_t tstart, tend, tdiff;
+    tstart = rte_rdtsc();
+#endif
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
@@ -626,6 +631,27 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     if( nb_rx )
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
     last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
+
+#if 0
+    tend = rte_rdtsc();
+    tdiff = tend - tstart;
+    uint32_t stat_no = 0xFF;
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        if (nb_rx)
+            stat_no = NO_CTRL_BURST_GOT;
+        else
+            stat_no = NO_CTRL_BURST_NULL;
+    } else if (PC802_TRAFFIC_5G_EMBB_DATA == queue_id) {
+        if (nb_rx)
+            stat_no = NO_DATA_BURST_GOT;
+        else
+            stat_no = NO_DATA_BURST_NULL;
+    }
+    if (stat_no < 0xFF) {
+        check_proc_time(stat_no, tdiff);
+    }
+#endif
+
     return nb_rx;
 }
 
@@ -681,6 +707,12 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     txq->rc_cnt = tx_id;
     rte_wmb();
     *txq->trccnt_reg_addr = tx_id;
+
+#ifdef ENABLE_CHECK_PC802_DL_TIMING
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        stat_and_check(NO_DL_CTRL_SEND);
+    }
+#endif
 
     return nb_tx;
 }
