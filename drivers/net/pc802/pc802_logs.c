@@ -195,6 +195,7 @@ void pc802_init_log(void) {
 	}
 }
 
+#ifdef ENABLE_CHECK_PC802_TIMING
 static Stat_t* gpStats;
 static int gNumOfStats;
 
@@ -297,3 +298,4 @@ int STAT_GetResult(int stat_no, StatResult_t* pResult)
     }
     return -2;
 }
+#endif
