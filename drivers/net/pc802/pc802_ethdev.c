@@ -12,6 +12,9 @@
 #include <time.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <rte_common.h>
 #include <rte_interrupts.h>
@@ -216,6 +219,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
+static void * pc802_vec_access(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1952,6 +1956,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
     }
 
@@ -2208,66 +2213,6 @@ static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
     return ext;
 }
 
-static int pc802_process_phy_test_vectors(void *data)
-{
-    struct pc802_adapter *adapter = (struct pc802_adapter *)data;
-    PC802_BAR_t *bar = pc802_get_BAR(adapter->port_id);
-    PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
-    uint32_t MB_RCCNT;
-    uint32_t EMB_RCCNT;
-    volatile uint32_t MB_EPCNT;
-    volatile uint32_t EMB_EPCNT;
-    volatile uint32_t COMMAND;
-    volatile uint32_t pfi_core;
-    volatile uint32_t drv_state;
-    uint32_t re = 1;
-
-    MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
-    MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
-    if (MB_EPCNT != MB_RCCNT) {
-        COMMAND = PC802_READ_REG(ext->MB_COMMAND);
-        pfi_core = PC802_READ_REG(ext->MB_EPCORE);
-        drv_state = PC802_READ_REG(bar->DRVSTATE);
-        if ((0 != pfi_core) && (3 == drv_state)) {
-            if (COMMAND == MB_VEC_READ) {
-                re = handle_non_pfi_0_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
-            } else if (COMMAND == MB_VEC_DUMP) {
-                re = handle_non_pfi_0_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
-            }
-            PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
-            MB_RCCNT++;
-            PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
-            return 1;
-        }
-        if (COMMAND == MB_VEC_READ) {
-            re = handle_pfi_0_vec_read(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2], ext->MB_ARGS[3]);
-        } else if (COMMAND == MB_VEC_DUMP) {
-            re = handle_pfi_0_vec_dump(adapter->port_id, ext->MB_ARGS[0], ext->MB_ARGS[1], ext->MB_ARGS[2]);
-        }
-        PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
-        PC802_WRITE_REG(ext->VEC_BUFSIZE, 0);
-        MB_RCCNT++;
-        PC802_WRITE_REG(ext->MB_RCCNT, MB_RCCNT);
-        return 1;
-    }
-    EMB_RCCNT = PC802_READ_REG(ext->EMB_RCCNT);
-    EMB_EPCNT = PC802_READ_REG(ext->EMB_EPCNT);
-    if (EMB_EPCNT != EMB_RCCNT) {
-        COMMAND = PC802_READ_REG(ext->EMB_COMMAND);
-        if (COMMAND == MB_VEC_READ) {
-            re = handle_non_pfi_0_vec_read(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2], ext->EMB_ARGS[3]);
-        } else if (COMMAND == MB_VEC_DUMP) {
-            re = handle_non_pfi_0_vec_dump(adapter->port_id, ext->EMB_ARGS[0], ext->EMB_ARGS[1], ext->EMB_ARGS[2]);
-        }
-        PC802_WRITE_REG(ext->EMB_RESULT, (0 == re));
-        EMB_RCCNT++;
-        PC802_WRITE_REG(ext->EMB_RCCNT, EMB_RCCNT);
-        return 1;
-    }
-
-    return 0;
-}
-
 static char *get_vector_file_name(uint16_t port_id, uint32_t file_id, char *file_name)
 {
     char *path[] = {getenv("PC802_TEST_VECTOR_DIR"), DEFAULT_IMAGE_PATH, CUR_PATH};
@@ -2326,22 +2271,29 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
+    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
+    uint32_t       *pd;
+    uint32_t       data_size;
+    uint32_t       buf_full;
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-
-    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+__next_pfi_0_vec_read:
+    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    data_size = 0;
+    buf_full = 0;
+    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
             // In scope
             if (vec_cnt >= offset && vec_cnt < end) {
                 *pd++ = data;
+                data_size += sizeof(uint32_t);
+                buf_full = (data_size >= PC802_DEBUG_BUF_SIZE);
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
@@ -2355,11 +2307,8 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
         // Increment line count
         line++;
     }
-    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
-    fclose(fh_vector);
-
-    if (vec_cnt < end) {
+    if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
@@ -2370,8 +2319,7 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
     PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    assert(length <= PC802_DEBUG_BUF_SIZE);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
     uint32_t vec_rccnt;
     volatile uint32_t vec_epcnt;
     vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
@@ -2381,6 +2329,11 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
         usleep(1);
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
     } while (vec_epcnt != vec_rccnt);
+
+    if (vec_cnt < end)
+        goto __next_pfi_0_vec_read;
+
+    fclose(fh_vector);
 
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
@@ -2403,34 +2356,42 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     get_vector_path(port_id, file_path);
     sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    uint32_t left = length;
+    uint32_t data_size;
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
-    uint32_t *pd = (uint32_t *)adapter->dbg;
-    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
-    volatile uint32_t vec_epcnt;
     uint32_t vec_rccnt;
     vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+
+    uint32_t *pd;
+__next_pfi_0_vec_dump:
+    pd = (uint32_t *)adapter->dbg;
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
+    vec_rccnt++;
+    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
+    volatile uint32_t vec_epcnt;
     do {
         usleep(1);
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
-    } while (vec_epcnt == vec_rccnt);
+    } while (vec_epcnt != vec_rccnt);
 
-    vec_rccnt++;
-    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
-
-    // Parse the file
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
-      unsigned int mem_data = *pd++;;
-      fprintf(fh_vector, "%08x\n", mem_data);
+    for (offset = 0; offset < data_size; offset += 4) {
+        unsigned int mem_data = *pd++;;
+        fprintf(fh_vector, "%08x\n", mem_data);
     }
+    left -= data_size;
+
+    if (left > 0)
+        goto __next_pfi_0_vec_dump;
 
     fclose(fh_vector);
 
@@ -2456,22 +2417,30 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
+    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    uint32_t *pd;
+    uint32_t data_size;
+    uint32_t buf_full;
 
-    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+__next_non_pfi_0_vec_read:
+    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    data_size = 0;
+    buf_full = 0;
+    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
             // In scope
             if (vec_cnt >= offset && vec_cnt < end) {
                 *pd++ = data;
+                data_size += sizeof(uint32_t);
+                buf_full = (data_size >= PC802_DEBUG_BUF_SIZE);
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
@@ -2485,11 +2454,8 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         // Increment line count
         line++;
     }
-    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
-    fclose(fh_vector);
-
-    if (vec_cnt < end) {
+    if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
@@ -2507,6 +2473,12 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
+    if (vec_cnt < end) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_read;
+    }
+
+    fclose(fh_vector);
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
@@ -2527,11 +2499,22 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
     get_vector_path(port_id, file_path);
     sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
+    // Parse the file
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
-    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+
+    uint32_t left = length;
+    uint32_t data_size;
+
+__next_non_pfi_0_vec_dump:
+    PC802_WRITE_REG(bar->DBGEPADDR, address);
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
+    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     RCCNT++;
     PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
     volatile uint32_t EPCNT;
@@ -2540,15 +2523,15 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
-    // Parse the file
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
-      unsigned int mem_data = *pd++;;
-      fprintf(fh_vector, "%08x\n", mem_data);
+    for (offset = 0; offset < data_size; offset += 4) {
+        unsigned int mem_data = *pd++;;
+        fprintf(fh_vector, "%08x\n", mem_data);
+    }
+    left -= data_size;
+    if (left > 0) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_dump;
     }
 
     fclose(fh_vector);
@@ -2568,6 +2551,84 @@ uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uin
 uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
 {
     return handle_non_pfi_0_vec_dump(port_id, file_id, address, length);
+}
+
+#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
+
+typedef struct stMbVecAccess_t {
+    uint32_t *command;
+    uint32_t *retval;
+    uint32_t file_id;
+    uint32_t offset;
+    uint32_t address;
+    uint32_t length;
+    uint16_t port_id;
+    uint16_t core;
+} MbVecAccess_t;
+
+#define PC802_VEC_ACCESS_IDLE   0
+#define PC802_VEC_ACCESS_WORK   1
+#define PC802_VEC_ACCESS_DONE   2
+
+static uint8_t pc802_vec_blocked[PC802_INDEX_MAX][35];
+
+static uint32_t pc802_vec_access_msg_send(int fd, MbVecAccess_t *msg)
+{
+    return (write(fd, msg, sizeof(*msg)));
+}
+
+static uint32_t pc802_vec_access_msg_recv(int fd, MbVecAccess_t *msg)
+{
+    uint8_t *c;
+    uint32_t m;
+    uint32_t n;
+
+    c = (uint8_t *)msg;
+    m = sizeof(MbVecAccess_t);
+    while (m > 0) {
+        n = read(fd, c, m);
+        c += n;
+        m -= n;
+    }
+    return sizeof(MbVecAccess_t);
+}
+
+static void * pc802_vec_access(__rte_unused void *data)
+{
+    MbVecAccess_t msg;
+    int fd;
+    uint32_t command;
+    uint32_t re;
+
+    (void)data;
+
+    fd = open(FIFO_PC802_VEC_ACCESS, O_RDONLY, 0);
+    while (1) {
+        pc802_vec_access_msg_recv(fd, &msg);
+        command = *msg.command;
+        if (0 == msg.core) {
+            PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
+            *msg.command = MB_EMPTY;
+            if (MB_VEC_READ == command) {
+                re = handle_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
+            } else if (MB_VEC_DUMP == command) {
+                re = handle_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
+            }
+            *msg.retval = (0 == re);
+           PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
+        } else {
+            if (MB_VEC_READ == command) {
+                re = handle_non_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
+            } else if (MB_VEC_DUMP == command) {
+                re = handle_non_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
+            }
+            *msg.retval = (0 == re);
+            *msg.command = MB_EMPTY;
+        }
+        pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_DONE;
+    }
+
+    return 0;
 }
 
 static inline void handle_trace_data(uint16_t port_id, uint32_t core, uint32_t rccnt, uint32_t tdata)
@@ -2685,10 +2746,29 @@ static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
 
 static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
 {
+    static int fd = -1;
     int num = 0;
     uint32_t n = *idx;
     volatile uint32_t action;
     volatile uint32_t num_args;
+    MbVecAccess_t msg;
+    uint16_t port_idx;
+
+    if (fd < 0) {
+        fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
+    }
+
+    port_idx = pc802_get_port_index(port_id);
+    if (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_idx][core]) {
+        return 0;
+    }
+    if (PC802_VEC_ACCESS_DONE == pc802_vec_blocked[port_idx][core]) {
+        n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
+        *idx = n;
+        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_IDLE;
+        return 0;
+    }
+
     do {
         action = PC802_READ_REG(mb[n].action);
         if (MB_EMPTY != action ) {
@@ -2697,6 +2777,33 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                 handle_mb_printf(port_id, &mb[n], core);
             } else if (MB_SIM_STOP == action) {
                 handle_mb_sim_stop(&mb[n], core);
+            } else if (MB_VEC_READ == action) {
+                msg.command = &mb[n].action;
+                msg.retval = &mb[n].retval;
+                msg.file_id = mb[n].arguments[0];
+                msg.offset = mb[n].arguments[1];
+                msg.address = mb[n].arguments[2];
+                msg.length = mb[n].arguments[3];
+                msg.port_id = port_id;
+                msg.core = core;
+                pc802_vec_access_msg_send(fd, &msg);
+                pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
+                *idx = n;
+                num--;
+                return num;
+            } else if (MB_VEC_DUMP == action) {
+                msg.command = &mb[n].action;
+                msg.retval = &mb[n].retval;
+                msg.file_id = mb[n].arguments[0];
+                msg.address = mb[n].arguments[1];
+                msg.length = mb[n].arguments[2];
+                msg.port_id = port_id;
+                msg.core = core;
+                pc802_vec_access_msg_send(fd, &msg);
+                pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
+                *idx = n;
+                num--;
+                return num;
             } else {
                 num_args = PC802_READ_REG(mb[n].num_args);
                 DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
@@ -2874,10 +2981,11 @@ static void * pc802_debug(__rte_unused void *data)
 {
     int i = 0;
     int num = 0;
-    int idle = 0;
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
+
+    mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
 
     while( 1 )
     {
@@ -2888,17 +2996,11 @@ static void * pc802_debug(__rte_unused void *data)
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
-            if ((pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) && (idle > 4 * 100)) {
-                num += pc802_process_phy_test_vectors(pc802_devices[i]);
-            }
         }
         if ( 0 == num ) {
             pc802_log_flush();
             nanosleep(&req, NULL);
-            idle++;
         }
-        else
-            idle = 0;
     }
     return NULL;
 }
