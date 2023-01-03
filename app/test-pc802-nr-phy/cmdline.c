@@ -66,6 +66,7 @@ cmdline_parse_inst_t cmd_start = {
     },
 };
 
+////////////////////////////////////////////////////////////////////////
 struct cmd_stop_result {
     cmdline_fixed_string_t stop;
 };
@@ -90,10 +91,46 @@ cmdline_parse_inst_t cmd_stop = {
     },
 };
 
+//////////////////////////////////////////////////////////////////////////
+extern int burst_flag;
+extern uint32_t burst_cnt;
+
+struct cmd_send_result {
+    cmdline_fixed_string_t send;
+    uint32_t slots;
+};
+
+static void cmd_send_parsed(__attribute__((unused)) void *parsed_result,
+                struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_send_result *res = parsed_result;
+    burst_cnt = res->slots;
+    burst_flag = 1;
+    start_flag = 1;
+}
+
+cmdline_parse_token_string_t cmd_send_send =
+    TOKEN_STRING_INITIALIZER(struct cmd_send_result, send, "send");
+cmdline_parse_token_num_t cmd_send_slots =
+    TOKEN_NUM_INITIALIZER(struct cmd_send_result, slots, RTE_UINT32);
+
+cmdline_parse_inst_t cmd_send = {
+    .f = cmd_send_parsed,
+    .data = NULL,
+    .help_str = "send #slots: send #slots DL slots and then stop",
+    .tokens = {
+        (void *)&cmd_send_send,
+        (void *)&cmd_send_slots,
+        NULL,
+    },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&cmd_start,
     (cmdline_parse_inst_t *)&cmd_stop,
+    (cmdline_parse_inst_t *)&cmd_send,
     NULL,
 };
 

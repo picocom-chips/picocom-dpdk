@@ -360,6 +360,8 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
 
 volatile int start_flag = 0;
 volatile int quit_flag = 0;
+volatile int burst_flag = 0;
+volatile uint32_t burst_cnt = 0;
 
 static int dl_worker(void *arg)
 {
@@ -373,10 +375,11 @@ static int dl_worker(void *arg)
     uint32_t cycle_diff;
     uint32_t N;
     uint32_t M;
+    uint32_t B;
     int prev_start = start_flag;
 
     arg  = arg;
-    M = N = 0;
+    B = M = N = 0;
 
     do {
         if ((0 != prev_start) && (0 == start_flag)) {
@@ -414,6 +417,14 @@ static int dl_worker(void *arg)
         if (N == 20000) { //10 seconds
             DBLOG("Have Tx %u slots\n", M);
             N = 0;
+        }
+        B++;
+        if ((0 != burst_flag) && (B == burst_cnt)) {
+            burst_flag = 0;
+            start_flag = 0;
+            DBLOG("Have Burst Tx %u slots\n", B);
+            B = 0;
+            burst_cnt = 0;
         }
     }while(0 == quit_flag);
 }
