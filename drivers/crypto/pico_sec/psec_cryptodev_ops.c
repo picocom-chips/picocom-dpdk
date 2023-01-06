@@ -105,11 +105,23 @@ static const struct rte_cryptodev_capabilities psec_cryptodev_capabilities[] = {
                             .min = 16,
                             .max = 32,
                             .increment = 8 },
-                        .digest_size = { .min = 8, .max = 16, .increment = 4 },
-                        .aad_size = { .min = 0, .max = 240, .increment = 1 },
-                        .iv_size = { .min = 0, .max = 12, .increment = 12 } },
-                } },
-        } },
+                        .digest_size = {
+                            .min = 8,
+                            .max = 16,
+                            .increment = 4 },
+                        .aad_size = {
+                            .min = 0,
+                            .max = 240,
+                            .increment = 1 },
+                        .iv_size = {
+                            .min = 0,
+                            .max = 12,
+                            .increment = 12 }
+                    },
+                }
+            },
+        }
+    },
 
     RTE_CRYPTODEV_END_OF_CAPABILITIES_LIST()
 };
@@ -440,8 +452,12 @@ psec_cryptodev_sym_session_clear(struct rte_cryptodev* dev,
 
     PSEC_LOG(DEBUG, "psec crypto device sym sesssion clear");
 
-    /* Zero out the whole structure */
     if (sess_priv) {
+        //release hw session
+        struct psec_sym_session *psec_sess = (struct psec_sym_session*)sess_priv;
+        bha_ipsec_reg_write(SEC_SESSION(CTX, psec_sess->sess_id), bha_ipsec_reg_read(SEC_SESSION(CTX, psec_sess->sess_id)) & ~SET_XFORM_CTX_VALID(1));
+
+        //clear the whole structure
         memset(sess_priv, 0, sizeof(struct psec_sym_session));
         struct rte_mempool* sess_mp = rte_mempool_from_obj(sess_priv);
         set_sym_session_private_data(sess, index, NULL);

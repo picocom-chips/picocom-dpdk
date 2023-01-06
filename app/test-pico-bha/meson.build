@@ -30,7 +30,6 @@ dpdk_conf.set('BHA_PCAPS_IN_PATH', '"'+test_bha_pcaps_in_path+'"')
 dpdk_conf.set('BHA_PCAPS_OUT_PATH', '"'+test_bha_pcaps_out_path+'"')
 
 
-cflags += '-DRTE_TEST_BHA_MODEL_EN'
 sources = files(
   'test_bha.c',
   'pcap_mode.c',

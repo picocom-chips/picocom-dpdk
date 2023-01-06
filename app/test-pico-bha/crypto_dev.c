@@ -65,8 +65,8 @@
 struct crypto_sym_test_data {
     struct {
         uint8_t data[64];
-        unsigned len;
-    } key;
+        unsigned len; //key len exclude salt len
+    } key; //support key + salt(4B at last)
 
     struct {
         uint8_t data[64];
@@ -105,19 +105,49 @@ static struct crypto_sym_test_data aes_gcm_data = {
             0xa3, 0x78, 0x0f, 0xc9,
             0x00, 0xfc, 0x02, 0xef,
             0x00, 0x23, 0x2c, 0x66,
-            0x1d, 0x7b, 0xff, 0xce },
+            0x1d, 0x7b, 0xff, 0xce,
+            0xc3, 0x3d, 0xe6, 0x53 }, //append 4B salt at last
         .len = 32 },
 
     //nonce
-    .iv = { .data = { 0xc3, 0x3d, 0xe6, 0x53, 0x44, 0xcf, 0xbf, 0x22, 0x8e, 0x16, 0x52, 0xbd }, .len = 12 },
+    .iv = {
+        .data = {
+            0xc3, 0x3d, 0xe6, 0x53, //first 4B salt
+            0x44, 0xcf, 0xbf, 0x22,
+            0x8e, 0x16, 0x52, 0xbd },
+        .len = 12 },
 
-    .aad = { .data = { 0xe1, 0xa5, 0xe5, 0x24, 0x27, 0xf1, 0xc5, 0xb8, 0x87, 0x57, 0x5a, 0x6f, 0x2c, 0x44, 0x54, 0x29 }, .len = 16 },
+    .aad = {
+        .data = {
+            0xe1, 0xa5, 0xe5, 0x24,
+            0x27, 0xf1, 0xc5, 0xb8,
+            0x87, 0x57, 0x5a, 0x6f,
+            0x2c, 0x44, 0x54, 0x29 },
+        .len = 16 },
 
-    .plaintext = { .data = { 0xad, 0xa4, 0xd9, 0x81, 0x47, 0xb3, 0x0e, 0x5a, 0x90, 0x12, 0x29, 0x95, 0x2a }, .len = 13 },
+    .plaintext = {
+        .data = {
+            0xad, 0xa4, 0xd9, 0x81,
+            0x47, 0xb3, 0x0e, 0x5a,
+            0x90, 0x12, 0x29, 0x95,
+            0x2a },
+        .len = 13 },
 
-    .ciphertext = { .data = { 0x6e, 0xd4, 0xe4, 0xbd, 0x1f, 0x95, 0x3d, 0x47, 0xc5, 0x28, 0x8c, 0x48, 0xf4 }, .len = 13 },
+    .ciphertext = {
+        .data = {
+            0x6e, 0xd4, 0xe4, 0xbd,
+            0x1f, 0x95, 0x3d, 0x47,
+            0xc5, 0x28, 0x8c, 0x48,
+            0xf4 },
+        .len = 13 },
 
-    .digest = { .data = { 0x40, 0x4e, 0x3a, 0x9b, 0x9f, 0x5d, 0xda, 0xb9, 0xee, 0x16, 0x9a, 0x7c, 0x7c, 0x2c, 0xf7, 0xaf }, .len = 16 },
+    .digest = {
+        .data = {
+            0x40, 0x4e, 0x3a, 0x9b,
+            0x9f, 0x5d, 0xda, 0xb9,
+            0xee, 0x16, 0x9a, 0x7c,
+            0x7c, 0x2c, 0xf7, 0xaf },
+        .len = 16 },
 };
 
 //test bha port id
@@ -207,12 +237,12 @@ aead_session_create_and_init(uint8_t dev_id, enum rte_crypto_aead_algorithm algo
     aead_xform.next = NULL;
     aead_xform.aead.algo = algo;
     aead_xform.aead.op = op;
-    aead_xform.aead.key.data = testdata->key.data;
-    aead_xform.aead.key.length = testdata->key.len;
+    aead_xform.aead.key.data = testdata->key.data; //4B salt at last
+    aead_xform.aead.key.length = testdata->key.len; //only key len exclude salt
     aead_xform.aead.iv.offset = IV_OFFSET;
-    aead_xform.aead.iv.length = testdata->iv.len;
+    aead_xform.aead.iv.length = testdata->iv.len; //full IV len include salt
     aead_xform.aead.digest_length = testdata->digest.len;
-    aead_xform.aead.aad_length = testdata->aad.len;
+    aead_xform.aead.aad_length = testdata->aad.len; //match ipsec lib defined aad struct and len
 
     //create crypto sym session
     sess = rte_cryptodev_sym_session_create(sym_sess_pool);
@@ -226,26 +256,6 @@ aead_session_create_and_init(uint8_t dev_id, enum rte_crypto_aead_algorithm algo
     return status;
 }
 
-static inline uint64_t
-crypto_bha_psec_model_pktmbuf_iova(const struct rte_mbuf* mb)
-{
-#ifdef RTE_TEST_BHA_MODEL_EN
-    return (uint64_t)(mb->buf_addr) + mb->data_off;
-#else
-    return rte_pktmbuf_iova(mb);
-#endif
-}
-
-static inline uint64_t
-crypto_bha_psec_model_pktmbuf_iova_offset(const struct rte_mbuf* mb, uint16_t offset)
-{
-#ifdef RTE_TEST_BHA_MODEL_EN
-    return (uint64_t)(mb->buf_addr) + mb->data_off + offset;
-#else
-    return rte_pktmbuf_iova_offset(mb, offset);
-#endif
-}
-
 static int
 aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     enum rte_crypto_aead_operation op,
@@ -257,6 +267,8 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     struct rte_crypto_sym_op* sym_op;
     uint8_t *plaintext, *ciphertext;
     unsigned int aad_pad_len, plaintext_pad_len;
+    //unsigned int iv_pad_len;
+    //uint8_t *iv_pkt_addr = NULL;
     out_mbuf = out_mbuf;
 
     //generate crypto op
@@ -271,12 +283,17 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     //aad_pad_len = RTE_ALIGN_CEIL(testdata->aad.len, 16);
     aad_pad_len = testdata->aad.len;
     sym_op->aead.aad.data = (uint8_t*)rte_pktmbuf_append(in_mbuf, aad_pad_len);
-    sym_op->aead.aad.phys_addr = crypto_bha_psec_model_pktmbuf_iova(in_mbuf);
+    sym_op->aead.aad.phys_addr = rte_pktmbuf_iova(in_mbuf);
     memcpy(sym_op->aead.aad.data, testdata->aad.data, testdata->aad.len);
 
     //append iv according to op pool create
     uint8_t* iv_ptr = rte_crypto_op_ctod_offset(crypto_op, uint8_t*, IV_OFFSET);
     rte_memcpy(iv_ptr, testdata->iv.data, testdata->iv.len);
+
+    //append iv into packet buf too
+    //iv_pad_len = testdata->iv.len - 4; //remove salt
+    //iv_pkt_addr = (uint8_t*)rte_pktmbuf_append(in_mbuf, iv_pad_len);
+    //memcpy(iv_pkt_addr, testdata->iv.data + 4, testdata->iv.len - 4);
 
     //append plaintext/ciphertext
     if (op == RTE_CRYPTO_AEAD_OP_ENCRYPT) {
@@ -295,10 +312,10 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     if (op == RTE_CRYPTO_AEAD_OP_ENCRYPT) {
         sym_op->aead.digest.data = (uint8_t*)rte_pktmbuf_append(in_mbuf, testdata->digest.len);
         memset(sym_op->aead.digest.data, 0, testdata->digest.len);
-        sym_op->aead.digest.phys_addr = crypto_bha_psec_model_pktmbuf_iova_offset(in_mbuf, plaintext_pad_len + aad_pad_len);
+        sym_op->aead.digest.phys_addr = rte_pktmbuf_iova_offset(in_mbuf, plaintext_pad_len + aad_pad_len);
     } else {
         sym_op->aead.digest.data = (uint8_t*)rte_pktmbuf_append(in_mbuf, testdata->digest.len);
-        sym_op->aead.digest.phys_addr = crypto_bha_psec_model_pktmbuf_iova_offset(in_mbuf, plaintext_pad_len + aad_pad_len);
+        sym_op->aead.digest.phys_addr = rte_pktmbuf_iova_offset(in_mbuf, plaintext_pad_len + aad_pad_len);
         rte_memcpy(sym_op->aead.digest.data, testdata->digest.data, testdata->digest.len);
     }
 

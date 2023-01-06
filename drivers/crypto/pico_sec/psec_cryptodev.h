@@ -37,13 +37,13 @@ struct psec_crypto_private {
 struct psec_sym_session {
     uint8_t key[64];
     uint16_t key_len;
-
     uint64_t key_phys_addr;
+    uint32_t salt;
 
     struct rte_crypto_sym_xform xform;
 
-    uint32_t id; //currently max support 64
-    uint32_t reg_base; //according to id
+    uint32_t sess_id; //currently max support 64
+    uint32_t sess_reg_base; //according to id
 
 } __rte_cache_aligned;
 
