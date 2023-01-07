@@ -2372,6 +2372,15 @@ __next_pfi_0_vec_read:
     return 0;
 }
 
+#define FILE_ID_PC802_CORE_DUMP_MIN     0x80000000
+
+static bool is_pc802_core_dump(uint32_t file_id, uint32_t address, uint32_t length)
+{
+    (void)address;
+    (void)length;
+    return (file_id > FILE_ID_PC802_CORE_DUMP_MIN);
+}
+
 // -----------------------------------------------------------------------------
 // handle_vec_dump: Handle task vector dump requests
 // -----------------------------------------------------------------------------
@@ -2383,15 +2392,24 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
        return -1;
     }
 
+    bool is_core_dump = is_pc802_core_dump(file_id, address, length);
+
     // Check if the golden vector file exists
     char file_path[PATH_MAX];
     char file_name[PATH_MAX+NAME_MAX];
-    get_vector_path(port_id, file_path);
-    sprintf(file_name, "%s/%u.txt", file_path, file_id);
+    FILE *fh_vector;
 
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    if (is_core_dump) {
+        sprintf(file_name, "core_dump_%u_%u.elf", port_id, file_id);
+        DBLOG("Generating PC802 %d core dump file %s\n", port_id, file_name);
+        fh_vector = fopen(file_name, "wb");
+    } else {
+        get_vector_path(port_id, file_path);
+        sprintf(file_name, "%s/%u.txt", file_path, file_id);
+        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        fh_vector  = fopen(file_name, "w");
+        fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    }
     uint32_t left = length;
     uint32_t data_size;
 
@@ -2417,9 +2435,13 @@ __next_pfi_0_vec_dump:
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
     } while (vec_epcnt != vec_rccnt);
 
-    for (offset = 0; offset < data_size; offset += 4) {
-        unsigned int mem_data = *pd++;;
-        fprintf(fh_vector, "%08x\n", mem_data);
+    if (is_core_dump) {
+        fwrite(pd, 1, data_size, fh_vector);
+    } else {
+        for (offset = 0; offset < data_size; offset += 4) {
+            unsigned int mem_data = *pd++;;
+            fprintf(fh_vector, "%08x\n", mem_data);
+        }
     }
     left -= data_size;
 
@@ -2527,15 +2549,25 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
        return -1;
     }
 
+    bool is_core_dump = is_pc802_core_dump(file_id, address, length);
+
     char file_path[PATH_MAX];
     char file_name[PATH_MAX+NAME_MAX];
-    get_vector_path(port_id, file_path);
-    sprintf(file_name, "%s/%u.txt", file_path, file_id);
+    FILE * fh_vector;
 
-    // Parse the file
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    if (is_core_dump) {
+        sprintf(file_name, "core_dump_%u_%u.elf", port_id, file_id);
+        DBLOG("Generating PC802 %d core dump file %s\n", port_id, file_name);
+        fh_vector = fopen(file_name, "wb");
+    } else {
+        get_vector_path(port_id, file_path);
+        sprintf(file_name, "%s/%u.txt", file_path, file_id);
+
+        // Parse the file
+        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        fh_vector = fopen(file_name, "w");
+        fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    }
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
@@ -2557,9 +2589,13 @@ __next_non_pfi_0_vec_dump:
     } while (EPCNT != RCCNT);
 
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-    for (offset = 0; offset < data_size; offset += 4) {
-        unsigned int mem_data = *pd++;;
-        fprintf(fh_vector, "%08x\n", mem_data);
+    if (is_core_dump) {
+        fwrite(pd, 1, data_size, fh_vector);
+    } else {
+        for (offset = 0; offset < data_size; offset += 4) {
+            unsigned int mem_data = *pd++;;
+            fprintf(fh_vector, "%08x\n", mem_data);
+        }
     }
     left -= data_size;
     if (left > 0) {
