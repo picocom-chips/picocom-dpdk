@@ -218,13 +218,157 @@ psec_mbuf_to_sclist(const struct rte_mbuf* mb, struct psec_qp* qp, SCBufferEntry
     return nb_segs;
 }
 
+static uint64_t
+psec_aead_get_aad_addr(struct rte_crypto_sym_op* sym_op)
+{
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    return (uint64_t)(sym_op->aead.aad.data);
+#else
+    return (uint64_t)(sym_op->aead.aad.phys_addr);
+#endif
+}
+
+static uint64_t
+psec_aead_get_digest_addr(struct rte_crypto_sym_op* sym_op)
+{
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    return (uint64_t)(sym_op->aead.digest.data);
+#else
+    return (uint64_t)(sym_op->aead.digest.phys_addr);
+#endif
+}
+
+static uint64_t
+psec_aead_get_iv_addr(struct rte_crypto_op* op, struct psec_sym_session* sess_priv)
+{
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    return (uint64_t)(rte_crypto_op_ctod_offset(op, void*, sess_priv->xform.aead.iv.offset));
+#else
+    return (uint64_t)(rte_crypto_op_ctophys_offset(op, sess_priv->xform.aead.iv.offset));
+#endif
+}
+
 static int
-psec_sym_build_request(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec_sym_session* sess_priv, volatile IpsecReqDesc* req, struct psec_ctx_buf_entry* sw_ctx)
+psec_build_pktmbuf_sclist(SCBufferEntry* elt_list, struct rte_mbuf* mbuf, uint32_t offset, uint32_t len)
+{
+    uint32_t count = 0;
+    uint32_t i = 0;
+    struct rte_mbuf* nseg = mbuf;
+    uint32_t start_offset = offset;
+    uint32_t end_offset = len;
+    bool find_start_seg = false;
+    bool find_end_seg = false;
+    uint16_t nb_segs = 0;
+
+    nb_segs = nseg->nb_segs;
+    for (i = 0; i < nb_segs; i++) {
+        if (nseg != NULL) {
+            if (!find_start_seg) {
+                if (start_offset >= (nseg->data_len)) {
+                    start_offset -= nseg->data_len;
+                } else {
+                    //find start seg
+                    find_start_seg = true;
+                    elt_list[count].addr = (uint64_t)(psec_mbuf_iova(nseg)) + start_offset;
+                    elt_list[count].size = nseg->data_len - start_offset;
+                    if ((start_offset + end_offset) <= nseg->data_len) {
+                        //find end seg, same with start seg
+                        find_end_seg = true;
+                        elt_list[count].size = end_offset;
+                    } else {
+                        end_offset -= (nseg->data_len - start_offset);
+                    }
+                    count++;
+                }
+            } else {
+                if (find_end_seg)
+                    break;
+
+                elt_list[count].addr = (uint64_t)(psec_mbuf_iova(nseg));
+                if (end_offset > (nseg->data_len)) {
+                    elt_list[count].size = nseg->data_len;
+                    end_offset -= nseg->data_len;
+                } else {
+                    //find end seg
+                    find_end_seg = true;
+                    elt_list[count].size = end_offset;
+                }
+                count++;
+            }
+            nseg = nseg->next;
+        } else {
+            PSEC_LOG(ERR, "ERROR:build aead list, pkt mbuf sgl seg NULL illegal");
+            return -1;
+        }
+    }
+
+    return count;
+}
+
+static int
+psec_build_aead_src_list(SCBufferEntry* elt_list, struct rte_crypto_op* op, struct psec_sym_session* sess_priv, uint32_t salt_len, uint32_t *total_size)
+{
+    struct rte_crypto_sym_op* sym_op = op->sym;
+    uint16_t nb_segs = 0;
+    uint32_t count = 0;
+    uint32_t i = 0;
+    int ret_cnt = 0;
+    uint32_t calc_size = 0;
+
+    *total_size = 0;
+    nb_segs = sym_op->m_src->nb_segs;
+
+    //aad|iv|text|icv
+    //aad
+    elt_list[count].addr = psec_aead_get_aad_addr(sym_op);
+    elt_list[count].size = sess_priv->xform.aead.aad_length;
+    *total_size = elt_list[count++].size;
+    //iv
+    elt_list[count].addr = psec_aead_get_iv_addr(op, sess_priv) + salt_len; //8B iv exclude salt
+    elt_list[count].size = sess_priv->xform.aead.iv.length - salt_len;
+    *total_size += elt_list[count++].size;
+
+    //pkt mbuf - text
+    if (unlikely(nb_segs > 1)) { //sgl
+        if ((sym_op->aead.data.offset + sym_op->aead.data.length) > (sym_op->m_src->pkt_len)) {
+            PSEC_LOG(ERR, "ERROR:build aead list, offset[%d]+len[%d] > pkt_len[%d]", sym_op->aead.data.offset, sym_op->aead.data.length, sym_op->m_src->pkt_len);
+            return -1;
+        }
+
+        ret_cnt = psec_build_pktmbuf_sclist(&elt_list[count], sym_op->m_src, sym_op->aead.data.offset, sym_op->aead.data.length);
+        if (ret_cnt <= 0) {
+            PSEC_LOG(ERR, "ERROR:build aead pkt mbuf sgl list ret %d", ret_cnt);
+            return -1;
+        }
+
+        for (i = count; i < (count + ret_cnt); i++)
+            calc_size += elt_list[i].size;
+        if (calc_size != sym_op->aead.data.length) {
+            PSEC_LOG(ERR, "ERROR:build aead pkt mbuf sgl list len illegal! ret cnt %d, calc len %d, expect data len %d", ret_cnt, calc_size, sym_op->aead.data.length);
+            return -1;
+        }
+
+        count += ret_cnt;
+    } else { //single
+        elt_list[count].addr = (uint64_t)(psec_mbuf_iova(sym_op->m_src)) + sym_op->aead.data.offset;
+        elt_list[count++].size = sym_op->aead.data.length;
+    }
+    *total_size += sym_op->aead.data.length;
+
+    //digest
+    elt_list[count].addr = psec_aead_get_digest_addr(sym_op);
+    elt_list[count].size = sess_priv->xform.aead.digest_length;
+    *total_size += elt_list[count++].size;
+
+    return count;
+}
+
+static int
+psec_build_aead_req(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec_sym_session* sess_priv, volatile IpsecReqDesc* req, struct psec_ctx_buf_entry* sw_ctx)
 {
     struct rte_crypto_op* op = in_op;
     struct rte_crypto_sym_op* sym_op = op->sym;
     uint32_t hw_sess_id = 0;
-    struct rte_crypto_va_iova_ptr iv = { 0 };
     uint32_t salt_len = 0;
     uint32_t iv_inused_len = 0;
     uint32_t in_elt_nb = 0;
@@ -242,197 +386,93 @@ psec_sym_build_request(struct psec_qp* qp, struct rte_crypto_op* in_op, struct p
     uint8_t dst_nb_blks = 0;
     uint32_t src_total_size = 0;
     uint32_t dst_total_size = 0;
-    bool is_sgl;
-    uint32_t count = 0;
-    uint32_t i = 0;
-    struct rte_mbuf* nseg;
-    uint32_t start_offset = 0;
-    uint32_t end_offset = 0;
-    bool find_start_seg = false;
-    bool find_end_seg = false;
+    int ret_cnt = 0;
+
+    if (sess_priv->xform.aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
+        salt_len = 4;
+        iv_inused_len = sess_priv->xform.aead.iv.length - salt_len; //8B, move cross the first 4B salt
+    } else {
+        PSEC_LOG(ERR, "psec[%d] qp[%d] not support aead algo 0x%x", qp->dev_id, qp->qp_id, sess_priv->xform.aead.algo);
+        return -1;
+    }
 
     hw_sess_id = sess_priv->sess_id;
+    if (sess_priv->xform.aead.op == RTE_CRYPTO_AEAD_OP_ENCRYPT)
+        encrypt_en = 1; //encrypt
+    else
+        encrypt_en = 0; //decrypt
 
-    if (sess_priv->xform.type == RTE_CRYPTO_SYM_XFORM_AEAD) {
-        iv.va = rte_crypto_op_ctod_offset(op, void*, sess_priv->xform.aead.iv.offset);
-        iv.iova = rte_crypto_op_ctophys_offset(op, sess_priv->xform.aead.iv.offset);
+    nb_src = sym_op->m_src->nb_segs;
+    in_elt_nb = 3 + nb_src; //aad|iv|text|icv
+    in_list = rte_zmalloc_socket("psec_sclist_in", (sizeof(SCBufferEntry) * in_elt_nb), RTE_CACHE_LINE_SIZE, qp->socket_id);
+    if (in_list == NULL) {
+        PSEC_LOG(DEBUG, "psec[%d] qp[%d] alloc sc in list memory fail!", qp->dev_id, qp->qp_id);
+        op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+        return -1;
+    }
 
-        if (sess_priv->xform.aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
-            salt_len = 4;
-            iv_inused_len = sess_priv->xform.aead.iv.length - 4; //8B, move cross the first 4B salt
-        }
-
-        if (sess_priv->xform.aead.op == RTE_CRYPTO_AEAD_OP_ENCRYPT)
-            encrypt_en = 1; //encrypt
-        else
-            encrypt_en = 0; //decrypt
-
-        nb_src = sym_op->m_src->nb_segs;
-        in_elt_nb = 3 + nb_src; //aad|iv|text|icv.
-        in_list = rte_zmalloc_socket("psec_sclist_in", (sizeof(SCBufferEntry) * in_elt_nb), RTE_CACHE_LINE_SIZE, qp->socket_id);
-        if (in_list == NULL) {
-            PSEC_LOG(DEBUG, "psec[%d] qp[%d] alloc sc in list memory fail!", qp->dev_id, qp->qp_id);
+#if 0 //support when need it
+    if ((sym_op->m_dst != NULL) && (sym_op->m_dst != sym_op->m_src)) {
+        nb_dst = sym_op->m_dst->nb_segs;
+        out_elt_nb = 3 + nb_dst; //aad|iv|text|icv.
+        out_list = rte_zmalloc_socket("psec_sclist_out", (sizeof(SCBufferEntry) * out_elt_nb), RTE_CACHE_LINE_SIZE, qp->socket_id);
+        if (out_list == NULL) {
+            PSEC_LOG(DEBUG, "psec[%d] qp[%d] alloc sc out list memory fail!", qp->dev_id, qp->qp_id);
             op->status = RTE_CRYPTO_OP_STATUS_ERROR;
+            rte_free(in_list);
             return -1;
         }
-
-        if ((sym_op->m_dst != NULL) && (sym_op->m_dst != sym_op->m_src)) {
-            nb_dst = sym_op->m_dst->nb_segs;
-            out_elt_nb = 3 + nb_dst; //aad|iv|text|icv.
-            out_list = rte_zmalloc_socket("psec_sclist_out", (sizeof(SCBufferEntry) * out_elt_nb), RTE_CACHE_LINE_SIZE, qp->socket_id);
-            if (out_list == NULL) {
-                PSEC_LOG(DEBUG, "psec[%d] qp[%d] alloc sc out list memory fail!", qp->dev_id, qp->qp_id);
-                op->status = RTE_CRYPTO_OP_STATUS_ERROR;
-                rte_free(in_list);
-                return -1;
-            }
-        }
-
-        PSEC_LOG(DEBUG, "psec[%d] qp[%d] get in list entry nb %d, and out list entry nb %d", qp->dev_id, qp->qp_id, in_elt_nb, out_elt_nb);
-        is_sgl = (nb_src > 1) || (nb_dst > 1);
-        if (likely(!is_sgl)) {
-#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
-            in_list[0].addr = (uint64_t)(sym_op->aead.aad.data);
-            in_list[1].addr = (uint64_t)(iv.va) + salt_len;
-            in_list[2].addr = (uint64_t)(psec_mbuf_iova(sym_op->m_src)) + sym_op->aead.data.offset;;
-            in_list[3].addr = (uint64_t)(sym_op->aead.digest.data);
-#else
-            in_list[0].addr = (uint64_t)(sym_op->aead.aad.phys_addr);
-            in_list[1].addr = (uint64_t)(iv.iova) + salt_len;
-            in_list[2].addr = (uint64_t)(psec_mbuf_iova(sym_op->m_src)) + sym_op->aead.data.offset;;
-            in_list[3].addr = (uint64_t)(sym_op->aead.digest.phys_addr);
-#endif
-            in_list[0].size = sess_priv->xform.aead.aad_length;
-            src_total_size = in_list[0].size;
-            in_list[1].size = iv_inused_len;
-            src_total_size += in_list[1].size;
-            in_list[2].size = sym_op->aead.data.length;
-            src_total_size += in_list[2].size;
-            in_list[3].size = sess_priv->xform.aead.digest_length;
-            src_total_size += in_list[3].size;
-
-            src_nb_blks = in_elt_nb - 1;
-            src_phys_addr = psec_mem_virt2iova(in_list);
-            if (unlikely(nb_dst > 0)) { //oop
-                PSEC_LOG(WARNING, "psec[%d] qp[%d] OOP not supported(single)", qp->dev_id, qp->qp_id);
-            } else {
-                dst_phys_addr = src_phys_addr;
-                dst_total_size = src_total_size;
-                dst_nb_blks = src_nb_blks;
-            }
-        } else { //sgl
-            count = 0;
-#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
-            in_list[0].addr = (uint64_t)(sym_op->aead.aad.data);
-            in_list[1].addr = (uint64_t)(iv.va) + salt_len;
-#else
-            in_list[0].addr = (uint64_t)(sym_op->aead.aad.phys_addr);
-            in_list[1].addr = (uint64_t)(iv.iova) + salt_len;
-#endif
-            in_list[0].size = sess_priv->xform.aead.aad_length;
-            src_total_size = in_list[0].size;
-            in_list[1].size = iv_inused_len;
-            src_total_size += in_list[1].size;
-            count=2;
-
-            nseg = sym_op->m_src;
-            start_offset = sym_op->aead.data.offset;
-            end_offset = sym_op->aead.data.length;
-            if ((start_offset + end_offset) > (sym_op->m_src->pkt_len)) {
-                PSEC_LOG(ERR, "ERROR:psec[%d] qp[%d] s[%d]+e[%d] > pkt len[%d]", qp->dev_id, qp->qp_id, start_offset, end_offset, sym_op->m_src->pkt_len);
-                goto build_req_err;
-            }
-
-            for (i = 0; i < nb_src; i++) {
-                if (nseg != NULL) {
-                    if (!find_start_seg) {
-                        if (start_offset >= (nseg->data_len)) {
-                            start_offset -= nseg->data_len;
-                        } else {
-                            //find start seg
-                            find_start_seg = true;
-                            in_list[count].addr = (uint64_t)(psec_mbuf_iova(nseg)) + start_offset;
-                            in_list[count].size = nseg->data_len - start_offset;
-                            if ((start_offset + end_offset) <= nseg->data_len) {
-                                //find end seg, same with start seg
-                                find_end_seg = true;
-                                in_list[count].size = end_offset;
-                            } else {
-                                end_offset -= (nseg->data_len - start_offset);
-                            }
-                        }
-                    } else {
-                        if (find_end_seg)
-                            break;
-
-                        in_list[count].addr = (uint64_t)(psec_mbuf_iova(nseg));
-                        if (end_offset > (nseg->data_len)) {
-                            in_list[count].size = nseg->data_len;
-                            end_offset -= nseg->data_len;
-                        } else {
-                            //find end seg
-                            find_end_seg = true;
-                            in_list[count].size = end_offset;
-                        }
-                    }
-                    count++;
-                    nseg = nseg->next;
-                } else {
-                    PSEC_LOG(ERR, "psec[%d] qp[%d] pkt mbuf sgl seg NULL illegal", qp->dev_id, qp->qp_id);
-                    goto build_req_err;
-                }
-            }
-            src_total_size += sym_op->aead.data.length;
-
-#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
-            in_list[count].addr = (uint64_t)(sym_op->aead.digest.data);
-#else
-            in_list[count].addr = (uint64_t)(sym_op->aead.digest.phys_addr);
-#endif
-            in_list[count].size = sess_priv->xform.aead.digest_length;
-            src_total_size += in_list[count].size;
-            count++;
-
-            src_nb_blks = out_elt_nb - 1;
-            src_phys_addr = psec_mem_virt2iova(in_list);
-            if (unlikely(nb_dst > 0)) { //oop sgl
-                PSEC_LOG(WARNING, "psec[%d] qp[%d] OOP not supported(sgl)", qp->dev_id, qp->qp_id);
-            } else {
-                dst_phys_addr = src_phys_addr;
-                dst_total_size = src_total_size;
-                dst_nb_blks = src_nb_blks;
-            }
-        }
-
-        //fill req desc
-        req->src.addr_lo = (uint32_t)((uint64_t)(src_phys_addr));
-        req->src.addr_hi = (uint32_t)((uint64_t)(src_phys_addr) >> 32);
-        req->src.total_size = src_total_size;
-        req->src.n_blocks = src_nb_blks;
-
-        req->dst.addr_lo = (uint32_t)((uint64_t)(dst_phys_addr));
-        req->dst.addr_hi = (uint32_t)((uint64_t)(dst_phys_addr) >> 32);
-        req->dst.total_size = dst_total_size;
-        req->dst.n_blocks = dst_nb_blks;
-
-        req->cfg.src.aad_offset = 0;
-        req->cfg.src.iv_offset = sess_priv->xform.aead.aad_length;
-        req->cfg.src.text_offset = sess_priv->xform.aead.aad_length + iv_inused_len;
-        req->cfg.src.icv_offset = sess_priv->xform.aead.aad_length + iv_inused_len + sym_op->aead.data.length;
-
-        req->cfg.dst.aad_offset = 0;
-        req->cfg.dst.iv_offset = sess_priv->xform.aead.aad_length;
-        req->cfg.dst.text_offset = sess_priv->xform.aead.aad_length + iv_inused_len;
-        req->cfg.dst.icv_offset = sess_priv->xform.aead.aad_length + iv_inused_len + sym_op->aead.data.length;
-
-        req->cfg.cfg.aad_len = sess_priv->xform.aead.aad_length;
-        req->cfg.cfg.session_id = hw_sess_id;
-        req->cfg.cfg.text_len = sym_op->aead.data.length;
-        req->cfg.cfg.encrypt = encrypt_en;
-        req->cfg.cfg.resp_en = 1;
-        req->cfg.cfg.aad_copy = aad_copy_en;
-        req->cfg.cfg.iv_copy = iv_copy_en;
     }
+    is_sgl = (nb_src > 1) || (nb_dst > 1);
+    if (likely(!is_sgl)) {
+    } else {}
+#endif
+
+    PSEC_LOG(DEBUG, "psec[%d] qp[%d] get in list entry nb %d, and out list entry nb %d", qp->dev_id, qp->qp_id, in_elt_nb, out_elt_nb);
+    ret_cnt = psec_build_aead_src_list(in_list, op, sess_priv, salt_len, &src_total_size);
+    if (ret_cnt <= 0) {
+        PSEC_LOG(ERR, "psec[%d] qp[%d] build aead src list fail %d", qp->dev_id, qp->qp_id, ret_cnt);
+        goto build_req_err;
+    }
+
+    src_nb_blks = ret_cnt - 1;
+    src_phys_addr = psec_mem_virt2iova(in_list);
+    if (unlikely(nb_dst > 0)) { //oop
+        PSEC_LOG(WARNING, "Warning:psec[%d] qp[%d] OOP not supported", qp->dev_id, qp->qp_id);
+    } else {
+        dst_phys_addr = src_phys_addr;
+        dst_total_size = src_total_size;
+        dst_nb_blks = src_nb_blks;
+    }
+
+    //fill req desc
+    req->src.addr_lo = (uint32_t)((uint64_t)(src_phys_addr));
+    req->src.addr_hi = (uint32_t)((uint64_t)(src_phys_addr) >> 32);
+    req->src.total_size = src_total_size;
+    req->src.n_blocks = src_nb_blks;
+
+    req->dst.addr_lo = (uint32_t)((uint64_t)(dst_phys_addr));
+    req->dst.addr_hi = (uint32_t)((uint64_t)(dst_phys_addr) >> 32);
+    req->dst.total_size = dst_total_size;
+    req->dst.n_blocks = dst_nb_blks;
+
+    req->cfg.src.aad_offset = 0;
+    req->cfg.src.iv_offset = sess_priv->xform.aead.aad_length;
+    req->cfg.src.text_offset = sess_priv->xform.aead.aad_length + iv_inused_len;
+    req->cfg.src.icv_offset = sess_priv->xform.aead.aad_length + iv_inused_len + sym_op->aead.data.length;
+
+    req->cfg.dst.aad_offset = 0;
+    req->cfg.dst.iv_offset = sess_priv->xform.aead.aad_length;
+    req->cfg.dst.text_offset = sess_priv->xform.aead.aad_length + iv_inused_len;
+    req->cfg.dst.icv_offset = sess_priv->xform.aead.aad_length + iv_inused_len + sym_op->aead.data.length;
+
+    req->cfg.cfg.aad_len = sess_priv->xform.aead.aad_length;
+    req->cfg.cfg.session_id = hw_sess_id;
+    req->cfg.cfg.text_len = sym_op->aead.data.length;
+    req->cfg.cfg.encrypt = encrypt_en;
+    req->cfg.cfg.resp_en = 1;
+    req->cfg.cfg.aad_copy = aad_copy_en;
+    req->cfg.cfg.iv_copy = iv_copy_en;
 
     //store context for dequeue
     sw_ctx->op = op;
@@ -446,6 +486,17 @@ build_req_err:
     rte_free(in_list);
     rte_free(out_list);
     return -1;
+}
+
+static int
+psec_sym_build_request(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec_sym_session* sess_priv, volatile IpsecReqDesc* req, struct psec_ctx_buf_entry* sw_ctx)
+{
+    if (sess_priv->xform.type == RTE_CRYPTO_SYM_XFORM_AEAD) {
+        return psec_build_aead_req(qp, in_op, sess_priv, req, sw_ctx);
+    } else {
+        PSEC_LOG(ERR, "psec[%d] qp[%d] not support xform type 0x%x", qp->dev_id, qp->qp_id, sess_priv->xform.type);
+        return -1;
+    }
 }
 
 /* enqueue burst */

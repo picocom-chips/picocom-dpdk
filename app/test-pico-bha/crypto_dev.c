@@ -267,8 +267,8 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     struct rte_crypto_sym_op* sym_op;
     uint8_t *plaintext, *ciphertext;
     unsigned int aad_pad_len, plaintext_pad_len;
-    //unsigned int iv_pad_len;
-    //uint8_t *iv_pkt_addr = NULL;
+    unsigned int iv_pad_len;
+    uint8_t *iv_pkt_addr = NULL;
     out_mbuf = out_mbuf;
 
     //generate crypto op
@@ -291,9 +291,9 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     rte_memcpy(iv_ptr, testdata->iv.data, testdata->iv.len);
 
     //append iv into packet buf too
-    //iv_pad_len = testdata->iv.len - 4; //remove salt
-    //iv_pkt_addr = (uint8_t*)rte_pktmbuf_append(in_mbuf, iv_pad_len);
-    //memcpy(iv_pkt_addr, testdata->iv.data + 4, testdata->iv.len - 4);
+    iv_pad_len = testdata->iv.len - 4; //remove salt
+    iv_pkt_addr = (uint8_t*)rte_pktmbuf_append(in_mbuf, iv_pad_len);
+    memcpy(iv_pkt_addr, testdata->iv.data + 4, testdata->iv.len - 4);
 
     //append plaintext/ciphertext
     if (op == RTE_CRYPTO_AEAD_OP_ENCRYPT) {
@@ -320,7 +320,7 @@ aead_operation_create(enum rte_crypto_aead_algorithm algo __rte_unused,
     }
 
     sym_op->aead.data.length = testdata->plaintext.len;
-    sym_op->aead.data.offset = aad_pad_len;
+    sym_op->aead.data.offset = aad_pad_len + iv_pad_len;
     test_crypto_op = crypto_op;
 
     return 0;
@@ -345,7 +345,7 @@ crypto_op_req_proc(uint8_t dev_id, struct rte_crypto_op* op)
     return 0;
 }
 
-#if 0 
+#if 0
 static void
 dump_mem_info(void *addr, uint32_t len)
 {
@@ -366,7 +366,7 @@ void test_bha_crypto_aes256_gcm(void)
     struct rte_cryptodev_sym_capability_idx cap_idx;
     struct rte_mbuf* input_mbuf;
     struct crypto_sym_test_data* testdata = &aes_gcm_data;
-    uint8_t *ciphertext, *digest_tag, *aad_data;
+    uint8_t *ciphertext, *digest_tag, *aad_data, *iv_data, *plaintext;
     int ret = 0;
 
     bha_logger_en();
@@ -398,16 +398,6 @@ void test_bha_crypto_aes256_gcm(void)
         return;
     }
 
-    //create session
-    ret = aead_session_create_and_init(psec_cdevid,
-        RTE_CRYPTO_AEAD_AES_GCM,
-        RTE_CRYPTO_AEAD_OP_ENCRYPT,
-        testdata);
-    if (ret < 0) {
-        TESTBHA_LOG(ERR, "crypto pico sec device[%d] sym session create and init fail! ret %d\n", psec_cdevid, ret);
-        return;
-    }
-
     //create crypto op pool, mbuf nb 256, private=iv and max 16B
     crypto_op_pool = rte_crypto_op_pool_create("crypto_op_pool",
         RTE_CRYPTO_OP_TYPE_SYMMETRIC, 256, 128, MAXIMUM_IV_LENGTH,
@@ -428,6 +418,18 @@ void test_bha_crypto_aes256_gcm(void)
             return;
         }
     }
+
+    TESTBHA_LOG(INFO, "AES GCM encrypt test start...");
+    //create session
+    ret = aead_session_create_and_init(psec_cdevid,
+        RTE_CRYPTO_AEAD_AES_GCM,
+        RTE_CRYPTO_AEAD_OP_ENCRYPT,
+        testdata);
+    if (ret < 0) {
+        TESTBHA_LOG(ERR, "crypto pico sec device[%d] sym session create and init fail! ret %d\n", psec_cdevid, ret);
+        return;
+    }
+
     input_mbuf = rte_pktmbuf_alloc(crypto_mbuf_pool);
     memset(rte_pktmbuf_mtod(input_mbuf, uint8_t*), 0, rte_pktmbuf_tailroom(input_mbuf));
 
@@ -450,11 +452,13 @@ void test_bha_crypto_aes256_gcm(void)
     }
 
     aad_data = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*, 0);
+    iv_data = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*, testdata->aad.len);
     ciphertext = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*,
-        test_crypto_op->sym->cipher.data.offset);
+        test_crypto_op->sym->aead.data.offset);
     digest_tag = ciphertext + testdata->ciphertext.len;
 
     //dump_mem_info((void*)aad_data, testdata->aad.len);
+    //dump_mem_info((void*)iv_data, (testdata->iv.len - 4));
     //dump_mem_info((void*)ciphertext, testdata->ciphertext.len);
     //dump_mem_info((void*)digest_tag, testdata->digest.len);
 
@@ -463,19 +467,112 @@ void test_bha_crypto_aes256_gcm(void)
         TESTBHA_LOG(ERR, "ERROR: aad data check fail!!!");
         goto aes_gcm_exit;
     }
-
+    if (0 != memcmp((void*)iv_data, testdata->iv.data + 4, (testdata->iv.len - 4))) { //remove 4B salt
+        TESTBHA_LOG(ERR, "ERROR: iv data check fail!!!");
+        goto aes_gcm_exit;
+    }
     if (0 != memcmp((void*)ciphertext, testdata->ciphertext.data, testdata->ciphertext.len)) {
         TESTBHA_LOG(ERR, "ERROR: ciphertext check fail!!!");
         goto aes_gcm_exit;
     }
-
     if (0 != memcmp((void*)digest_tag, testdata->digest.data, testdata->digest.len)) {
         TESTBHA_LOG(ERR, "ERROR: digest check fail!!!");
         goto aes_gcm_exit;
     }
+    TESTBHA_LOG(INFO, "AES GCM encrypt test free sym_sess(priv_sess), op, mbuf");
+    rte_cryptodev_sym_session_clear(psec_cdevid, test_sym_sess);
+    rte_cryptodev_sym_session_free(test_sym_sess);
+    test_sym_sess = NULL;
+    rte_crypto_op_free(test_crypto_op);
+    test_crypto_op = NULL;
+    rte_pktmbuf_free(input_mbuf);
+    input_mbuf = NULL;
+    TESTBHA_LOG(INFO, "AES GCM encrypt test complete and pass");
 
-    TESTBHA_LOG(INFO, "AES GCM test complete and pass");
+    TESTBHA_LOG(INFO, "AES GCM decrypt test start...");
+    //create session
+    ret = aead_session_create_and_init(psec_cdevid,
+        RTE_CRYPTO_AEAD_AES_GCM,
+        RTE_CRYPTO_AEAD_OP_DECRYPT,
+        testdata);
+    if (ret < 0) {
+        TESTBHA_LOG(ERR, "crypto pico sec device[%d] sym session create and init fail! ret %d\n", psec_cdevid, ret);
+        return;
+    }
+
+    input_mbuf = rte_pktmbuf_alloc(crypto_mbuf_pool);
+    memset(rte_pktmbuf_mtod(input_mbuf, uint8_t*), 0, rte_pktmbuf_tailroom(input_mbuf));
+
+    ret = aead_operation_create(
+        RTE_CRYPTO_AEAD_AES_GCM,
+        RTE_CRYPTO_AEAD_OP_DECRYPT,
+        testdata,
+        input_mbuf, NULL);
+    if (ret < 0)
+        return;
+
+    rte_crypto_op_attach_sym_session(test_crypto_op, test_sym_sess);
+
+    test_crypto_op->sym->m_src = input_mbuf;
+    test_crypto_op->sym->m_dst = NULL;
+
+    if (crypto_op_req_proc(psec_cdevid, test_crypto_op) < 0) {
+        TESTBHA_LOG(ERR, "ERROR: crypto op req proc return error!!!");
+        goto aes_gcm_exit;
+    }
+
+    aad_data = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*, 0);
+    iv_data = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*, testdata->aad.len);
+    plaintext = rte_pktmbuf_mtod_offset(test_crypto_op->sym->m_src, uint8_t*,
+        test_crypto_op->sym->aead.data.offset);
+    digest_tag = plaintext + testdata->plaintext.len;
+
+    //dump_mem_info((void*)aad_data, testdata->aad.len);
+    //dump_mem_info((void*)iv_data, (testdata->iv.len - 4));
+    //dump_mem_info((void*)plaintext, testdata->plaintext.len);
+    //dump_mem_info((void*)digest_tag, testdata->digest.len);
+
+    //check encryption data content
+    if (0 != memcmp((void*)aad_data, testdata->aad.data, testdata->aad.len)) {
+        TESTBHA_LOG(ERR, "ERROR: aad data check fail!!!");
+        goto aes_gcm_exit;
+    }
+    if (0 != memcmp((void*)iv_data, testdata->iv.data + 4, (testdata->iv.len - 4))) { //remove 4B salt
+        TESTBHA_LOG(ERR, "ERROR: iv data check fail!!!");
+        goto aes_gcm_exit;
+    }
+    if (0 != memcmp((void*)plaintext, testdata->plaintext.data, testdata->plaintext.len)) {
+        TESTBHA_LOG(ERR, "ERROR: plaintext check fail!!!");
+        goto aes_gcm_exit;
+    }
+    if (0 != memcmp((void*)digest_tag, testdata->digest.data, testdata->digest.len)) {
+        TESTBHA_LOG(ERR, "ERROR: digest check fail!!!");
+        goto aes_gcm_exit;
+    }
+    TESTBHA_LOG(INFO, "AES GCM decrypt test free sym_sess(priv_sess), op, mbuf");
+    rte_cryptodev_sym_session_clear(psec_cdevid, test_sym_sess);
+    rte_cryptodev_sym_session_free(test_sym_sess);
+    test_sym_sess = NULL;
+    rte_crypto_op_free(test_crypto_op);
+    test_crypto_op = NULL;
+    rte_pktmbuf_free(input_mbuf);
+    input_mbuf = NULL;
+    TESTBHA_LOG(INFO, "AES GCM decrypt test complete and pass");
 
 aes_gcm_exit:
     bha_ipsec_abort();
+    //TESTBHA_LOG(INFO, "AES GCM test mbuf mem pool count %d", rte_mempool_avail_count(crypto_mbuf_pool));
+    //TESTBHA_LOG(INFO, "AES GCM test op mem pool count %d", rte_mempool_avail_count(crypto_op_pool));
+    //TESTBHA_LOG(INFO, "AES GCM test priv sess mem pool count %d", rte_mempool_avail_count(priv_sess_pool));
+    //TESTBHA_LOG(INFO, "AES GCM test sym sess mem pool count %d", rte_mempool_avail_count(sym_sess_pool));
+    TESTBHA_LOG(INFO, "AES GCM test free all mem pool");
+    rte_mempool_free(crypto_mbuf_pool);
+    crypto_mbuf_pool = NULL;
+    rte_mempool_free(crypto_op_pool);
+    crypto_op_pool = NULL;
+    rte_mempool_free(priv_sess_pool);
+    priv_sess_pool = NULL;
+    rte_mempool_free(sym_sess_pool);
+    sym_sess_pool = NULL;
+    //crypto device stop and close in quit cmd
 }
