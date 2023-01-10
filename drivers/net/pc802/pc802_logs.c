@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <syslog.h>
+#include <sys/select.h>
 #include <rte_version.h>
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 5, 0, 0)
 #include <eal_log.h>

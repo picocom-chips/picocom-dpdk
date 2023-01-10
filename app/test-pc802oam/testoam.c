@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <semaphore.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include <rte_common.h>
 #include <dev_driver.h>
