@@ -34,25 +34,6 @@ ceil_byte_length(uint32_t num_bits)
 		return (num_bits >> 3);
 }
 
-/* Before including test.h file you can define
- *  * TEST_TRACE_FAILURE(_file, _line, _func) macro to better trace/debug test
- *   * failures. Mostly useful in test development phase. */
-#ifndef TEST_TRACE_FAILURE
-# define TEST_TRACE_FAILURE(_file, _line, _func)
-#endif
-
-
-/* Compare two buffers (length in bytes) */
-#define TEST_ASSERT_BUFFERS_ARE_EQUAL(a, b, len,  msg, ...) do {	\
-	if (memcmp(a, b, len)) {                                        \
-		printf("TestCase %s() line %d failed: "              \
-			msg "\n", __func__, __LINE__, ##__VA_ARGS__);    \
-		TEST_TRACE_FAILURE(__FILE__, __LINE__, __func__);    \
-		return TEST_FAILED;                                  \
-	}                                                        \
-} while (0)
-
-
 #define TEST_ASSERT_SUCCESS(val, msg, ...) do { \
 		typeof(val) _val = (val); \
 		if (!(_val == 0)) { \
@@ -69,6 +50,15 @@ ceil_byte_length(uint32_t num_bits)
 #define TEST_ASSERT_NOT_NULL(val, msg, ...) do { \
 		if ((val) == NULL) { \
 			printf("TestCase %s() line %d failed (null): " \
+				msg "\n", __func__, __LINE__, ##__VA_ARGS__); \
+			return TEST_FAILED;  \
+		} \
+} while (0)
+
+
+#define TEST_ASSERT(cond, msg, ...) do {  \
+		if (!(cond)) {  \
+			printf("TestCase %s() line %d failed: " \
 				msg "\n", __func__, __LINE__, ##__VA_ARGS__); \
 			return TEST_FAILED;  \
 		} \
@@ -104,7 +94,6 @@ ceil_byte_length(uint32_t num_bits)
 #define IV_OFFSET			(sizeof(struct rte_crypto_op) + \
 		sizeof(struct rte_crypto_sym_op) + DEFAULT_NUM_XFORMS * \
 		sizeof(struct rte_crypto_sym_xform))
-
 
 
 
@@ -262,6 +251,7 @@ static int sec_setup(void)
 			"Failed to configure cryptodev %u with %u qps",
 			dev_id, ts_params->conf.nb_queue_pairs);
 
+
 	ts_params->qp_conf.nb_descriptors = MAX_NUM_OPS_INFLIGHT;
 	ts_params->qp_conf.mp_session = ts_params->session_mpool;
 	ts_params->qp_conf.mp_session_private = ts_params->session_priv_mpool;
@@ -274,60 +264,17 @@ static int sec_setup(void)
 			qp_id, dev_id);
 	}
 
-	return TEST_SUCCESS;
-}
-
-
-
-static int
-dev_configure_and_start(uint64_t ff_disable)
-{
-	struct crypto_testsuite_params *ts_params = &testsuite_params;
-	struct crypto_unittest_params *ut_params = &unittest_params;
-
-	uint16_t qp_id;
-
-	/* Clear unit test parameters before running test */
-	memset(ut_params, 0, sizeof(*ut_params));
-
-	/* Reconfigure device to default parameters */
-	ts_params->conf.socket_id = SOCKET_ID_ANY;
-	ts_params->conf.ff_disable = ff_disable;
-	ts_params->qp_conf.nb_descriptors = MAX_NUM_OPS_INFLIGHT;
-	ts_params->qp_conf.mp_session = ts_params->session_mpool;
-	ts_params->qp_conf.mp_session_private = ts_params->session_priv_mpool;
-
-	TEST_ASSERT_SUCCESS(rte_cryptodev_configure(ts_params->valid_devs[0],
-			&ts_params->conf),
-			"Failed to configure cryptodev %u",
-			ts_params->valid_devs[0]);
-
-	for (qp_id = 0; qp_id < ts_params->conf.nb_queue_pairs ; qp_id++) {
-		TEST_ASSERT_SUCCESS(rte_cryptodev_queue_pair_setup(
-			ts_params->valid_devs[0], qp_id,
-			&ts_params->qp_conf,
-			rte_cryptodev_socket_id(ts_params->valid_devs[0])),
-			"Failed to setup queue pair %u on cryptodev %u",
-			qp_id, ts_params->valid_devs[0]);
-	}
-
-
 	rte_cryptodev_stats_reset(ts_params->valid_devs[0]);
 
-	/* Start the device */
-	TEST_ASSERT_SUCCESS(rte_cryptodev_start(ts_params->valid_devs[0]),
-			"Failed to start cryptodev %u",
-			ts_params->valid_devs[0]);
+        /* Start the device */
+        TEST_ASSERT_SUCCESS(rte_cryptodev_start(ts_params->valid_devs[0]),
+                        "Failed to start cryptodev %u",
+                        ts_params->valid_devs[0]);
+
 
 	return TEST_SUCCESS;
 }
 
-
-static int sec_start_setup(void)
-{
-	/* Configure and start the device with security feature disabled */
-	return dev_configure_and_start(RTE_CRYPTODEV_FF_SECURITY);
-}
 
 static int
 create_wireless_algo_hash_session(uint8_t dev_id,
@@ -363,7 +310,13 @@ create_wireless_algo_hash_session(uint8_t dev_id,
 	status = rte_cryptodev_sym_session_init(dev_id, ut_params->sess,
 			&ut_params->auth_xform,
 			ts_params->session_priv_mpool);
-	printf("status = %d\n", status);
+        if (status < 0) {
+
+		TEST_ASSERT(status < 0,"Session creation succeeded unexpectedly");
+                rte_cryptodev_sym_session_free(ut_params->sess);
+                return status;
+        }
+
 	TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
 	return 0;
 }
@@ -441,8 +394,46 @@ process_crypto_request(uint8_t dev_id, struct rte_crypto_op *op)
 		RTE_LOG(DEBUG, USER1, "Operation status %d\n", op->status);
 		return NULL;
 	}
+        
 
 	return op;
+}
+
+static void crypto_free_memory(void)
+{
+
+	struct crypto_unittest_params *ut_params = &unittest_params;
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+
+	/*free sess*/
+	if (ut_params->sess) {
+                        rte_cryptodev_sym_session_clear(
+                                        ts_params->valid_devs[0],
+                                        ut_params->sess);
+                        rte_cryptodev_sym_session_free(ut_params->sess);
+                        ut_params->sess = NULL;
+        }
+
+
+	/* free crypto operation structure */
+	if (ut_params->op)
+		rte_crypto_op_free(ut_params->op);
+
+	/*
+	 * free mbuf - both obuf and ibuf are usually the same,
+	 * so check if they point at the same address is necessary,
+	 * to avoid freeing the mbuf twice.
+	 */
+	if (ut_params->obuf) {
+		rte_pktmbuf_free(ut_params->obuf);
+		if (ut_params->ibuf == ut_params->obuf)
+			ut_params->ibuf = 0;
+		ut_params->obuf = 0;
+	}
+	if (ut_params->ibuf) {
+		rte_pktmbuf_free(ut_params->ibuf);
+		ut_params->ibuf = 0;
+	}
 }
 
 
@@ -519,11 +510,47 @@ static int snow3gf9_authentication(uint8_t* macI, uint8_t *key, uint8_t key_len,
 	ut_params->digest = rte_pktmbuf_mtod(ut_params->obuf, uint8_t *)
 			+ plaintext_pad_len;
 
-	macI = ut_params->digest;
-        printf("digest: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
+	debug_hexdump(stdout, "digest:", ut_params->digest, 4);
+	
+	/*copy to macI*/
+	rte_memcpy(macI, ut_params->digest, 4);
 
+	/*crypto free memory*/
+	crypto_free_memory();
 
 	return 0;
+}
+
+static void cryptodev_device_stop(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct rte_cryptodev_stats stats;
+
+	rte_cryptodev_stats_get(ts_params->valid_devs[0], &stats);
+
+	/* Stop the device */
+	rte_cryptodev_stop(ts_params->valid_devs[0]);
+}
+
+static void mpool_check_memory(void)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+
+    	if (ts_params->session_mpool != NULL)
+       		printf("SESSION_MPOOL CRYPTO_MBUFPOOL count %u\n", rte_mempool_avail_count(ts_params->session_mpool));
+
+    	if (ts_params->session_priv_mpool != NULL)
+       		printf("SESSION_PRIV_MPOOL CRYPTO_MBUFPOOL count %u\n", rte_mempool_avail_count(ts_params->session_priv_mpool));
+
+    	if (ts_params->op_mpool != NULL) {
+		printf("OP_MPOOL CRYPTO_OP_POOL count %u\n", rte_mempool_avail_count(ts_params->op_mpool));
+    	}
+
+    	if (ts_params->mbuf_pool != NULL)
+		printf("MBUF_POOL CRYPTO_MBUFPOOL count %u\n", rte_mempool_avail_count(ts_params->mbuf_pool));
+
+    	if (ts_params->large_mbuf_pool != NULL)
+        	RTE_LOG(DEBUG, USER1, "CRYPTO_MBUFPOOL count %u\n", rte_mempool_avail_count(ts_params->large_mbuf_pool));
 }
 
 static int snow3gf9(uint8_t* macI, uint8_t* key, uint32_t count, uint32_t fresh, uint32_t dir, uint8_t *data, uint64_t length)
@@ -543,6 +570,7 @@ static int snow3gf9(uint8_t* macI, uint8_t* key, uint32_t count, uint32_t fresh,
 int main(int argc, char **argv)
 {
   int ret = 0;
+  int i = 0;
   uint8_t macI[4] = {1,2,3,4};
   uint32_t count = 0x38a6f056;
   uint32_t fresh = 0xf8000000;
@@ -550,20 +578,35 @@ int main(int argc, char **argv)
   uint64_t length = 88;
   uint8_t data[16] = {0x33, 0x32, 0x34, 0x62, 0x63, 0x39, 0x38, 0x61, 0x37, 0x34, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00};
   uint8_t key[16] = {0x2b, 0xd6, 0x45, 0x9f, 0x82, 0xc5, 0xb3, 0x00, 0x95, 0x2c, 0x49, 0x10, 0x48, 0x81, 0xff, 0x48};
+  uint8_t data1[512] = { 0xD0, 0xA7, 0xD4, 0x63, 0xDF, 0x9F, 0xB2, 0xB2,0x78, 0x83, 0x3F, 0xA0, 0x2E, 0x23, 0x5A, 0xA1,
+                        0x72, 0xBD, 0x97, 0x0C, 0x14, 0x73, 0xE1, 0x29,0x07, 0xFB, 0x64, 0x8B, 0x65, 0x99, 0xAA, 0xA0,
+                        0xB2, 0x4A, 0x03, 0x86, 0x65, 0x42, 0x2B, 0x20,0xA4, 0x99, 0x27, 0x6A, 0x50, 0x42, 0x70, 0x09};
+  uint8_t key1[16] = { 0xC7, 0x36, 0xC6, 0xAA, 0xB2, 0x2B, 0xFF, 0xF9,0x1E, 0x26, 0x98, 0xD2, 0xE2, 0x2A, 0xD5, 0x7E};
 
   ret = rte_eal_init(argc, argv);
   if (ret < 0) {
           ret = -1;
-	  return -1;
+	  return ret;
   }
 
-  printf("sec mempool \n");
+  //setup
+  printf("sec setup\n");
   sec_setup();
 
-  printf("sec start \n");
-  sec_start_setup();
+  for(i = 0; i < 10000; i++)
+  {
+    dir = 0, fresh = 0xf8000000, count = 0x38a6f056, length = 88;
+    snow3gf9(macI, key, count, fresh, dir, data, length);
+    printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
+ 
+    length = 384, count =  0x14793E41, fresh = 0x0397E8FD, dir = 1;
+    snow3gf9(macI, key1, count, fresh, dir, data1, length);
+    printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
 
-  snow3gf9(macI, key, count, fresh, dir, data, length);
+    mpool_check_memory();
+  }
+
+  cryptodev_device_stop();
 
   return ret;
 
