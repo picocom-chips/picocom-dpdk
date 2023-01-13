@@ -27,13 +27,31 @@
         On my testing server, I reserved one 1GB hugepage
     
     2) Example for running unit test case
-        sudo ./build/app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha --vdev=crypto_psec
+        //bha model pcap mode and crypto device testing
+        sudo ./app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha,dqn=1,et0_qid=0,et0=0xaefe --vdev=crypto_psec
         BHA>> pcap ecpri
         BHA>> quit
 
         If run other case, please repeat the upper command and processing.
-        Currently support test case:
+        Other test case:
         # pcap ecpri
         # pcap default
         # pcap jumbo
+
+        //bha model tap mode and crypto device testing
+        //[Note] You must set up environment to create "tap0" and setup bridge, and connect "tap0" and hw NIC with bridge
+        //The network packets can rx/tx between "tap0" and hw NIC
+        sudo ./app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha,tap=tap0,dqn=0 --vdev=crypto_psec
+        BHA>> tap default
+        BHA>> quit
+
+        If run other case, please repeat the upper command and processing.
+        Other test case:
         # aes gcm
+
+    3) BHA model network input parameters help
+        # tap - enable bha network TAP mode and input the specific TAP eth dev interface name. For example "tap=tap0"
+        # max_rxq_nb - rx queue max number setting. [Note] not in used
+        # dqn - default queue id setting for rx packets of not match any filters. Currently support queue (0~4)
+        # et?_qid - eth type filter (? is id[0~3]) bonding rx queue id. For example "et0_qid=0". Currently support eth type id (0~3)
+        # et? - eth type filter configure type. For example "et0=0xaefe". So the bonding id rx queue 0 will receive ecpri type(0xaefe) packets only

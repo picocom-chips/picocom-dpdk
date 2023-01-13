@@ -28,6 +28,10 @@ void test_bha_pcap_mode_dfltq_pkts(void);
 void test_bha_pcap_mode_ecpri_jumbo_pkts(void);
 
 
+//tap mode testing
+void test_bha_tap_mode_dfltq_pkts(void);
+
+
 //crypto device testing
 void test_bha_crypto_aes256_gcm(void);
 

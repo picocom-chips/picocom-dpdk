@@ -44,6 +44,29 @@ cmdline_parse_inst_t test_bha_aes_gcm_cmd = {
 };
 
 
+//test bha tap mode, testing dfltq pkts cmd
+struct test_bha_tap_mode_dfltq_params {
+    cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t bha_tap_mode_dfltq_token_cmd = TOKEN_STRING_INITIALIZER(struct test_bha_tap_mode_dfltq_params, cmd, "tap default");
+
+static void cmd_test_bha_tap_mode_dfltq_cb(__rte_unused void *ptr_params, __rte_unused struct cmdline *ctx, __rte_unused void *ptr_data)
+{
+    test_bha_tap_mode_dfltq_pkts();
+}
+
+cmdline_parse_inst_t test_bha_tap_mode_dfltq_cmd = {
+    .f = cmd_test_bha_tap_mode_dfltq_cb,
+    .data = NULL,
+    .help_str = "tap default\n     bha tap mode. testing default queue pkts cmd",
+    .tokens = {
+        (void *)&bha_tap_mode_dfltq_token_cmd,
+        NULL
+    },
+};
+
+
 //test bha pcap mode, testing dfltq pkts cmd
 struct test_bha_pcap_mode_dfltq_params {
     cmdline_fixed_string_t cmd;
@@ -143,6 +166,7 @@ cmdline_parse_ctx_t bha_prompt_commands[] = {
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_ecpri_cmd,
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_dfltq_cmd,
     (cmdline_parse_inst_t *)&test_bha_pcap_mode_jumbo_cmd,
+    (cmdline_parse_inst_t *)&test_bha_tap_mode_dfltq_cmd,
     (cmdline_parse_inst_t *)&test_bha_aes_gcm_cmd,
     (cmdline_parse_inst_t *)&test_bha_quit_cmd,
     NULL

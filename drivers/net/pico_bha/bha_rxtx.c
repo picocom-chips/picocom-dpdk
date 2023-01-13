@@ -186,6 +186,12 @@ eth_bha_rx_pkt_burst(void* rx_queue, struct rte_mbuf** rx_pkts,
 
     //BHA_LOG(DEBUG, "ethdev bha[%d] rxq[%d] rx burst, c_ptr 0x%x, nb desc avail %d", rxq->port_id, rxq->queue_id, rxq->c_ptr.ptr, nb_rxd_avail);
 
+#ifdef RTE_NET_BHA_MODEL_EN
+        //wait until at least 1 pkts avail in rx queue
+        while (1 == RING_STATUS_EMPTY(bha_reg_read(rxq->rx_ring_reg_base + RING_REGS_STATUS_OFFSET))) {
+            rte_delay_us(10000);
+        }
+#endif
 
     while (nb_rx < nb_pkts) {
         volatile RxResultDesc rxd_rsp;
@@ -212,7 +218,6 @@ eth_bha_rx_pkt_burst(void* rx_queue, struct rte_mbuf** rx_pkts,
                     break;
             }
         }
-
 
 next_desc:
         rxd_p = &rx_ring[rx_id]; //rx desc for pkts data
@@ -400,6 +405,7 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
     wrap_flag = txq->p_ptr.wrap; //producer wrap
     txe = &sw_ring[tx_id];
     nb_txd_used = 0;
+    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst, qid %d, tx burst lcore id %d", txq->port_id, txq->queue_id, rte_lcore_id());
     BHA_LOG(DEBUG, "ethdev bha[%d] tx burst, qid %d, nb_pkts %d, curr tx index %d, wrap %d", txq->port_id, txq->queue_id, nb_pkts, tx_id, wrap_flag);
 
     //free desc
@@ -499,6 +505,13 @@ end_of_tx:
         RTE_ASSERT(0);
     }
 
+#ifdef RTE_NET_BHA_MODEL_EN
+    //wait until all pkts tx complete
+    while (0 == RING_STATUS_EMPTY(bha_reg_read(txq->tx_ring_reg_base + RING_REGS_STATUS_OFFSET))) {
+        rte_delay_us(10000);
+    }
+#endif
+
     return nb_tx;
 }
 
@@ -567,9 +580,11 @@ bha_alloc_rx_queue_mbufs(struct bha_rx_queue* rxq)
 int __rte_cold
 bha_dev_rx_queue_start(struct rte_eth_dev* dev, uint16_t rx_queue_id)
 {
+    struct bha_adapter *adapter = dev->data->dev_private;
     struct bha_rx_queue* rxq;
     uint32_t data_len = 0;
     volatile uint32_t hw_p_ptr = 0;
+    uint32_t i = 0;
 
     rxq = dev->data->rx_queues[rx_queue_id];
     /* Allocate buffers for descriptor rings */
@@ -605,6 +620,28 @@ bha_dev_rx_queue_start(struct rte_eth_dev* dev, uint16_t rx_queue_id)
     rxq->p_ptr.ptr = hw_p_ptr; //update producer ptr
 
     //adapter rx queue filter conf
+    if (rxq->queue_id == adapter->default_qid) {
+        //conf default filter, and conf default congestion action blocking
+        BHA_LOG(DEBUG, "adapter conf ether type default filter, id %d", adapter->default_qid);
+        bha_reg_write(DEFAULT_Q,
+                        SET_DEFAULT_QUEUE_QUEUE_ID(rxq->queue_id) |
+                        SET_DEFAULT_QUEUE_CONGESTION_ACTION(CA_OPS_BLOCKING) |
+                        SET_DEFAULT_QUEUE_EN(1));
+    } else {
+        //conf eth type filter(0~3), and conf default congestion action blocking
+        for (i = 0; i < BHA_ETH_TYPE_FILTER_ID_MAX; i++) {
+            if ((rxq->queue_id == adapter->filter_et_qid[i]) && (adapter->filter_et[i] > 0)) {
+                BHA_LOG(DEBUG, "adapter conf ether type filter %d, type 0x%x", i, adapter->filter_et[i]);
+                bha_reg_write(ET_FILTER(i),
+                                SET_ETHER_TYPE_FILTER_ETYPE(adapter->filter_et[i]) |
+                                SET_ETHER_TYPE_FILTER_QUEUE_ID(rxq->queue_id) |
+                                SET_ETHER_TYPE_FILTER_CONGESTION_ACTION(CA_OPS_BLOCKING) |
+                                SET_ETHER_TYPE_FILTER_EN(1));
+                break;
+            }
+        }
+    }
+#if 0
     if (rxq->filter_conf.et_conf.filter_id < BHA_ETH_TYPE_FILTER_ID_MAX) { //ether type filter(0~3) conf
         BHA_LOG(DEBUG, "adapter conf ether type filter %d", rxq->filter_conf.et_conf.filter_id);
         bha_reg_write(ET_FILTER(rxq->filter_conf.et_conf.filter_id),
@@ -620,6 +657,7 @@ bha_dev_rx_queue_start(struct rte_eth_dev* dev, uint16_t rx_queue_id)
                         SET_DEFAULT_QUEUE_EN(1));
     }
     BHA_LOG(DEBUG, "adpater set et filter id %d, ether type 0x%x, qid %d, ca %d", rxq->filter_conf.et_conf.filter_id, rxq->filter_conf.et_conf.ether_type, rxq->queue_id, rxq->filter_conf.et_conf.congestion_action);
+#endif
 
     //rxq status update
     dev->data->rx_queue_state[rx_queue_id] = RTE_ETH_QUEUE_STATE_STARTED;
@@ -676,14 +714,14 @@ eth_bha_rx_queue_setup(struct rte_eth_dev* dev,
     uint16_t queue_idx,
     uint16_t nb_desc,
     unsigned int socket_id,
-    const struct rte_eth_rxconf* rx_conf,
+    const struct rte_eth_rxconf* rx_conf __rte_unused,
     struct rte_mempool* mp)
 {
     //struct bha_adapter *adapter = dev->data->dev_private;
     struct bha_rx_queue* rxq;
     const struct rte_memzone* rmz;
     const struct rte_memzone* rmz_rsp;
-    struct filter_conf_s* filter_conf = (struct filter_conf_s *)rx_conf->reserved_ptrs[0];
+    //struct filter_conf_s* filter_conf = (struct filter_conf_s *)rx_conf->reserved_ptrs[0];
 
     BHA_LOG(DEBUG, "ethdev bha[%d] rx queue[%d] setup, number desc %d, socket id %d", dev->data->port_id, queue_idx, nb_desc, socket_id);
 
@@ -754,9 +792,11 @@ eth_bha_rx_queue_setup(struct rte_eth_dev* dev,
 
     //update rxq ring hw reg info
     rxq->rx_ring_reg_base = RX_RING(REQ_BASE_L, queue_idx);
+#if 0
     //update rxq filter config
     rxq->filter_conf = *filter_conf;
     BHA_LOG(DEBUG, "rx_conf et filter id %d, ether type 0x%x, ca %d", filter_conf->et_conf.filter_id, filter_conf->et_conf.ether_type, filter_conf->et_conf.congestion_action);
+#endif
 
     dev->data->rx_queues[queue_idx] = rxq;
 

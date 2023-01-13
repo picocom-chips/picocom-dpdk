@@ -33,6 +33,7 @@ dpdk_conf.set('BHA_PCAPS_OUT_PATH', '"'+test_bha_pcaps_out_path+'"')
 sources = files(
   'test_bha.c',
   'pcap_mode.c',
+  'tap_mode.c',
   'crypto_dev.c',
   'cmdline.c',
 )

@@ -46,6 +46,27 @@
 #include <bha_log.h>
 
 
+//enable tap mode and input specific tap device
+#define BHA_MODE_TAP_ARG    "tap"
+//support queue numbers
+#define BHA_MAX_RXQN_ARG    "max_rxq_nb"
+//queue number to config default rx queue
+#define BHA_DEFAULTQ_ARG    "dqn"
+//filter - eth type bonding queue id
+#define BHA_FILTER_ET0_QID_ARG  "et0_qid"
+#define BHA_FILTER_ET1_QID_ARG  "et1_qid"
+#define BHA_FILTER_ET2_QID_ARG  "et2_qid"
+#define BHA_FILTER_ET3_QID_ARG  "et3_qid"
+#define BHA_FILTER_ET_QID_STR   "_qid"
+//filter - eth type conf
+#define BHA_FILTER_ET0_ARG      "et0"
+#define BHA_FILTER_ET1_ARG      "et1"
+#define BHA_FILTER_ET2_ARG      "et2"
+#define BHA_FILTER_ET3_ARG      "et3"
+#define BHA_FILTER_ET_STR       "et"
+
+
+
 static int
 eth_bha_configure(struct rte_eth_dev* dev)
 {
@@ -62,7 +83,7 @@ eth_bha_start(struct rte_eth_dev* dev)
     unsigned int i;
     int ret;
 
-    BHA_LOG(DEBUG, "ethdev bha[%d] start", dev->data->port_id);
+    BHA_LOG(DEBUG, "ethdev bha[%d] start, lcore id %d", dev->data->port_id, rte_lcore_id());
 
     for (i = 0; i < dev->data->nb_tx_queues; i++) {
         ret = bha_dev_tx_queue_start(dev, i);
@@ -77,7 +98,7 @@ eth_bha_start(struct rte_eth_dev* dev)
     }
 
     //adapter rx and tx enbale
-    BHA_LOG(DEBUG, "ethdev bha[%d] modle start rx and tx", dev->data->port_id);
+    BHA_LOG(DEBUG, "ethdev bha[%d] model start rx and tx", dev->data->port_id);
     bha_reg_write(RX_EN, 1);
     bha_reg_write(TX_EN, 1);
 
@@ -217,6 +238,11 @@ eth_bha_close(struct rte_eth_dev* dev)
     dev->data->mac_addrs = NULL;
     bha_dev_free_queues(dev);
 
+#ifdef RTE_NET_BHA_MODEL_EN
+    //bha model abort
+    bha_abort();
+#endif
+
     return 0;
 }
 
@@ -238,6 +264,198 @@ static const struct eth_dev_ops bha_ops = {
     .tx_queue_release = eth_bha_tx_queue_release,
 };
 
+static bool
+is_valid_tap_iface(const char *name)
+{
+    if (*name == '\0')
+        return false;
+
+    //format tap?
+    if (strlen(name) <= 3)
+        return false;
+
+    //format tap?
+    if (0 != memcmp(name, "tap", 3))
+        return false;
+
+    return true;
+}
+
+static int
+get_tap_ifname_arg(const char *key __rte_unused,
+           const char *value,
+           void *extra_args)
+{
+    char *name = (char *)extra_args;
+
+    //BHA_LOG(DEBUG, "---parse tap ifname func---");
+    if (value) {
+        if (!is_valid_tap_iface(value)) {
+            BHA_LOG(ERR, "invalid param tap interface name (%s)",
+                value);
+            return -1;
+        }
+        BHA_LOG(DEBUG, "get input tap interface name (%s)", value);
+        strlcpy(name, value, RTE_ETH_NAME_MAX_LEN);
+    } else
+        return -1;
+
+    return 0;
+}
+
+static int
+get_int_val_arg(const char *key __rte_unused,
+        const char *value, void *extra_args)
+{
+    const char *a = value;
+    int *arg_int = extra_args;
+
+    //BHA_LOG(DEBUG, "---parse int value arg func---");
+    if ((value == NULL) || (extra_args == NULL))
+        return -EINVAL;
+
+    *arg_int = (int)strtol(a, NULL, 0);
+
+    return 0;
+}
+
+static int
+get_uint_val_arg(const char *key __rte_unused,
+        const char *value, void *extra_args)
+{
+    const char *a = value;
+    unsigned int *arg_uint = extra_args;
+
+    //BHA_LOG(DEBUG, "---parse unsigned int arg func---");
+    if ((value == NULL) || (extra_args == NULL))
+        return -EINVAL;
+
+    *arg_uint = (unsigned int)strtoul(a, NULL, 0);
+    if (*arg_uint == UINT_MAX)
+        return -1;
+
+    return 0;
+}
+
+
+static void
+eth_bha_parse_input_params(struct rte_eth_dev* eth_dev, const char *params)
+{
+    struct bha_adapter* adapter = eth_dev->data->dev_private;
+    struct rte_kvargs *kvlist = NULL;
+    uint32_t max_rxq_nb = 0;
+    int default_qid = -1;
+    int et_qid[BHA_ETH_TYPE_FILTER_ID_MAX] = {-1,-1,-1,-1};
+    uint32_t et_val[BHA_ETH_TYPE_FILTER_ID_MAX] = {0,0,0,0};
+    char param_str[16];
+    uint32_t i = 0;
+    int ret = 0;
+#ifdef RTE_NET_BHA_MODEL_EN
+    char *ifname;
+#endif
+
+    const char *valid_arguments[] = {
+#ifdef RTE_NET_BHA_MODEL_EN
+        BHA_MODE_TAP_ARG,
+#endif
+        BHA_MAX_RXQN_ARG,
+        BHA_DEFAULTQ_ARG,
+        BHA_FILTER_ET0_QID_ARG,
+        BHA_FILTER_ET0_ARG,
+        BHA_FILTER_ET1_QID_ARG,
+        BHA_FILTER_ET1_ARG,
+        BHA_FILTER_ET2_QID_ARG,
+        BHA_FILTER_ET2_ARG,
+        BHA_FILTER_ET3_QID_ARG,
+        BHA_FILTER_ET3_ARG,
+        NULL
+    };
+
+    kvlist = rte_kvargs_parse(params, valid_arguments);
+    if (kvlist != NULL) {
+#ifdef RTE_NET_BHA_MODEL_EN
+        ifname = adapter->tap_ifname;
+        adapter->tap_mode_en = false;
+        memset(ifname, 0, RTE_ETH_NAME_MAX_LEN);
+        ret = rte_kvargs_process(kvlist,
+                BHA_MODE_TAP_ARG,
+                &get_tap_ifname_arg, ifname);
+        if (ret < 0) {
+            BHA_LOG(DEBUG, "ethdev bha model parse tap iface name fail. ret %d", ret);
+        } else {
+            if (is_valid_tap_iface(adapter->tap_ifname)) {
+                BHA_LOG(DEBUG, "ethdev bha model get iface[%s] and enable tap mode", adapter->tap_ifname);
+                bha_simulate_tap(adapter->tap_ifname);
+                adapter->tap_mode_en = true;
+            }
+        }
+#endif
+
+        adapter->max_rxq_nb = 0;
+        ret = rte_kvargs_process(kvlist,
+                BHA_MAX_RXQN_ARG,
+                &get_uint_val_arg, &max_rxq_nb);
+        if (ret < 0) {
+            BHA_LOG(ERR, "ethdev bha model parse max rx queue number fail. ret %d", ret);
+        } else {
+            if ((max_rxq_nb > 0) && (max_rxq_nb <= 5)) {
+                BHA_LOG(DEBUG, "ethdev bha model parse max rx queue number %d. expect <= 5", max_rxq_nb);
+                adapter->max_rxq_nb = max_rxq_nb;
+            }
+        }
+
+        adapter->default_qid = -1;
+        ret = rte_kvargs_process(kvlist,
+                BHA_DEFAULTQ_ARG,
+                &get_int_val_arg, &default_qid);
+        if (ret < 0) {
+            BHA_LOG(ERR, "ethdev bha model parse rx filter default queue id fail. ret %d", ret);
+        } else {
+            if (default_qid >= 0) {
+                BHA_LOG(DEBUG, "ethdev bha model conf rx filter default queue id %d. expect (0~4)", default_qid);
+                adapter->default_qid = default_qid;
+            }
+        }
+
+        for (i = 0; i < BHA_ETH_TYPE_FILTER_ID_MAX; i++) {
+            adapter->filter_et_qid[i] = -1;
+            adapter->filter_et[i] = 0;
+
+            memset(param_str, 0, 16);
+            sprintf(param_str, "%s%d%s", BHA_FILTER_ET_STR, i, BHA_FILTER_ET_QID_STR);
+            //BHA_LOG(DEBUG, "ethdev bha model parse param - %s", param_str);
+            ret = rte_kvargs_process(kvlist,
+                    param_str,
+                    &get_int_val_arg, &et_qid[i]);
+            if (ret < 0) {
+                BHA_LOG(ERR, "ethdev bha model parse eth type filter[%d] conf qid fail. ret %d", i, ret);
+            } else {
+                if ((et_qid[i] >= 0) && (et_qid[i] < 5)) {
+                    BHA_LOG(DEBUG, "ethdev bha model parse eth type filter[%d] conf queue id %d. expect (0~4)", i, et_qid[i]);
+                    adapter->filter_et_qid[i] = et_qid[i];
+                }
+            }
+
+            memset(param_str, 0, 16);
+            sprintf(param_str, "%s%d", BHA_FILTER_ET_STR, i);
+            //BHA_LOG(DEBUG, "ethdev bha model parse param - %s", param_str);
+            ret = rte_kvargs_process(kvlist,
+                    param_str,
+                    &get_uint_val_arg, &et_val[i]);
+            if (ret < 0) {
+                BHA_LOG(ERR, "ethdev bha model parse eth type filter[%d] conf val fail. ret %d", i, ret);
+            } else {
+                if ((et_val[i] > 0) && (et_val[i] < 0xFFFF)) {
+                    BHA_LOG(DEBUG, "ethdev bha model parse eth type filter[%d] type 0x%x", i, et_val[i]);
+                    adapter->filter_et[i] = et_val[i];
+                }
+            }
+        }
+
+        rte_kvargs_free(kvlist);
+    }
+}
+
 static int
 rte_pmd_bha_probe(struct rte_vdev_device* vdev)
 {
@@ -245,8 +463,10 @@ rte_pmd_bha_probe(struct rte_vdev_device* vdev)
     struct rte_eth_dev* eth_dev;
     struct bha_adapter* adapter;
     struct rte_eth_dev_data* data;
+    const char *params;
 
     name = rte_vdev_device_name(vdev);
+    params = rte_vdev_device_args(vdev);
     BHA_LOG(DEBUG, "Initializing pmd bha for %s", name);
 
     //vdev set defaut socket id any, update to the real numa node
@@ -281,6 +501,11 @@ rte_pmd_bha_probe(struct rte_vdev_device* vdev)
     eth_dev->dev_ops = &bha_ops;
     eth_dev->rx_pkt_burst = eth_bha_rx_pkt_burst;
     eth_dev->tx_pkt_burst = eth_bha_tx_pkt_burst;
+
+    //parse input params
+    if (params != NULL) {
+        eth_bha_parse_input_params(eth_dev, params);
+    }
 
     rte_eth_dev_probing_finish(eth_dev);
     BHA_LOG(DEBUG, "---bha probe complete---");
@@ -320,3 +545,18 @@ static struct rte_vdev_driver pmd_bha_drv = {
 RTE_PMD_REGISTER_VDEV(net_bha, pmd_bha_drv);
 RTE_PMD_REGISTER_ALIAS(net_bha, eth_bha);
 RTE_LOG_REGISTER_DEFAULT(bha_logtype, NOTICE);
+RTE_PMD_REGISTER_PARAM_STRING(net_bha,
+#ifdef RTE_NET_BHA_MODEL_EN
+                            BHA_MODE_TAP_ARG "=<string>"
+#endif
+                            BHA_MAX_RXQN_ARG "=<uint32>"
+                            BHA_DEFAULTQ_ARG "=<int>"
+                            BHA_FILTER_ET0_QID_ARG "=<int>"
+                            BHA_FILTER_ET0_ARG "=<uint32>"
+                            BHA_FILTER_ET1_QID_ARG "=<int>"
+                            BHA_FILTER_ET1_ARG "=<uint32>"
+                            BHA_FILTER_ET2_QID_ARG "=<int>"
+                            BHA_FILTER_ET2_ARG "=<uint32>"
+                            BHA_FILTER_ET3_QID_ARG "=<int>"
+                            BHA_FILTER_ET3_ARG "=<uint32>"
+                            );

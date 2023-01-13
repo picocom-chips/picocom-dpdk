@@ -56,7 +56,7 @@ struct bha_rx_queue {
     union bha_ring_ptr p_ptr; //hw producer ptr(rw)
 
     uint32_t rx_ring_reg_base; /**< adapter rx ring register base addr */
-    struct filter_conf_s filter_conf; /**< filter configure info >*/
+    //struct filter_conf_s filter_conf; /**< filter configure info >*/
 };
 
 struct bha_tx_entry {

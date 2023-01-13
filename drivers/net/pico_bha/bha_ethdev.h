@@ -6,11 +6,25 @@
 #define _BHA_ETHDEV_H_
 
 #include <stdint.h>
+#include <rte_pmd_bha.h>
 
 struct bha_adapter {
     struct rte_eth_dev* dev;
     struct rte_ether_addr eth_addr;
     uint16_t port_id;
+    uint16_t max_rxq_nb;
+
+    //hw filter
+    int default_qid; //0~4, none is -1
+    //hw filter - ethernet type
+    int filter_et_qid[BHA_ETH_TYPE_FILTER_ID_MAX]; //0~4, none is -1
+    uint16_t filter_et[BHA_ETH_TYPE_FILTER_ID_MAX]; //none is 0
+
+#ifdef RTE_NET_BHA_MODEL_EN
+    //bha model tap mode
+    char tap_ifname[RTE_ETH_NAME_MAX_LEN];
+    bool tap_mode_en;
+#endif
 };
 
 

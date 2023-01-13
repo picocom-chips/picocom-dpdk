@@ -60,66 +60,15 @@
 //test bha port id
 extern uint16_t bha_portid;
 
-enum bha_pcap_pkt_e {
-    BHA_PCAP_PKT_ECPRI = 0,
-    BHA_PCAP_PKT_ECPRI_JUMBO,
-    BHA_PCAP_PKT_OTHER,
-};
-
-
-static char pcap_input_file[128] = {0};
-static char pcap_output_file[128] = {0};
 
 static void
-test_bha_model_pcap_mode_enable(enum bha_pcap_pkt_e pkt)
-{
-    //select testing pcap input file and setting output file
-    switch (pkt) {
-        case BHA_PCAP_PKT_ECPRI:
-            sprintf(pcap_input_file, "%s/%s", BHA_PCAPS_IN_PATH, "ecpri_20_pkts.pcap");
-            sprintf(pcap_output_file, "%s/%s", BHA_PCAPS_OUT_PATH, "output_ecpri_pkts.pcap");
-            break;
-
-        case BHA_PCAP_PKT_ECPRI_JUMBO:
-            sprintf(pcap_input_file, "%s/%s", BHA_PCAPS_IN_PATH, "ecpri_jumbo_20_pkts.pcap");
-            sprintf(pcap_output_file, "%s/%s", BHA_PCAPS_OUT_PATH, "output_ecpri_jumbo_pkts.pcap");
-            break;
-
-        case BHA_PCAP_PKT_OTHER:
-            sprintf(pcap_input_file, "%s/%s", BHA_PCAPS_IN_PATH, "icmp_12_pkts.pcap");
-            sprintf(pcap_output_file, "%s/%s", BHA_PCAPS_OUT_PATH, "output_default_pkts.pcap");
-            break;
-
-        default:
-            TESTBHA_LOG(ERR, "port[%d] ethdev bha pcap packet type illegal %d\n", bha_portid, pkt);
-            return;
-    }
-
-    //bha model pcaps file mode
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev bha pcap input: %s\n", bha_portid, pcap_input_file);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev bha pcap output: %s\n", bha_portid, pcap_output_file);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev bha modle enable pcap mode\n", bha_portid);
-    bha_simulate_pcap(pcap_input_file, pcap_output_file);
-}
-
-static void
-test_bha_model_pcap_file_cmp(void)
-{
-    usleep(100000); //wait for tx complete. or query consumer ptr or tx status empty
-    if (bha_pcap_cmp(pcap_input_file, pcap_output_file, false))
-        TESTBHA_LOG(ERR, "port[%d] ethdev testing pcap file cmp fail!!! \n", bha_portid);
-    //bha_abort();
-}
-
-static void
-test_bha_pcap_mode_init(void)
+test_bha_tap_mode_init(void)
 {
     int ret = 0;
     struct rte_eth_dev_info dev_info;
     int socket_id;
     struct rte_eth_txconf tx_conf;
     struct rte_eth_rxconf rxq_conf0, rxq_conf1;
-    //struct filter_conf_s fconf0, fconf1;
     struct rte_mempool* mbuf_pool;
     //struct rte_mempool* tx_mbuf_pool;
     char mbufp_name[32] = { 0 };
@@ -163,10 +112,6 @@ test_bha_pcap_mode_init(void)
     //uint64_t reserved_64s[2];
     //void *reserved_ptrs[2]; //tmp in use
     rxq_conf0 = dev_info.default_rxconf;
-    //fconf0.et_conf.filter_id = 0; //ether type filter id 0(<BHA_ETH_TYPE_FILTER_ID_MAX) to bonding rxq id
-    //fconf0.et_conf.ether_type = 0xaefe; //ecpri pkts
-    //fconf0.et_conf.congestion_action = CA_OPS_BLOCKING;
-    //rxq_conf0.reserved_ptrs[0] = (void *)&fconf0;
     //rx queue 0, nb desc 32
     ret = rte_eth_rx_queue_setup(bha_portid, 0, 32, socket_id, &rxq_conf0, mbuf_pool);
     TESTBHA_LOG(DEBUG, "port[%d] ethdev rx queue 0 setup done. ret %d\n", bha_portid, ret);
@@ -179,10 +124,6 @@ test_bha_pcap_mode_init(void)
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on %s Line %d\n", __func__, __LINE__);
     rxq_conf1 = dev_info.default_rxconf;
-    //fconf1.et_conf.filter_id = BHA_ETH_TYPE_FILTER_ID_DFLT; //default filter id to bonding rxq id
-    //fconf1.et_conf.ether_type = 0; //any pkts exclude ecpri pkts
-    //fconf1.et_conf.congestion_action = CA_OPS_BLOCKING;
-    //rxq_conf1.reserved_ptrs[0] = (void *)&fconf1;
     //rx queue 1, nb desc 32
     ret = rte_eth_rx_queue_setup(bha_portid, 1, 32, socket_id, &rxq_conf1, mbuf_pool);
     TESTBHA_LOG(DEBUG, "port[%d] ethdev rx queue 1 setup done. ret %d\n", bha_portid, ret);
@@ -193,49 +134,37 @@ test_bha_pcap_mode_init(void)
     TESTBHA_LOG(DEBUG, "port[%d] ethdev startup done. ret %d\n", bha_portid, ret);
 }
 
+
 void
-test_bha_pcap_mode_ecpri_20pkts(void)
+test_bha_tap_mode_dfltq_pkts(void)
 {
     uint16_t nb_pkts = 0;
     struct rte_mbuf *pkts_burst[64];
     static uint32_t pkt_cnt = 0;
+    uint32_t i = 0;
+    uint32_t j = 0;
+    struct rte_mbuf *mb;
+    uint8_t *data_buf = NULL;
+    uint32_t test_pkt_nb = 5;
+    uint16_t test_qid = 0;
 
 
-    test_bha_model_pcap_mode_enable(BHA_PCAP_PKT_ECPRI);
-    test_bha_pcap_mode_init();
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst\n", bha_portid);
-    while (pkt_cnt < 20) {
-        nb_pkts = rte_eth_rx_burst(bha_portid, 0, (pkts_burst + pkt_cnt), (20 - pkt_cnt));
-        if (nb_pkts != 0) {
-            pkt_cnt += nb_pkts;
-            TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
-        }
-        usleep(100000);
-    }
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
-    nb_pkts = rte_eth_tx_burst(bha_portid, 0, pkts_burst, pkt_cnt);
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst nb %d\n", bha_portid, nb_pkts);
-
-    test_bha_model_pcap_file_cmp();
-}
-
-void
-test_bha_pcap_mode_dfltq_pkts(void)
-{
-    uint16_t nb_pkts = 0;
-    struct rte_mbuf *pkts_burst[64];
-    static uint32_t pkt_cnt = 0;
-
-
-    test_bha_model_pcap_mode_enable(BHA_PCAP_PKT_OTHER);
-    test_bha_pcap_mode_init();
+    test_bha_tap_mode_init();
 
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq1 burst\n", bha_portid);
-    while (pkt_cnt < 12) {
-        nb_pkts = rte_eth_rx_burst(bha_portid, 1, (pkts_burst + pkt_cnt), (12 - pkt_cnt));
+    while (pkt_cnt < test_pkt_nb) {
+        nb_pkts = rte_eth_rx_burst(bha_portid, test_qid, (pkts_burst + pkt_cnt), (test_pkt_nb - pkt_cnt));
         if (nb_pkts != 0) {
+            for(i = pkt_cnt; i < (pkt_cnt + nb_pkts); i++) { 
+                mb = pkts_burst[i];
+                data_buf = (uint8_t*)((uint64_t)(mb->buf_addr) + mb->data_off);
+                TESTBHA_LOG(DEBUG, "------ Dump packet header - 16B ------\n");
+                //if ((0x88 == data_buf[12]) && (0xf7 == data_buf[13]))
+                //    TESTBHA_LOG(DEBUG, "------ Recv ptpv2 pkt 0x88f7! len %d ------\n", mb->data_len);
+                for (j = 0; j < 16; j++)
+                    TESTBHA_LOG(DEBUG, "0x%x ", data_buf[j]);
+                TESTBHA_LOG(DEBUG, "------ Dump packet header - 16B done! ------\n");
+            }
             pkt_cnt += nb_pkts;
             TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq1 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
         }
@@ -245,41 +174,4 @@ test_bha_pcap_mode_dfltq_pkts(void)
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
     nb_pkts = rte_eth_tx_burst(bha_portid, 0, pkts_burst, pkt_cnt);
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst nb %d\n", bha_portid, nb_pkts);
-
-    test_bha_model_pcap_file_cmp();
-}
-
-void
-test_bha_pcap_mode_ecpri_jumbo_pkts(void)
-{
-    uint16_t nb_pkts = 0;
-    struct rte_mbuf *pkts_burst[64];
-    static uint32_t pkt_cnt = 0;
-    static uint32_t tx_cnt = 0;
-
-
-    test_bha_model_pcap_mode_enable(BHA_PCAP_PKT_ECPRI_JUMBO);
-    test_bha_pcap_mode_init();
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst\n", bha_portid);
-    while (pkt_cnt < 20) {
-        nb_pkts = rte_eth_rx_burst(bha_portid, 0, (pkts_burst + pkt_cnt), (20 - pkt_cnt));
-        if (nb_pkts != 0) {
-            pkt_cnt += nb_pkts;
-            TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
-        }
-        usleep(100000);
-    }
-
-    TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
-    while (tx_cnt < pkt_cnt) {
-        nb_pkts = rte_eth_tx_burst(bha_portid, 0, (pkts_burst + tx_cnt), (pkt_cnt - tx_cnt));
-        if (nb_pkts != 0) {
-            tx_cnt += nb_pkts;
-            TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst nb %d, total %d\n", bha_portid, nb_pkts, tx_cnt);
-        }
-        usleep(100000);
-    }
-
-    test_bha_model_pcap_file_cmp();
 }
