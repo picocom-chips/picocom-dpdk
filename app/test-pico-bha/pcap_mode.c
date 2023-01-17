@@ -105,7 +105,7 @@ test_bha_model_pcap_mode_enable(enum bha_pcap_pkt_e pkt)
 static void
 test_bha_model_pcap_file_cmp(void)
 {
-    usleep(100000); //wait for tx complete. or query consumer ptr or tx status empty
+    //usleep(100000); //wait for tx complete. or query consumer ptr or tx status empty
     if (bha_pcap_cmp(pcap_input_file, pcap_output_file, false))
         TESTBHA_LOG(ERR, "port[%d] ethdev testing pcap file cmp fail!!! \n", bha_portid);
     //bha_abort();
@@ -211,7 +211,7 @@ test_bha_pcap_mode_ecpri_20pkts(void)
             pkt_cnt += nb_pkts;
             TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
         }
-        usleep(100000);
+        //usleep(100000);
     }
 
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
@@ -239,7 +239,7 @@ test_bha_pcap_mode_dfltq_pkts(void)
             pkt_cnt += nb_pkts;
             TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq1 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
         }
-        usleep(100000);
+        //usleep(100000);
     }
 
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
@@ -268,7 +268,7 @@ test_bha_pcap_mode_ecpri_jumbo_pkts(void)
             pkt_cnt += nb_pkts;
             TESTBHA_LOG(DEBUG, "port[%d] ethdev testing rxq0 burst nb %d, total %d\n", bha_portid, nb_pkts, pkt_cnt);
         }
-        usleep(100000);
+        //usleep(100000);
     }
 
     TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst\n", bha_portid);
@@ -278,7 +278,7 @@ test_bha_pcap_mode_ecpri_jumbo_pkts(void)
             tx_cnt += nb_pkts;
             TESTBHA_LOG(DEBUG, "port[%d] ethdev testing txq0 burst nb %d, total %d\n", bha_portid, nb_pkts, tx_cnt);
         }
-        usleep(100000);
+        //usleep(100000);
     }
 
     test_bha_model_pcap_file_cmp();

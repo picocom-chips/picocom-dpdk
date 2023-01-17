@@ -143,12 +143,15 @@ eth_bha_infos_get(__rte_unused struct rte_eth_dev* dev,
 
     BHA_LOG(DEBUG, "bha ethdev get dev infos");
 
-    dev_info->min_rx_bufsize = 128; /* See BSIZE field of RCTL register. */
-    dev_info->max_rx_pktlen = 1536; //em_get_max_pktlen(dev); sys calc framesize 1536
-    dev_info->max_mac_addrs = 1; //hw->mac.rar_entry_count;
+    dev_info->min_rx_bufsize = BHA_RX_BUF_MIN_SIZE;
+    dev_info->max_rx_pktlen = BHA_RX_PKT_MAX_LEN; //min 1536
+    dev_info->max_mac_addrs = 1;
 
-    dev_info->max_rx_queues = 5; //current bha support 5 queue, (0~3) config, (4) default
-    dev_info->max_tx_queues = 1;
+    dev_info->max_rx_queues = BHA_RXQ_MAX_NUM; //current bha support 5 queue, (0~3) config, (4) default
+    dev_info->max_tx_queues = BHA_TXQ_MAX_NUM;
+
+    dev_info->max_mtu = dev_info->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
+    dev_info->min_mtu = RTE_ETHER_MIN_MTU;
 
     dev_info->rx_queue_offload_capa = 0;
     dev_info->rx_offload_capa = 0;
@@ -159,23 +162,21 @@ eth_bha_infos_get(__rte_unused struct rte_eth_dev* dev,
         .nb_max = BHA_MAX_DESC_NUM,
         .nb_min = BHA_MIN_DESC_NUM,
         .nb_align = BHA_DESC_ALIGN_NUM,
-        .nb_seg_max = 1,
-        .nb_mtu_seg_max = 1,
     };
 
     dev_info->tx_desc_lim = (struct rte_eth_desc_lim) {
         .nb_max = BHA_MAX_DESC_NUM,
         .nb_min = BHA_MIN_DESC_NUM,
         .nb_align = BHA_DESC_ALIGN_NUM,
-        .nb_seg_max = 1,
-        .nb_mtu_seg_max = 1,
+        //.nb_seg_max = 1, //tso, total number of data descs allowed by dev
+        .nb_mtu_seg_max = BHA_MAX_SEGMENTS_NUM, //if non-tso, max allowed nb of segments in a single tx pkt
     };
 
     dev_info->speed_capa = RTE_ETH_LINK_SPEED_FIXED;
 
     /* Preferred queue parameters */
-    dev_info->default_rxportconf.nb_queues = 5;
-    dev_info->default_txportconf.nb_queues = 1;
+    dev_info->default_rxportconf.nb_queues = BHA_RXQ_MAX_NUM;
+    dev_info->default_txportconf.nb_queues = BHA_TXQ_MAX_NUM;
     dev_info->default_txportconf.ring_size = BHA_MAX_DESC_NUM;
     dev_info->default_rxportconf.ring_size = BHA_MAX_DESC_NUM;
 
@@ -186,10 +187,44 @@ static int
 eth_bha_stats_get(struct rte_eth_dev* dev,
     struct rte_eth_stats* stats)
 {
-    dev = dev;
-    stats = stats;
+    int i;
+    struct bha_rx_queue* rxq;
+    struct bha_tx_queue* txq;
+    uint64_t tx_total = 0, tx_bytes_total = 0, tx_err_total = 0;
+    uint64_t rx_total = 0, rx_bytes_total = 0;
+    uint64_t rx_nombuf = 0, rx_missed = 0, rx_err_total = 0;
 
-    BHA_LOG(DEBUG, "bha ethdev status get");
+    BHA_LOG(DEBUG, "bha ethdev status get, nb_rx_queues %d, nb_tx_queues %d", dev->data->nb_rx_queues, dev->data->nb_tx_queues);
+
+    for (i = 0; i < dev->data->nb_rx_queues; i++) {
+        rxq = dev->data->rx_queues[i];
+        stats->q_ipackets[i] = rxq->stats.packets;
+        stats->q_ibytes[i] = rxq->stats.bytes;
+        stats->q_errors[i] = rxq->stats.missed; //dropped rx pkts
+        rx_total += stats->q_ipackets[i];
+        rx_bytes_total += stats->q_ibytes[i];
+        rx_err_total += rxq->stats.errors;
+        rx_nombuf += rxq->stats.nombuf; //alloc mbuf fail
+        rx_missed += stats->q_errors[i];
+    }
+
+    for (i = 0; i < dev->data->nb_tx_queues; i++) {
+        txq = dev->data->tx_queues[i];
+        stats->q_opackets[i] = txq->stats.packets;
+        stats->q_obytes[i] = txq->stats.bytes;
+        tx_total += stats->q_opackets[i];
+        tx_bytes_total += stats->q_obytes[i];
+        tx_err_total += txq->stats.errors;
+    }
+
+    stats->ipackets = rx_total;
+    stats->ibytes = rx_bytes_total;
+    stats->ierrors = rx_err_total;
+    stats->rx_nombuf = rx_nombuf;
+    stats->imissed = rx_missed;
+    stats->opackets = tx_total;
+    stats->oerrors = tx_err_total;
+    stats->obytes = tx_bytes_total;
 
     return 0;
 }
@@ -197,9 +232,27 @@ eth_bha_stats_get(struct rte_eth_dev* dev,
 static int
 eth_bha_stats_reset(struct rte_eth_dev* dev)
 {
-    dev = dev;
+    int i;
+    struct bha_rx_queue* rxq;
+    struct bha_tx_queue* txq;
 
-    BHA_LOG(DEBUG, "bha ethdev status reset");
+    BHA_LOG(DEBUG, "bha ethdev status reset, nb_rx_queues %d, nb_tx_queues %d", dev->data->nb_rx_queues, dev->data->nb_tx_queues);
+
+    for (i = 0; i < dev->data->nb_rx_queues; i++) {
+        rxq = dev->data->rx_queues[i];
+        rxq->stats.packets = 0;
+        rxq->stats.bytes = 0;
+        rxq->stats.errors = 0;
+        rxq->stats.nombuf = 0;
+        rxq->stats.missed = 0;
+    }
+
+    for (i = 0; i < dev->data->nb_tx_queues; i++) {
+        txq = dev->data->tx_queues[i];
+        txq->stats.packets = 0;
+        txq->stats.bytes = 0;
+        txq->stats.errors = 0;
+    }
 
     return 0;
 }
@@ -246,6 +299,34 @@ eth_bha_close(struct rte_eth_dev* dev)
     return 0;
 }
 
+static int
+eth_bha_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
+{
+    struct rte_eth_dev_info dev_info;
+    uint32_t frame_size = mtu + (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
+    int ret;
+
+    ret = eth_bha_infos_get(dev, &dev_info);
+    if (ret != 0)
+        return ret;
+
+    /* check that mtu is within the allowed range */
+    if (mtu < RTE_ETHER_MIN_MTU || frame_size > dev_info.max_rx_pktlen)
+        return -EINVAL;
+
+    /* If device is started, refuse mtu that requires the support of
+     * scattered packets when this feature has not been enabled before.
+     */
+    //!dev->data->scattered_rx &&
+    if (dev->data->dev_started &&
+        frame_size + 2 * RTE_VLAN_HLEN >
+            dev->data->min_rx_buf_size - RTE_PKTMBUF_HEADROOM) {
+        BHA_LOG(ERR, "Stop port first.");
+        return -EINVAL;
+    }
+
+    return 0;
+}
 
 static const struct eth_dev_ops bha_ops = {
     .dev_configure = eth_bha_configure,
@@ -262,6 +343,7 @@ static const struct eth_dev_ops bha_ops = {
     .tx_queue_setup = eth_bha_tx_queue_setup,
     .rx_queue_release = eth_bha_rx_queue_release,
     .tx_queue_release = eth_bha_tx_queue_release,
+    .mtu_set = eth_bha_mtu_set,
 };
 
 static bool

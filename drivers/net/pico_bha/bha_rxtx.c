@@ -187,10 +187,10 @@ eth_bha_rx_pkt_burst(void* rx_queue, struct rte_mbuf** rx_pkts,
     //BHA_LOG(DEBUG, "ethdev bha[%d] rxq[%d] rx burst, c_ptr 0x%x, nb desc avail %d", rxq->port_id, rxq->queue_id, rxq->c_ptr.ptr, nb_rxd_avail);
 
 #ifdef RTE_NET_BHA_MODEL_EN
-        //wait until at least 1 pkts avail in rx queue
-        while (1 == RING_STATUS_EMPTY(bha_reg_read(rxq->rx_ring_reg_base + RING_REGS_STATUS_OFFSET))) {
-            rte_delay_us(10000);
-        }
+    //wait until at least 1 pkts avail in rx queue
+    //while (1 == RING_STATUS_EMPTY(bha_reg_read(rxq->rx_ring_reg_base + RING_REGS_STATUS_OFFSET))) {
+    //    rte_delay_us_sleep(10000);
+    //}
 #endif
 
     while (nb_rx < nb_pkts) {
@@ -254,6 +254,7 @@ next_desc:
                     (unsigned) rxq->queue_id);
             rte_eth_devices[rxq->port_id].data->rx_mbuf_alloc_failed++;
             bha_free_scattered_mbuf(first_seg);
+            rxq->stats.nombuf++; //update statistics
             break;
         }
 
@@ -317,6 +318,10 @@ next_desc:
         rxq->c_ptr.wrap = wrap_flag;
         rxq->rx_nb_avail = nb_rxd_avail;
         nb_rxd_consumed += nb_segs;
+
+        //update statistics
+        rxq->stats.packets++;
+        rxq->stats.bytes += first_seg->pkt_len;
     }
 
     rte_wmb();
@@ -486,6 +491,10 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
 
         //update txq info
         txq->nb_tx_free -= nb_segs;
+
+        //update statistics
+        txq->stats.packets++;
+        txq->stats.bytes += tx_pkt->pkt_len;
     }
 
 end_of_tx:
@@ -508,7 +517,7 @@ end_of_tx:
 #ifdef RTE_NET_BHA_MODEL_EN
     //wait until all pkts tx complete
     while (0 == RING_STATUS_EMPTY(bha_reg_read(txq->tx_ring_reg_base + RING_REGS_STATUS_OFFSET))) {
-        rte_delay_us(10000);
+        //rte_delay_us_sleep(10000);
     }
 #endif
 
@@ -740,6 +749,7 @@ eth_bha_rx_queue_setup(struct rte_eth_dev* dev,
     rxq->nb_rx_desc = nb_desc;
     rxq->queue_id = queue_idx;
     rxq->port_id = dev->data->port_id;
+    memset((void*)(&(rxq->stats)), 0, sizeof(struct bha_pkt_stats));
 
     //rx ring setup
     rmz = rte_eth_dma_zone_reserve(dev, "rx_ring", queue_idx,
@@ -922,6 +932,7 @@ eth_bha_tx_queue_setup(struct rte_eth_dev* dev,
     txq->nb_tx_desc = nb_desc;
     txq->queue_id = queue_idx;
     txq->port_id = dev->data->port_id;
+    memset((void*)(&(txq->stats)), 0, sizeof(struct bha_pkt_stats));
 
     /* Allocate software ring */
     txq->sw_ring = rte_zmalloc_socket("txq->sw_ring",
