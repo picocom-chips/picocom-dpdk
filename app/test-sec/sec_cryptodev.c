@@ -566,6 +566,90 @@ static int snow3gf9(uint8_t* macI, uint8_t* key, uint32_t count, uint32_t fresh,
     return snow3gf9_authentication(macI, key, 16, (uint8_t *)IV, 16, data, length);
 }
 
+/************snow3g authentication verify************************************************************/
+
+static int 
+snow3gf9_authentication_verify(uint8_t* macI, uint8_t mac_len, uint8_t *key, uint8_t key_len, uint8_t *iv, unsigned int iv_len, uint8_t *data, unsigned data_len)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+
+	int retval;
+	unsigned plaintext_pad_len;
+	unsigned plaintext_len;
+	uint8_t *plaintext;
+ 	unsigned validAuthLenInBits_len = data_len;
+
+	/* Verify the capabilities */
+	struct rte_cryptodev_sym_capability_idx cap_idx;
+	cap_idx.type = RTE_CRYPTO_SYM_XFORM_AUTH;
+	cap_idx.algo.auth = RTE_CRYPTO_AUTH_SNOW3G_UIA2;
+	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
+			&cap_idx) == NULL)
+		return -ENOTSUP;
+
+	/* Create SNOW 3G session */
+	retval = create_wireless_algo_hash_session(ts_params->valid_devs[0],
+				key, key_len,
+				iv_len, mac_len,
+				RTE_CRYPTO_AUTH_OP_VERIFY,
+				RTE_CRYPTO_AUTH_SNOW3G_UIA2);
+	if (retval < 0)
+		return retval;
+	/* alloc mbuf and set payload */
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+
+	memset(rte_pktmbuf_mtod(ut_params->ibuf, uint8_t *), 0,
+	rte_pktmbuf_tailroom(ut_params->ibuf));
+
+	plaintext_len = ceil_byte_length(data_len);
+	/* Append data which is padded to a multiple of */
+	/* the algorithms block size */
+	plaintext_pad_len = RTE_ALIGN_CEIL(plaintext_len, 16);
+	plaintext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+				plaintext_pad_len);
+	memcpy(plaintext, data, plaintext_len);
+
+	/* Create SNOW 3G operation */
+	retval = create_wireless_algo_hash_operation(macI,
+			mac_len,
+			iv, iv_len,
+			plaintext_pad_len,
+			RTE_CRYPTO_AUTH_OP_VERIFY,
+			validAuthLenInBits_len,
+			0);
+	if (retval < 0)
+		return retval;
+
+	ut_params->op = process_crypto_request(ts_params->valid_devs[0],
+				ut_params->op);
+	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
+	ut_params->obuf = ut_params->op->sym->m_src;
+	ut_params->digest = rte_pktmbuf_mtod(ut_params->obuf, uint8_t *)
+				+ plaintext_pad_len;
+
+	/* Validate obuf */
+	if (ut_params->op->status == RTE_CRYPTO_OP_STATUS_SUCCESS)
+		return 0;
+	else
+		return -1;
+
+	return 0;
+}
+
+static int snow3gf9_verify(uint8_t* macI, uint8_t mac_len, uint8_t* key, uint32_t count, uint32_t fresh, uint32_t dir, uint8_t *data, uint64_t length)
+{
+	uint32_t IV[4];
+	
+   	/* Prepare the Initialization Vector (IV) for SNOW3G initialization as in    section 4.4. */
+   	IV[0] = ntohl(count);
+   	IV[1] = ntohl(fresh);
+   	IV[2] = ntohl(count ^ (dir << 31));
+   	IV[3] = ntohl(fresh ^ (dir << 15));
+
+    	return snow3gf9_authentication_verify(macI, mac_len, key, 16, (uint8_t *)IV, 16, data, length);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -589,7 +673,6 @@ int main(int argc, char **argv)
 	  return ret;
   }
 
-  //setup
   printf("sec setup\n");
   sec_setup();
 
@@ -598,10 +681,28 @@ int main(int argc, char **argv)
     dir = 0, fresh = 0xf8000000, count = 0x38a6f056, length = 88;
     snow3gf9(macI, key, count, fresh, dir, data, length);
     printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
+
+    ret = snow3gf9_verify(macI, 4, key, count, fresh, dir, data, length);
+    if(ret != 0)
+    {
+	   printf("snow3gf9 authentication verify %d Failure\n", ret);  
+	   break;
+    }
+    printf("snow3gf9 authentication verify %d Success\n", ret);  
+    crypto_free_memory();  
  
     length = 384, count =  0x14793E41, fresh = 0x0397E8FD, dir = 1;
     snow3gf9(macI, key1, count, fresh, dir, data1, length);
     printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
+
+    ret = snow3gf9_verify(macI, 4, key1, count, fresh, dir, data1, length);
+    if(ret != 0)
+    {
+	   printf("snow3gf9 authentication verify %d Failure\n", ret);  
+	   break;
+    }
+    printf("snow3gf9 authentication verify %d Success\n", ret);  
+    crypto_free_memory();  
 
     mpool_check_memory();
   }
@@ -611,3 +712,5 @@ int main(int argc, char **argv)
   return ret;
 
 }
+
+
