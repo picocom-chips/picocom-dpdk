@@ -195,12 +195,14 @@ struct pc802_adapter {
 
     uint16_t port_index;
     uint16_t log_flag;
+#if 0
     mailbox_exclusive *mailbox_pfi;
     mailbox_exclusive *mailbox_ecpri;
     mailbox_exclusive *mailbox_dsp[3];
 
     mailbox_info_exclusive *mailbox_info_pfi;
     mailbox_info_exclusive *mailbox_info_ecpri;
+#endif
 };
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
@@ -1268,7 +1270,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
         PC802_READ_REG(bar->BOOTERROR));
 
-    for (q = 0; q < PC802_TRAFFIC_NUM; q++) {
+    for (q = 0; q <= PC802_TRAFFIC_OAM; q++) {
         PC802_WRITE_REG(bar->TDNUM[q], adapter->txq[q].nb_tx_desc);
         PC802_WRITE_REG(bar->TRCCNT[q], 0);
         PC802_WRITE_REG(bar->RDNUM[q], adapter->rxq[q].nb_rx_desc);
@@ -1903,6 +1905,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->log_flag = 0;
     adapter->port_index = num_pc802s-1;
 
+#if 0
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
         if (adapter->DEVRDY < 2) {
@@ -1930,6 +1933,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         rte_wmb();
         DBLOG("WARN: No PCIe based printf output !\n");
     }
+#endif
 
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
@@ -1985,6 +1989,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
+
+    pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 64, 32);
+    PC802_WRITE_REG(bar->RDNUM[PC802_TRAFFIC_MAILBOX], adapter->rxq[PC802_TRAFFIC_MAILBOX].nb_rx_desc);
 
     if (1 == num_pc802s) {
         pthread_t tid;
@@ -2589,8 +2596,8 @@ uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, ui
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
 typedef struct stMbVecAccess_t {
-    uint32_t *command;
-    uint32_t *retval;
+    uint8_t  *rccnt;
+    uint32_t command;
     uint32_t file_id;
     uint32_t offset;
     uint32_t address;
@@ -2638,27 +2645,26 @@ static void * pc802_vec_access(__rte_unused void *data)
     fd = open(FIFO_PC802_VEC_ACCESS, O_RDONLY, 0);
     while (1) {
         pc802_vec_access_msg_recv(fd, &msg);
+        PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         command = *msg.command;
         if (0 == msg.core) {
-            PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
-            *msg.command = MB_EMPTY;
+            *msg.rccnt++;
             if (MB_VEC_READ == command) {
                 re = handle_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
-            *msg.retval = (0 == re);
-           PC802_WRITE_REG(ext->MB_RESULT, (0 == re));
         } else {
             if (MB_VEC_READ == command) {
                 re = handle_non_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_non_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
-            *msg.retval = (0 == re);
-            *msg.command = MB_EMPTY;
+            *msg.rccnt++;
         }
-        pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_DONE;
+        ext->VEC_RESULTS[msg.core] = (0 == re);
+        PC802_WRITE_REG(ext->_e2[msg.core / 4]);
+        pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_IDLE;
     }
 
     return 0;
@@ -2707,7 +2713,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core)
 {
-    uint32_t num_args = PC802_READ_REG(mb->num_args);
+    uint32_t num_args = mb->num_args;
     char str[2048];
     char formatter[16];
     const char *arg0 = mb_get_string(mb->arguments[0], core);
@@ -2777,81 +2783,65 @@ static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
     return;
 }
 
-static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
+static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, uint32_t idx, uint32_t core)
 {
     static int fd = -1;
-    int num = 0;
-    uint32_t n = *idx;
     volatile uint32_t action;
     volatile uint32_t num_args;
     MbVecAccess_t msg;
     uint16_t port_idx;
+    uint16_t port_id;
 
     if (fd < 0) {
         fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
     }
 
+    port_id = adapter->port_id;
     port_idx = pc802_get_port_index(port_id);
     if (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_idx][core]) {
         return 0;
     }
-    if (PC802_VEC_ACCESS_DONE == pc802_vec_blocked[port_idx][core]) {
-        n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
-        *idx = n;
-        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_IDLE;
+
+    action = mb->action;
+    if (MB_EMPTY == action ) {
         return 0;
+    } else if (MB_PRINTF == action) {
+        handle_mb_printf(port_id, mb, core);
+    } else if (MB_SIM_STOP == action) {
+        handle_mb_sim_stop(mb, core);
+    } else if (MB_VEC_READ == action) {
+        msg.rccnt = &adapter->pDescs->mb_rc.MB_RCCNT[core];
+        msg.command = MB_VEC_READ;
+        msg.file_id = mb->arguments[0];
+        msg.offset = mb->arguments[1];
+        msg.address = mb->arguments[2];
+        msg.length = mb->arguments[3];
+        msg.port_id = port_id;
+        msg.core = core;
+        pc802_vec_access_msg_send(fd, &msg);
+        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        return 1;
+    } else if (MB_VEC_DUMP == action) {
+        msg.rccnt = &adapter->pDescs->mb_rc.MB_RCCNT[core];
+        msg.command = MB_VEC_DUMP;
+        msg.file_id = mb->arguments[0];
+        msg.address = mb->arguments[1];
+        msg.length = mb->arguments[2];
+        msg.port_id = port_id;
+        msg.core = core;
+        pc802_vec_access_msg_send(fd, &msg);
+        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        return 1;
+    } else {
+        num_args = mb[0].num_args;
+        DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, idx, action, num_args);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[0].arguments[0], mb[0].arguments[1],
+            mb[0].arguments[2], mb[0].arguments[3]);
+        DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[0].arguments[4], mb[0].arguments[5],
+            mb[0].arguments[6], mb[0].arguments[7]);
     }
 
-    do {
-        action = PC802_READ_REG(mb[n].action);
-        if (MB_EMPTY != action ) {
-            num++;
-            if (MB_PRINTF == action) {
-                handle_mb_printf(port_id, &mb[n], core);
-            } else if (MB_SIM_STOP == action) {
-                handle_mb_sim_stop(&mb[n], core);
-            } else if (MB_VEC_READ == action) {
-                msg.command = &mb[n].action;
-                msg.retval = &mb[n].retval;
-                msg.file_id = mb[n].arguments[0];
-                msg.offset = mb[n].arguments[1];
-                msg.address = mb[n].arguments[2];
-                msg.length = mb[n].arguments[3];
-                msg.port_id = port_id;
-                msg.core = core;
-                pc802_vec_access_msg_send(fd, &msg);
-                pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
-                *idx = n;
-                num--;
-                return num;
-            } else if (MB_VEC_DUMP == action) {
-                msg.command = &mb[n].action;
-                msg.retval = &mb[n].retval;
-                msg.file_id = mb[n].arguments[0];
-                msg.address = mb[n].arguments[1];
-                msg.length = mb[n].arguments[2];
-                msg.port_id = port_id;
-                msg.core = core;
-                pc802_vec_access_msg_send(fd, &msg);
-                pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
-                *idx = n;
-                num--;
-                return num;
-            } else {
-                num_args = PC802_READ_REG(mb[n].num_args);
-                DBLOG("MB[%2u][%2u]: action=%u, num_args=%u, args:\n", core, n, action, num_args);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[0], mb[n].arguments[1],
-                    mb[n].arguments[2], mb[n].arguments[3]);
-                DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[n].arguments[4], mb[n].arguments[5],
-                    mb[n].arguments[6], mb[n].arguments[7]);
-            }
-            rte_mb();
-            PC802_WRITE_REG(mb[n].action, MB_EMPTY);
-            n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
-        }
-    } while (MB_EMPTY != action);
-    *idx = n;
-    return num;
+    return 1;
 }
 
 static void pc802_set_mailbox_xc_flags(uint8_t *flags, uint32_t start, int cnt)
@@ -2942,12 +2932,10 @@ static int pc802_mailbox_xc_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint
 static int pc802_mailbox(void *data)
 {
     static struct pc802_adapter *adapter[PC802_INDEX_MAX] = {NULL};
-    static mailbox_exclusive *mb_pfi[PC802_INDEX_MAX] = {NULL};
     static uint32_t pfi_idx[PC802_INDEX_MAX][16];
-    static mailbox_exclusive *mb_ecpri[PC802_INDEX_MAX] = {NULL};
     static uint32_t ecpri_idx[PC802_INDEX_MAX][16];
-    static mailbox_exclusive *mb_dsp[PC802_INDEX_MAX][3];
     static uint32_t dsp_idx[PC802_INDEX_MAX][3];
+
     uint32_t core;
     uint16_t port_index = ((struct pc802_adapter *)data)->port_index;
     int num = 0;
@@ -2956,54 +2944,70 @@ static int pc802_mailbox(void *data)
     if ( adapter[port_index] == NULL )
     {
         adapter[port_index] = (struct pc802_adapter *)data;
-        mb_pfi[port_index] = adapter[port_index]->mailbox_pfi;
-        mb_ecpri[port_index] = adapter[port_index]->mailbox_ecpri;
         mb_string_init();
-
-        for (core = 0; core < 16; core++) {
-            pfi_idx[port_index][core] = 0;
-            ecpri_idx[port_index][core] = 0;
-        }
-        for (core = 0; core < 3; core++) {
-            mb_dsp[port_index][core] = adapter[port_index]->mailbox_dsp[core];
-            dsp_idx[port_index][core] = 0;
-            num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
-            pc802_log_flush();
-        }
-
-        for (core = 0; core < 16; core++) {
-            mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_pfi[core].m_next_c2h);
-            do {
-                pfi_idx[port_index][core] = mb_idx;
-                num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_pfi[port_index][core].m_cpu_to_host[0], pfi_idx[port_index][core], core);
-                mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_pfi[core].m_next_c2h);
-            } while (mb_idx != pfi_idx[port_index][core]);
-            pc802_log_flush();
-
-            mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
-            do {
-                ecpri_idx[port_index][core] = mb_idx;
-                num += pc802_mailbox_rv_clear_up(adapter[port_index]->port_id, &mb_ecpri[port_index][core].m_cpu_to_host[0], ecpri_idx[port_index][core], core+16);
-                mb_idx = PC802_READ_REG(adapter[port_index]->mailbox_info_ecpri[core].m_next_c2h);
-            } while (mb_idx != ecpri_idx[port_index][core]);
-            pc802_log_flush();
-        }
+        pc802_log_flush();
     }
 
-    for (core = 0; core < 16; core++) {
-        num += handle_mailbox(adapter[port_index]->port_id, &mb_pfi[port_index][core].m_cpu_to_host[0], &pfi_idx[port_index][core], core);
-    }
+    mailbox_exclusive *mbs;
+    magic_mailbox_t *mb;
+    mailbox_counter_t *mb_cnts;
+    
+    PC802_Mem_Block_t *blks[8];
+    uint8_t *msg;
+    uint16_t n, N;
+    uint8_t epcnt, rccnt;
 
-    for (core = 0; core < 16; core++) {
-        num += handle_mailbox(adapter[port_index]->port_id, &mb_ecpri[port_index][core].m_cpu_to_host[0], &ecpri_idx[port_index][core], core+16);
-    }
-
-    for (core = 0; core < 3; core++) {
-        if (MB_MAX_C2H_MAILBOXES == dsp_idx[port_index][core]) {
-            num += pc802_mailbox_xc_clear_up(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
-            //pc802_log_flush();
-        } else {
-            num += handle_mailbox(adapter[port_index]->port_id, &(mb_dsp[port_index][core]->m_cpu_to_host[0]), &dsp_idx[port_index][core], core+32);
+    N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
+    for (n = 0; n < N; n++) {
+        msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
+        if (0 == blks[n]->pkt_type) { //PFI
+            mbs = (mailbox_exclusive *)(msg + 0x580);
+            mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
+            mb = mbs->m_cpu_to_host;
+            for (core = 0; core < 16; core++) {
+                rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core];
+                epcnt = mb_cnts->wr[core];
+                while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core])) {
+                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], pfi_idx[port_index][core], core);
+                    if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core]) {
+                        rccnt++;
+                        pfi_idx[port_index][core]++;
+                    }
+                }
+                adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core] = rccnt;
+            }
+        } else if (1 == blks[n]->pkt_type) { //eCPRI
+            mbs = (mailbox_exclusive *)(msg + 0);
+            mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
+            mb = mbs->m_cpu_to_host;
+            for (core = 0; core < 16; core++) {
+                rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 16];
+                epcnt = mb_cnts->wr[core];
+                while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 16])) {
+                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], ecpri_idx[port_index][core], core + 16);
+                    if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 16]) {
+                        rccnt++;
+                        ecpri_idx[port_index][core]++;
+                    }
+                }
+                adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 16] = rccnt;
+            }
+        } else { //DSPs
+            mb_cnts = (mailbox_counter_t *)(msg + 3 * 0x400);
+            for (core = 0; core < 3; core++) {
+                mb = (magic_mailbox_t *)(msg + 0x400 * core + sizeof(mailbox_registry_t));
+                mbs = (mailbox_exclusive *)(msg + 0x580);
+                rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 32];
+                epcnt = mb_cnts->wr[core];
+                while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 32])) {
+                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], dsp_idx[port_index][core], core + 32);
+                    if (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_index][core + 32]) {
+                        rccnt++;
+                        dsp_idx[port_index][core]++;
+                    }
+                }
+                adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 32] = rccnt;
+            }
         }
     }
 

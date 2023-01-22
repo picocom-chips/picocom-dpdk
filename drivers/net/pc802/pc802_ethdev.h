@@ -285,10 +285,20 @@ struct stPC802_EP_Counter_Mirror_t {
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
+struct stPC802_RC_Mailbox_Counters {
+    union {
+        PC802_CacheLine_t   cache_line_tepcnt;
+        volatile uint8_t  MB_RCCNT[35];
+    };
+} __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
+
+typedef struct stPC802_RC_Mailbox_Counters PC802_RC_Mailbox_Counters_t;
+
 typedef struct PC802_Descs_t {
     PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
     PC802_Descriptor_t  ul[MAX_UL_CH_NUM][MAX_DESC_NUM];
     PC802_EP_Counter_Mirror_t  mr;
+    PC802_RC_Mailbox_Counters_t mb_rc;
 } PC802_Descs_t;
 
 static inline uint32_t get_dl_desc_offset(uint32_t ch, uint32_t idx)
@@ -364,6 +374,10 @@ struct PC802_BAR_Ext_t {
             uint32_t EMB_RCCNT;
             uint32_t EMB_RESULT;
         };
+    };
+    union {
+        uint32_t _e2[16];
+        uint8_t  VEC_RESULTS[35];
     };
 } __attribute__((__aligned__(32)));
 
@@ -450,6 +464,19 @@ typedef struct {
     uint32_t m_next_c2h;
     uint32_t m_next_h2c;
 } mailbox_info_exclusive;
+
+typedef struct {
+    union {
+        uint32_t wrs[4];
+        uint8_t wr[16];
+    };
+    union {
+        uint32_t rds[2][4];
+        uint8_t rd[2][16];
+    };
+    uint8_t rg;
+    uint8_t state;
+} mailbox_counter_t;
 
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
