@@ -2646,7 +2646,7 @@ static void * pc802_vec_access(__rte_unused void *data)
     while (1) {
         pc802_vec_access_msg_recv(fd, &msg);
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
-        command = *msg.command;
+        command = msg.command;
         if (0 == msg.core) {
             *msg.rccnt++;
             if (MB_VEC_READ == command) {
@@ -2663,7 +2663,7 @@ static void * pc802_vec_access(__rte_unused void *data)
             *msg.rccnt++;
         }
         ext->VEC_RESULTS[msg.core] = (0 == re);
-        PC802_WRITE_REG(ext->_e2[msg.core / 4]);
+        //PC802_WRITE_REG(ext->_e2[msg.core / 4]);
         pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_IDLE;
     }
 
