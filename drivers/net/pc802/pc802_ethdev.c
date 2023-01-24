@@ -1933,6 +1933,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         rte_wmb();
         DBLOG("WARN: No PCIe based printf output !\n");
     }
+#else
+    adapter->log_flag |= (1<<PC802_LOG_PRINT);
 #endif
 
     int socket_id = eth_dev->device->numa_node;
@@ -2783,6 +2785,7 @@ static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
     return;
 }
 
+static uint32_t action_cnt[32];
 static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, uint32_t idx, uint32_t core)
 {
     static int fd = -1;
@@ -2803,7 +2806,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     }
 
     action = mb->action;
-    DBLOG("core = %u port_id =  %u action = %u num_args = %u\n", core, port_id, action, mb->num_args);
+    DBLOG("core = %u port_id =  %u action = %u num_args = %u act_no = %u\n", core, port_id, action, mb->num_args, action_cnt[action]++);
     uint32_t j;
     for (j = 0; j < mb->num_args; j++) {
         DBLOG("Args[%1u] = 0x%08X\n", j, mb->arguments[j]);
