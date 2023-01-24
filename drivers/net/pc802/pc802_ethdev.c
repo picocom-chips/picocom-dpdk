@@ -2805,7 +2805,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     action = mb->action;
     DBLOG("core = %u port_id =  %u action = %u num_args = %u\n", core, port_id, action, mb->num_args);
     uint32_t j;
-    for (j = 0; j < num_args; j++) {
+    for (j = 0; j < mb->num_args; j++) {
         DBLOG("Args[%1u] = 0x%08X\n", j, mb->arguments[j]);
     }
 
