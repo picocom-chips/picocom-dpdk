@@ -3031,8 +3031,8 @@ static void * pc802_debug(__rte_unused void *data)
         {
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
-                num += pc802_mailbox(pc802_devices[i]);
+            //if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
+            num += pc802_mailbox(pc802_devices[i]);
         }
         if ( 0 == num ) {
             pc802_log_flush();
