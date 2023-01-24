@@ -2946,6 +2946,7 @@ static int pc802_mailbox(void *data)
         adapter[port_index] = (struct pc802_adapter *)data;
         mb_string_init();
         pc802_log_flush();
+        DBLOG("come here\n");
     }
 
     mailbox_exclusive *mbs;
@@ -2958,6 +2959,12 @@ static int pc802_mailbox(void *data)
     uint8_t epcnt, rccnt;
 
     N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
+    static uint32_t ddd = 0;
+    if ((ddd < 100) || (0 != N)) {
+        DBLOG("come here ddd = %u N = %u\n", ddd, (uint32_t)N);
+        ddd++;
+    }
+
     for (n = 0; n < N; n++) {
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
