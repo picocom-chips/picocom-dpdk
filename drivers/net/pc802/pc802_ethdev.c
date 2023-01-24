@@ -2803,6 +2803,12 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     }
 
     action = mb->action;
+    DBLOG("core = %u port_id =  %u action = %u num_args = %u\n", core, port_id, action, mb->num_args);
+    uint32_t j;
+    for (j = 0; j < num_args; j++) {
+        DBLOG("Args[%1u] = 0x%08X\n", j, mb->arguments[j]);
+    }
+
     if (MB_EMPTY == action ) {
         return 0;
     } else if (MB_PRINTF == action) {
@@ -2960,7 +2966,7 @@ static int pc802_mailbox(void *data)
 
     N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
     static uint32_t ddd = 0;
-    if ((ddd < 100) || (0 != N)) {
+    if ((ddd < 5) || (0 != N)) {
         DBLOG("come here ddd = %u N = %u\n", ddd, (uint32_t)N);
         ddd++;
     }
@@ -2968,22 +2974,26 @@ static int pc802_mailbox(void *data)
     for (n = 0; n < N; n++) {
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
+            DBLOG("Recved PFI mailbox request\n");
             mbs = (mailbox_exclusive *)(msg + 0x580);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
             mb = mbs->m_cpu_to_host;
             for (core = 0; core < 16; core++) {
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core];
                 epcnt = mb_cnts->wr[core];
+                if (epcnt != rccnt)
+                    DBLOG("core = %u epcnt = %u rccnt = %u\n", core, epcnt, rccnt);
                 while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core])) {
                     handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], pfi_idx[port_index][core], core);
                     if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core]) {
                         rccnt++;
-                        pfi_idx[port_index][core]++;
                     }
+                    pfi_idx[port_index][core]++;
                 }
                 adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core] = rccnt;
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
+            DBLOG("Recved eCPRI mailbox request\n");
             mbs = (mailbox_exclusive *)(msg + 0);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
             mb = mbs->m_cpu_to_host;
@@ -2994,12 +3004,13 @@ static int pc802_mailbox(void *data)
                     handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], ecpri_idx[port_index][core], core + 16);
                     if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 16]) {
                         rccnt++;
-                        ecpri_idx[port_index][core]++;
                     }
+                    ecpri_idx[port_index][core]++;
                 }
                 adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 16] = rccnt;
             }
         } else { //DSPs
+            DBLOG("Recved DSPs mailbox request\n");
             mb_cnts = (mailbox_counter_t *)(msg + 3 * 0x400);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + 0x400 * core + sizeof(mailbox_registry_t));
@@ -3010,8 +3021,8 @@ static int pc802_mailbox(void *data)
                     handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], dsp_idx[port_index][core], core + 32);
                     if (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_index][core + 32]) {
                         rccnt++;
-                        dsp_idx[port_index][core]++;
                     }
+                    dsp_idx[port_index][core]++;
                 }
                 adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 32] = rccnt;
             }
