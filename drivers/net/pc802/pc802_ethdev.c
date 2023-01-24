@@ -2650,7 +2650,9 @@ static void * pc802_vec_access(__rte_unused void *data)
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         command = msg.command;
         if (0 == msg.core) {
+            DBLOG("msg.rccnt = %u @ %p\n", *msg.rccnt, msg.rccnt);
             *msg.rccnt++;
+            DBLOG("msg.rccnt = %u @ %p\n", *msg.rccnt, msg.rccnt);
             if (MB_VEC_READ == command) {
                 re = handle_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
@@ -2820,6 +2822,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         handle_mb_sim_stop(mb, core);
     } else if (MB_VEC_READ == action) {
         msg.rccnt = &adapter->pDescs->mb_rc.MB_RCCNT[core];
+        DBLOG("msg.rccnt = %u = %p\n", *msg.rccnt, msg.rccnt);
         msg.command = MB_VEC_READ;
         msg.file_id = mb->arguments[0];
         msg.offset = mb->arguments[1];
@@ -2984,8 +2987,9 @@ static int pc802_mailbox(void *data)
             for (core = 0; core < 16; core++) {
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core];
                 epcnt = mb_cnts->wr[core];
-                if (epcnt != rccnt)
-                    DBLOG("core = %u epcnt = %u rccnt = %u\n", core, epcnt, rccnt);
+                if (epcnt != rccnt) {
+                    DBLOG("mailbox core = %u epcnt = %u rccnt = %u at %p\n", core, epcnt, rccnt, &(adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]));
+                }
                 while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core])) {
                     handle_mailbox(adapter[port_index], &mb[rccnt & 15], pfi_idx[port_index][core], core);
                     if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core]) {
@@ -2994,6 +2998,7 @@ static int pc802_mailbox(void *data)
                     pfi_idx[port_index][core]++;
                 }
                 adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core] = rccnt;
+                DBLOG("mailbox rccnt[%2u] = %u at %p\n", core, rccnt, &(adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]));
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
             DBLOG("Recved eCPRI mailbox request\n");
