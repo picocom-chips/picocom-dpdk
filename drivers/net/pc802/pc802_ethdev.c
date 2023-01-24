@@ -2984,7 +2984,7 @@ static int pc802_mailbox(void *data)
                 if (epcnt != rccnt)
                     DBLOG("core = %u epcnt = %u rccnt = %u\n", core, epcnt, rccnt);
                 while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core])) {
-                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], pfi_idx[port_index][core], core);
+                    handle_mailbox(adapter[port_index], &mb[rccnt & 15], pfi_idx[port_index][core], core);
                     if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core]) {
                         rccnt++;
                     }
@@ -3001,7 +3001,7 @@ static int pc802_mailbox(void *data)
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 16];
                 epcnt = mb_cnts->wr[core];
                 while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 16])) {
-                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], ecpri_idx[port_index][core], core + 16);
+                    handle_mailbox(adapter[port_index], &mb[rccnt & 15], ecpri_idx[port_index][core], core + 16);
                     if (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 16]) {
                         rccnt++;
                     }
@@ -3018,7 +3018,7 @@ static int pc802_mailbox(void *data)
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 32];
                 epcnt = mb_cnts->wr[core];
                 while ((rccnt != epcnt) && (PC802_VEC_ACCESS_IDLE == pc802_vec_blocked[port_index][core + 32])) {
-                    handle_mailbox(adapter[port_index]->port_id, &mb[rccnt & 15], dsp_idx[port_index][core], core + 32);
+                    handle_mailbox(adapter[port_index], &mb[rccnt & 15], dsp_idx[port_index][core], core + 32);
                     if (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_index][core + 32]) {
                         rccnt++;
                     }
