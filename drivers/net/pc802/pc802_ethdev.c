@@ -2681,7 +2681,7 @@ static uint32_t trace_print_flag[32];
 #define TRACE_PRINTF_PREFIX_1 (0xA1B2C3D4)
 #define TRACE_PRINTF_PREFIX_2 (0xE5F69876)
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core);
+static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
 static void handle_trace_printf(uint32_t core, uint32_t tdata)
 {
@@ -2717,7 +2717,7 @@ static void handle_trace_printf(uint32_t core, uint32_t tdata)
             trace_num_args[core] = 0;
             trace_idx[core] = 0;
             trace_print_flag[core] = 0;
-            handle_mb_printf(0, &mb, core);
+            handle_mb_printf(0, &mb, core, 0);
         }
         return;
     }
@@ -2765,7 +2765,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return num;
 }
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core)
+static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
 {
     uint32_t num_args = mb->num_args;
     char str[2048];
@@ -2777,7 +2777,11 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     const char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "PRINTF: ");
+    if (cause) {
+        ps += sprintf(ps, "PRINTF: ");
+    } else {
+        ps += sprintf(ps, "TRCLOG: ");
+   }
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
@@ -2868,7 +2872,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     if (MB_EMPTY == action ) {
         return 0;
     } else if (MB_PRINTF == action) {
-        handle_mb_printf(port_id, mb, core);
+        handle_mb_printf(port_id, mb, core, 1);
     } else if (MB_SIM_STOP == action) {
         handle_mb_sim_stop(mb, core);
     } else if (MB_VEC_READ == action) {
