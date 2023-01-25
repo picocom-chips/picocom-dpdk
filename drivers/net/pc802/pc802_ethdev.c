@@ -2674,9 +2674,56 @@ static void * pc802_vec_access(__rte_unused void *data)
     return 0;
 }
 
+static uint32_t trace_datas[32][16];
+static uint32_t trace_num_args[32];
+static uint32_t trace_idx[32];
+static uint32_t trace_print_flag[32];
+#define TRACE_PRINTF_PREFIX_1 (0xA1B2C3D4)
+#define TRACE_PRINTF_PREFIX_2 (0xE5F69876)
+
+static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core);
+
+static void handle_trace_printf(uint32_t core, uint32_t tdata)
+{
+    int k;
+    if ((TRACE_PRINTF_PREFIX_1 == tdata) && (0 == trace_print_flag[core])) {
+        trace_print_flag[core] = 1;
+        return;
+    }
+    if ((TRACE_PRINTF_PREFIX_2 == tdata) && (1 == trace_print_flag[core])) {
+        trace_print_flag[core] = 2;
+        trace_idx[core] = 0;
+        trace_num_args[core] = 0;
+        return;
+    } else {
+        trace_print_flag[core] = 0;
+        return;
+    }
+    if (2 == trace_print_flag[core]) {
+        if (0 == trace_num_args[core]) {
+            trace_num_args[core] = tdata;
+            return;
+        }
+        trace_datas[core][trace_idx[core]] = tdata;
+        trace_idx[core]++;
+        if (trace_idx[core] == trace_num_args[core]) {
+            magic_mailbox_t mb;
+            mb.num_args = trace_num_args[core];
+            for (k = 0; k < mb.num_args; k++)
+                mb.arguments[k] = trace_datas[core][k];
+            trace_num_args[core] = 0;
+            trace_idx[core] = 0;
+            trace_print_flag[core] = 0;
+            handle_mb_printf(0, &mb, core);
+        }
+        return;
+    }
+}
+
 static inline void handle_trace_data(uint16_t port_id, uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
     PC802_LOG( port_id, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
+    handle_trace_printf(core, tdata);
 }
 
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
