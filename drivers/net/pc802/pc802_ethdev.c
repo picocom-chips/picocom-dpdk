@@ -2998,10 +2998,9 @@ static int pc802_mailbox(void *data)
                     rccnt++;
                     if (1 == re) {
                         adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core] = rccnt;
-                    }
-                    if (0 == core) {
-                        DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u  %u\n",
-                                core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt, adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]);
+                    } else if (0 == core) {
+                        DBLOG("mailbox re = %d core = %u state = %1u epcnt = %u rccnt = %u  %u\n",
+                                re, core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt, adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]);
                         while (epcnt != adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]) {
                             usleep(1);
                         }
