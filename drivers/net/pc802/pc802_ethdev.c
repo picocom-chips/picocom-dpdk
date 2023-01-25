@@ -2686,18 +2686,21 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
 static void handle_trace_printf(uint32_t core, uint32_t tdata)
 {
     int k;
-    if ((TRACE_PRINTF_PREFIX_1 == tdata) && (0 == trace_print_flag[core])) {
-        trace_print_flag[core] = 1;
+    if (0 == trace_print_flag[core]) {
+        if (TRACE_PRINTF_PREFIX_1 == tdata)
+            trace_print_flag[core] = 1;
         return;
     }
-    if ((TRACE_PRINTF_PREFIX_2 == tdata) && (1 == trace_print_flag[core])) {
-        trace_print_flag[core] = 2;
-        trace_idx[core] = 0;
-        trace_num_args[core] = 0;
-        return;
-    } else {
-        trace_print_flag[core] = 0;
-        return;
+    if (1 == trace_print_flag[core]) {
+        if (TRACE_PRINTF_PREFIX_2 == tdata) {
+            trace_print_flag[core] = 2;
+            trace_idx[core] = 0;
+            trace_num_args[core] = 0;
+            return;
+        } else {
+            trace_print_flag[core] = 0;
+            return;
+        }
     }
     if (2 == trace_print_flag[core]) {
         if (0 == trace_num_args[core]) {
