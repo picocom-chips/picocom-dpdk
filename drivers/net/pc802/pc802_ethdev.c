@@ -2983,10 +2983,10 @@ static int pc802_mailbox(void *data)
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
             DBLOG("Recved PFI mailbox request\n");
-            mbs = (mailbox_exclusive *)(msg + 0x580);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
-            mb = mbs->m_cpu_to_host;
             for (core = 0; core < 16; core++) {
+                mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
+                mb = mbs->m_cpu_to_host;
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core];
                 epcnt = mb_cnts->wr[core];
                 if (epcnt == rccnt)
@@ -3011,10 +3011,10 @@ static int pc802_mailbox(void *data)
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
             DBLOG("Recved eCPRI mailbox request\n");
-            mbs = (mailbox_exclusive *)(msg + 0);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
-            mb = mbs->m_cpu_to_host;
             for (core = 0; core < 16; core++) {
+                mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
+                mb = mbs->m_cpu_to_host;
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 16];
                 epcnt = mb_cnts->wr[core];
                 while (rccnt != epcnt) {
@@ -3031,7 +3031,6 @@ static int pc802_mailbox(void *data)
             mb_cnts = (mailbox_counter_t *)(msg + 3 * 0x400);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + 0x400 * core + sizeof(mailbox_registry_t));
-                mbs = (mailbox_exclusive *)(msg + 0x580);
                 rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core + 32];
                 epcnt = mb_cnts->wr[core];
                 while (rccnt != epcnt) {
