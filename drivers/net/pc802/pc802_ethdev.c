@@ -3003,7 +3003,9 @@ static int pc802_mailbox(void *data)
                             while (epcnt != adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core]) {
                                 usleep(1);
                             }
-                        }
+                            rccnt = adapter[port_index]->pDescs->mb_rc.MB_RCCNT[core];
+                        } else
+                            rccnt++;
                     }
                     pfi_idx[port_index][core]++;
                 }
