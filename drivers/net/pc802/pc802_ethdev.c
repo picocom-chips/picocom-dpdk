@@ -3100,6 +3100,7 @@ static int pc802_mailbox(void *data)
                 }
             }
         }
+        pc802_free_mem_block(blks[n]);
     }
 
     return num;
