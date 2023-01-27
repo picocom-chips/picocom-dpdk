@@ -285,20 +285,10 @@ struct stPC802_EP_Counter_Mirror_t {
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
-struct stPC802_RC_Mailbox_Counters {
-    union {
-        PC802_CacheLine_t   cache_line_tepcnt;
-        volatile uint8_t  MB_RCCNT[35];
-    };
-} __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
-
-typedef struct stPC802_RC_Mailbox_Counters PC802_RC_Mailbox_Counters_t;
-
 typedef struct PC802_Descs_t {
     PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
     PC802_Descriptor_t  ul[MAX_UL_CH_NUM][MAX_DESC_NUM];
     PC802_EP_Counter_Mirror_t  mr;
-    PC802_RC_Mailbox_Counters_t mb_rc;
 } PC802_Descs_t;
 
 static inline uint32_t get_dl_desc_offset(uint32_t ch, uint32_t idx)
@@ -335,6 +325,11 @@ typedef struct {
     uint32_t d[PC802_TRACE_FIFO_SIZE];
 } TraceData_t;
 
+typedef struct {
+    uint8_t rccnt;
+    uint8_t result;
+} Mailbox_RC_t;
+
 struct PC802_BAR_Ext_t {
     union {
         uint32_t _a0[16];
@@ -361,23 +356,16 @@ struct PC802_BAR_Ext_t {
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
     union {
-        uint32_t _e0[16];
-        struct {
-            uint32_t EMB_EPCNT;
-            uint32_t EMB_COMMAND;
-            uint32_t EMB_ARGS[8];
-        };
+        uint32_t _mb_pfi[8];
+        Mailbox_RC_t MB_PFI[16];
     };
     union {
-        uint32_t _e1[8];
-        struct {
-            uint32_t EMB_RCCNT;
-            uint32_t EMB_RESULT;
-        };
+        uint32_t _mb_ecpri[8];
+        Mailbox_RC_t MB_eCPRI[16];
     };
     union {
-        uint32_t _e2[16];
-        uint8_t  VEC_RESULTS[35];
+        uint32_t _mb_dsp[8];
+        Mailbox_RC_t MB_DSP[3];
     };
 } __attribute__((__aligned__(32)));
 
