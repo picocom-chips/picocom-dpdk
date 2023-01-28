@@ -222,6 +222,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
+static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
@@ -1987,6 +1988,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     if (1 == num_pc802s) {
         pthread_t tid;
+        pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
@@ -3143,10 +3145,32 @@ static void * pc802_debug(__rte_unused void *data)
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(i, pc802_devices[i]->port_id);
             //if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
             num += pc802_mailbox(pc802_devices[i]);
+        }
+        if ( 0 == num ) {
+            pc802_log_flush();
+            nanosleep(&req, NULL);
+        }
+    }
+    return NULL;
+}
+
+static void * pc802_trace_thread(__rte_unused void *data)
+{
+    int i = 0;
+    int num = 0;
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 250*1000;
+
+    while( 1 )
+    {
+        num = 0;
+        for ( i=0; i<num_pc802s; i++ )
+        {
+            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
+                num += pc802_tracer(i, pc802_devices[i]->port_id);
         }
         if ( 0 == num ) {
             pc802_log_flush();
