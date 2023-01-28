@@ -3061,7 +3061,7 @@ static int pc802_mailbox(void *data)
     for (n = 0; n < N; n++) {
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
-            DBLOG("Recved PFI mailbox request\n");
+            DBLOG("Recved PFI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
@@ -3089,7 +3089,7 @@ static int pc802_mailbox(void *data)
                 DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
-            DBLOG("Recved eCPRI mailbox request\n");
+            DBLOG("Recved eCPRI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
@@ -3106,7 +3106,7 @@ static int pc802_mailbox(void *data)
                 }
             }
         } else { //DSPs
-            DBLOG("Recved DSPs mailbox request\n");
+            DBLOG("Recved DSPs mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + 3 * 0x400);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + 0x400 * core + sizeof(mailbox_registry_t));

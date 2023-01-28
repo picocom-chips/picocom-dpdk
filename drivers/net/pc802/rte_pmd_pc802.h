@@ -63,7 +63,10 @@ struct pc802_mem_block {
     uint64_t buf_phy_addr;
     uint32_t pkt_length;
     uint8_t  pkt_type;
-    uint8_t  eop;
+    union {
+        uint8_t eop;
+        uint8_t cause;
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
 
