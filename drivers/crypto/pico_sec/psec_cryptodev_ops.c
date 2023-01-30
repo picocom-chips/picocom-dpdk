@@ -164,6 +164,9 @@ psec_cryptodev_close(__rte_unused struct rte_cryptodev* dev)
             return ret;
     }
 
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    bha_ipsec_abort();
+#endif
     return 0;
 }
 
@@ -407,7 +410,7 @@ psec_cryptodev_sym_session_get_private_size(struct rte_cryptodev* dev __rte_unus
 
 /** Configure a crypto session from a crypto xform chain */
 static int
-psec_cryptodev_sym_session_configure(struct rte_cryptodev* dev __rte_unused,
+psec_cryptodev_sym_session_configure(struct rte_cryptodev* dev,
     struct rte_crypto_sym_xform* xform,
     struct rte_cryptodev_sym_session* sess,
     struct rte_mempool* mp)
@@ -427,7 +430,7 @@ psec_cryptodev_sym_session_configure(struct rte_cryptodev* dev __rte_unused,
         return -ENOMEM;
     }
 
-    ret = psec_crypto_set_session_parameters(sess_private_data, xform);
+    ret = psec_crypto_set_session_parameters(dev, sess_private_data, xform);
     if (ret != 0) {
         PSEC_LOG(ERR, "failed configure session parameters");
 

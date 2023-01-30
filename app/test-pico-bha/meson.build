@@ -42,15 +42,12 @@ headers = files(
   'test_bha.h',
 )
 
-deps += ['eal', 'mempool', 'net', 'mbuf', 'bus_vdev', 'cmdline', 'ethdev', 'cryptodev', 'security', 'ipsec']
+deps += ['eal', 'mempool', 'net', 'mbuf', 'bus_vdev', 'cmdline', 'ethdev', 'cryptodev']
 if dpdk_conf.has('RTE_NET_PICO_BHA')
     deps += 'net_pico_bha'
 endif
 if dpdk_conf.has('RTE_CRYPTO_PICO_SEC')
     deps += 'crypto_pico_sec'
-endif
-if dpdk_conf.has('RTE_CRYPTO_SCHEDULER')
-    deps += 'crypto_scheduler'
 endif
 
 includes = include_directories('.')

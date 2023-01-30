@@ -76,35 +76,6 @@ eth_bha_configure(struct rte_eth_dev* dev)
     return 0;
 }
 
-
-static int
-eth_bha_start(struct rte_eth_dev* dev)
-{
-    unsigned int i;
-    int ret;
-
-    BHA_LOG(DEBUG, "ethdev bha[%d] start, lcore id %d", dev->data->port_id, rte_lcore_id());
-
-    for (i = 0; i < dev->data->nb_tx_queues; i++) {
-        ret = bha_dev_tx_queue_start(dev, i);
-        if (ret < 0)
-            return ret;
-    }
-
-    for (i = 0; i < dev->data->nb_rx_queues; i++) {
-        ret = bha_dev_rx_queue_start(dev, i);
-        if (ret < 0)
-            return ret;
-    }
-
-    //adapter rx and tx enbale
-    BHA_LOG(DEBUG, "ethdev bha[%d] model start rx and tx", dev->data->port_id);
-    bha_reg_write(RX_EN, 1);
-    bha_reg_write(TX_EN, 1);
-
-    return 0;
-}
-
 static int
 eth_bha_link_update(struct rte_eth_dev* dev,
     int wait_to_complete __rte_unused)
@@ -117,12 +88,16 @@ eth_bha_link_update(struct rte_eth_dev* dev,
 }
 
 static int
-eth_bha_promiscuous_enable(struct rte_eth_dev* dev)
+eth_bha_link_set_up(struct rte_eth_dev *dev)
 {
-    dev = dev;
+    dev->data->dev_link.link_status = RTE_ETH_LINK_UP;
+    return 0;
+}
 
-    BHA_LOG(DEBUG, "bha ethdev promisc enable");
-
+static int
+eth_bha_link_set_down(struct rte_eth_dev *dev)
+{
+    dev->data->dev_link.link_status = RTE_ETH_LINK_DOWN;
     return 0;
 }
 
@@ -265,6 +240,8 @@ eth_bha_stop(struct rte_eth_dev* dev)
 
     //stop adapter
 
+    eth_bha_link_set_down(dev);
+
     //clear and reset queues
     bha_dev_clear_and_reset_queues(dev);
 
@@ -284,6 +261,8 @@ eth_bha_close(struct rte_eth_dev* dev)
     if (rte_eal_process_type() != RTE_PROC_PRIMARY)
         return 0;
 
+    eth_bha_link_set_down(dev);
+
     if (dev->data->dev_started != 0)
         eth_bha_stop(dev);
 
@@ -295,6 +274,36 @@ eth_bha_close(struct rte_eth_dev* dev)
     //bha model abort
     bha_abort();
 #endif
+
+    return 0;
+}
+
+static int
+eth_bha_start(struct rte_eth_dev* dev)
+{
+    unsigned int i;
+    int ret;
+
+    BHA_LOG(DEBUG, "ethdev bha[%d] start, lcore id %d", dev->data->port_id, rte_lcore_id());
+
+    for (i = 0; i < dev->data->nb_tx_queues; i++) {
+        ret = bha_dev_tx_queue_start(dev, i);
+        if (ret < 0)
+            return ret;
+    }
+
+    for (i = 0; i < dev->data->nb_rx_queues; i++) {
+        ret = bha_dev_rx_queue_start(dev, i);
+        if (ret < 0)
+            return ret;
+    }
+
+    //adapter rx and tx enbale
+    BHA_LOG(DEBUG, "ethdev bha[%d] model start rx and tx", dev->data->port_id);
+    bha_reg_write(RX_EN, 1);
+    bha_reg_write(TX_EN, 1);
+
+    eth_bha_link_set_up(dev);
 
     return 0;
 }
@@ -328,13 +337,30 @@ eth_bha_mtu_set(struct rte_eth_dev *dev, uint16_t mtu)
     return 0;
 }
 
+static int
+eth_bha_promisc_enable(struct rte_eth_dev *dev __rte_unused)
+{
+    BHA_LOG(DEBUG, "bha ethdev promisc enable");
+    return 0;
+}
+
+static int
+eth_bha_promisc_disable(struct rte_eth_dev *dev __rte_unused)
+{
+    BHA_LOG(DEBUG, "bha ethdev promisc disable");
+    return 0;
+}
+
 static const struct eth_dev_ops bha_ops = {
     .dev_configure = eth_bha_configure,
     .dev_start = eth_bha_start,
     .dev_stop = eth_bha_stop,
     .dev_close = eth_bha_close,
     .link_update = eth_bha_link_update,
-    .promiscuous_enable = eth_bha_promiscuous_enable,
+    .dev_set_link_up = eth_bha_link_set_up,
+    .dev_set_link_down = eth_bha_link_set_down,
+    .promiscuous_enable = eth_bha_promisc_enable,
+    .promiscuous_disable = eth_bha_promisc_disable,
     .mac_addr_set = eth_bha_set_mac_address,
     .dev_infos_get = eth_bha_infos_get,
     .stats_get = eth_bha_stats_get,

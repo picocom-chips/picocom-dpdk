@@ -42,6 +42,7 @@
         //[Note] You must set up environment to create "tap0" and setup bridge, and connect "tap0" and hw NIC with bridge
         //The network packets can rx/tx between "tap0" and hw NIC
         sudo ./app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha,tap=tap0,dqn=0 --vdev=crypto_psec
+        //sudo ./app/dpdk-test-pico-bha -l 0 -n 1 --vdev=net_bha,tap=tap0,dqn=0 --vdev=crypto_psec,salt_parse_from_key=yes
         BHA>> tap default
         BHA>> quit
 
@@ -55,3 +56,6 @@
         # dqn - default queue id setting for rx packets of not match any filters. Currently support queue (0~4)
         # et?_qid - eth type filter (? is id[0~3]) bonding rx queue id. For example "et0_qid=0". Currently support eth type id (0~3)
         # et? - eth type filter configure type. For example "et0=0xaefe". So the bonding id rx queue 0 will receive ecpri type(0xaefe) packets only
+
+    4) BHA model crypto input parameters help
+        # salt_parse_from_key - parse salt behind key if get input parameter is "yes", and the IV should remove the first 4Bytes salt; if get "no" or not setting it, the salt is in IV for first 4Bytes

@@ -370,7 +370,7 @@ void test_bha_crypto_aes256_gcm(void)
     int ret = 0;
 
     bha_logger_en();
-    bha_ipsec_simulate();
+    //bha_ipsec_simulate();
 
     test_bha_crypto_init();
 
@@ -560,7 +560,7 @@ void test_bha_crypto_aes256_gcm(void)
     TESTBHA_LOG(INFO, "AES GCM decrypt test complete and pass");
 
 aes_gcm_exit:
-    bha_ipsec_abort();
+    //bha_ipsec_abort();
     //TESTBHA_LOG(INFO, "AES GCM test mbuf mem pool count %d", rte_mempool_avail_count(crypto_mbuf_pool));
     //TESTBHA_LOG(INFO, "AES GCM test op mem pool count %d", rte_mempool_avail_count(crypto_op_pool));
     //TESTBHA_LOG(INFO, "AES GCM test priv sess mem pool count %d", rte_mempool_avail_count(priv_sess_pool));

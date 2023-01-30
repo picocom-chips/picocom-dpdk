@@ -32,6 +32,7 @@ enum psec_hw_auth_algo {
 struct psec_crypto_private {
     struct rte_cryptodev* dev;
     unsigned int max_nb_qpairs;
+    bool salt_parse_from_key;
 };
 
 struct psec_sym_session {
@@ -39,6 +40,7 @@ struct psec_sym_session {
     uint16_t key_len;
     uint64_t key_phys_addr;
     uint32_t salt;
+    uint32_t salt_len;
 
     struct rte_crypto_sym_xform xform;
 
@@ -96,7 +98,7 @@ struct psec_qp {
     uint32_t reg_base;
 };
 
-extern int psec_crypto_set_session_parameters(struct psec_sym_session* sess, const struct rte_crypto_sym_xform* xform);
+extern int psec_crypto_set_session_parameters(struct rte_cryptodev* dev, struct psec_sym_session* sess, const struct rte_crypto_sym_xform* xform);
 
 extern struct rte_cryptodev_ops* psec_cryptodev_ops;
 

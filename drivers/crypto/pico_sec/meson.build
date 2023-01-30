@@ -35,7 +35,7 @@ ext_deps += psec_model_lib
 
 
 cflags += '-DRTE_CRYPTO_BHA_SEC_MODEL_EN'
-deps += ['bus_vdev', 'cryptodev', 'security']
+deps += ['bus_vdev', 'cryptodev']
 includes += include_directories('.')
 sources = files(
     'psec_cryptodev.c',

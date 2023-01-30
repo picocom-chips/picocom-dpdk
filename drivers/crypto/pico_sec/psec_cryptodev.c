@@ -14,6 +14,14 @@
 #include <psec_cryptodev.h>
 #include <psec_log.h>
 
+
+#define PSEC_PARSE_SALT_FROM_KEY_ARG        ("salt_parse_from_key")
+
+struct psec_pmd_init_params {
+    struct rte_cryptodev_pmd_init_params common;
+    bool salt_parse_from_key; //separate input salt behind key
+};
+
 static uint8_t cryptodev_driver_id;
 
 static uint32_t
@@ -42,16 +50,17 @@ psec_ring_advance_p_n(uint32_t reg_base, uint16_t total_nb_desc, uint16_t n)
 
 /* set session parameters */
 int psec_crypto_set_session_parameters(
+    struct rte_cryptodev* dev,
     struct psec_sym_session* sess,
     const struct rte_crypto_sym_xform* xform)
 {
+    struct psec_crypto_private* internals = dev->data->dev_private;
 #ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
     uint64_t session_paddr = (uint64_t)sess;
 #else
     rte_iova_t session_paddr = rte_mempool_virt2iova(sess);
 #endif
     uint32_t i = 0;
-    uint32_t salt_len = 0;
     uint32_t iv_len = 0;
     bool is_cipher_key = true; //true is cipher key, false is auth key
     enum psec_hw_cipher_algo cipher_algo = 0;
@@ -65,6 +74,7 @@ int psec_crypto_set_session_parameters(
 
     //init, update it to non-zero if salt valid
     sess->salt = 0;
+    sess->salt_len = 0;
 
     switch (xform->type) {
     case RTE_CRYPTO_SYM_XFORM_AUTH:
@@ -82,16 +92,20 @@ int psec_crypto_set_session_parameters(
     case RTE_CRYPTO_SYM_XFORM_AEAD:
         memcpy(sess->key, xform->aead.key.data, xform->aead.key.length);
         sess->key_len = xform->aead.key.length;
-        //salt(4B) at last of key array
-        memcpy(&sess->salt, &xform->aead.key.data[xform->aead.key.length], 4);
+        if (internals->salt_parse_from_key) {
+            memcpy(&sess->salt, &xform->aead.key.data[xform->aead.key.length], 4); //salt(4B) at last of key array
+            sess->salt_len = 4; //4B
+        } else {
+            sess->salt = 0;
+            sess->salt_len = 0;
+        }
         PSEC_LOG(DEBUG, "psec private sym sess config salt 0x%x\n", sess->salt);
         is_cipher_key = true;
         if (xform->aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
             cipher_algo = HW_CIPHER_ALGO_AES256;
             cipher_mode = HW_CIPHER_MODE_GCM;
             auth_algo = HW_AUTH_ALGO_NULL;
-            salt_len = 4; //4B
-            iv_len = xform->aead.iv.length - salt_len; //8B
+            iv_len = xform->aead.iv.length - sess->salt_len; //8B if salt valid. if not iv len = 12B
         }
         break;
 
@@ -129,11 +143,10 @@ int psec_crypto_set_session_parameters(
         bha_ipsec_reg_write(SEC_SESSION(HASH_KEY_LO, sess->sess_id), (uint32_t)((uint64_t)(sess->key_phys_addr)));
         bha_ipsec_reg_write(SEC_SESSION(HASH_KEY_HI, sess->sess_id), (uint32_t)((uint64_t)(sess->key_phys_addr) >> 32));
     }
-    //salt conf if valid
-    if (sess->salt != 0)
-        bha_ipsec_reg_write(SEC_SESSION(SALT, sess->sess_id), sess->salt);
+    //salt conf. support salt valid or invalid
+    bha_ipsec_reg_write(SEC_SESSION(SALT, sess->sess_id), sess->salt);
     bha_ipsec_reg_write(SEC_SESSION(CTX, sess->sess_id),
-                                    SET_XFORM_CTX_SALT_LEN(salt_len) |
+                                    SET_XFORM_CTX_SALT_LEN(sess->salt_len) |
                                     SET_XFORM_CTX_IV_LEN(iv_len) |
                                     SET_XFORM_CTX_CIPHER_ALG(cipher_algo) |
                                     SET_XFORM_CTX_CIPHER_MODE(cipher_mode) |
@@ -306,7 +319,7 @@ psec_build_pktmbuf_sclist(SCBufferEntry* elt_list, struct rte_mbuf* mbuf, uint32
 }
 
 static int
-psec_build_aead_src_list(SCBufferEntry* elt_list, struct rte_crypto_op* op, struct psec_sym_session* sess_priv, uint32_t salt_len, uint32_t *total_size)
+psec_build_aead_src_list(SCBufferEntry* elt_list, struct rte_crypto_op* op, struct psec_sym_session* sess_priv, uint32_t *total_size)
 {
     struct rte_crypto_sym_op* sym_op = op->sym;
     uint16_t nb_segs = 0;
@@ -324,8 +337,8 @@ psec_build_aead_src_list(SCBufferEntry* elt_list, struct rte_crypto_op* op, stru
     elt_list[count].size = sess_priv->xform.aead.aad_length;
     *total_size = elt_list[count++].size;
     //iv
-    elt_list[count].addr = psec_aead_get_iv_addr(op, sess_priv) + salt_len; //8B iv exclude salt
-    elt_list[count].size = sess_priv->xform.aead.iv.length - salt_len;
+    elt_list[count].addr = psec_aead_get_iv_addr(op, sess_priv) + sess_priv->salt_len; //8B if iv exclude salt, or 12B
+    elt_list[count].size = sess_priv->xform.aead.iv.length - sess_priv->salt_len;
     *total_size += elt_list[count++].size;
 
     //pkt mbuf - text
@@ -369,7 +382,6 @@ psec_build_aead_req(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec
     struct rte_crypto_op* op = in_op;
     struct rte_crypto_sym_op* sym_op = op->sym;
     uint32_t hw_sess_id = 0;
-    uint32_t salt_len = 0;
     uint32_t iv_inused_len = 0;
     uint32_t in_elt_nb = 0;
     uint32_t out_elt_nb = 0;
@@ -389,8 +401,7 @@ psec_build_aead_req(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec
     int ret_cnt = 0;
 
     if (sess_priv->xform.aead.algo == RTE_CRYPTO_AEAD_AES_GCM) {
-        salt_len = 4;
-        iv_inused_len = sess_priv->xform.aead.iv.length - salt_len; //8B, move cross the first 4B salt
+        iv_inused_len = sess_priv->xform.aead.iv.length - sess_priv->salt_len; //if salt valid iv len 8B, move cross the first 4B
     } else {
         PSEC_LOG(ERR, "psec[%d] qp[%d] not support aead algo 0x%x", qp->dev_id, qp->qp_id, sess_priv->xform.aead.algo);
         return -1;
@@ -429,7 +440,7 @@ psec_build_aead_req(struct psec_qp* qp, struct rte_crypto_op* in_op, struct psec
 #endif
 
     PSEC_LOG(DEBUG, "psec[%d] qp[%d] get in list entry nb %d, and out list entry nb %d", qp->dev_id, qp->qp_id, in_elt_nb, out_elt_nb);
-    ret_cnt = psec_build_aead_src_list(in_list, op, sess_priv, salt_len, &src_total_size);
+    ret_cnt = psec_build_aead_src_list(in_list, op, sess_priv, &src_total_size);
     if (ret_cnt <= 0) {
         PSEC_LOG(ERR, "psec[%d] qp[%d] build aead src list fail %d", qp->dev_id, qp->qp_id, ret_cnt);
         goto build_req_err;
@@ -585,7 +596,7 @@ exit_sym_enqueue:
 #ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
     //polling the bha model complete
     while (0 == RING_STATUS_EMPTY(bha_ipsec_reg_read(qp->reg_base + RING_REGS_STATUS_OFFSET))) {
-        rte_delay_us(10000);
+        //rte_delay_us_sleep(10000);
     }
 #endif
 
@@ -706,11 +717,11 @@ psec_cryptodev_sym_dequeue_burst(void* queue_pair, struct rte_crypto_op** ops,
 static int
 cryptodev_psec_create(const char* name,
     struct rte_vdev_device* vdev,
-    struct rte_cryptodev_pmd_init_params* init_params)
+    struct psec_pmd_init_params* init_params)
 {
     struct rte_cryptodev* dev;
     struct psec_crypto_private* internals;
-    dev = rte_cryptodev_pmd_create(name, &vdev->device, init_params);
+    dev = rte_cryptodev_pmd_create(name, &vdev->device, &(init_params->common));
     if (dev == NULL) {
         PSEC_LOG(ERR, "failed to create cryptodev vdev");
         return -EFAULT;
@@ -737,7 +748,12 @@ cryptodev_psec_create(const char* name,
 
     internals = dev->data->dev_private;
 
-    internals->max_nb_qpairs = init_params->max_nb_queue_pairs;
+    internals->max_nb_qpairs = init_params->common.max_nb_queue_pairs;
+    internals->salt_parse_from_key = init_params->salt_parse_from_key;
+
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    bha_ipsec_simulate();
+#endif
 
     rte_cryptodev_pmd_probing_finish(dev);
     PSEC_LOG(DEBUG, "Probe crypto device pico sec done");
@@ -745,18 +761,144 @@ cryptodev_psec_create(const char* name,
     return 0;
 }
 
+static int
+get_int_val_arg(const char *key __rte_unused,
+        const char *value, void *extra_args)
+{
+    const char *a = value;
+    int *arg_int = extra_args;
+
+    //PSEC_LOG(DEBUG, "---parse int value arg func---");
+    if ((value == NULL) || (extra_args == NULL))
+        return -EINVAL;
+
+    *arg_int = (int)strtol(a, NULL, 0);
+
+    return 0;
+}
+
+static int
+get_psec_name_arg(const char *key __rte_unused,
+           const char *value,
+           void *extra_args)
+{
+    char *name = (char *)extra_args;
+    int n = 0;
+
+    //PSEC_LOG(DEBUG, "---parse psec name func---");
+    if (value) {
+        PSEC_LOG(DEBUG, "get input psec name (%s)", value);
+        if (*value == '\0')
+            return -EINVAL;
+
+        n = strlcpy(name, value, RTE_CRYPTODEV_NAME_MAX_LEN);
+        if (n >= RTE_CRYPTODEV_NAME_MAX_LEN)
+            return -EINVAL;
+    } else
+        return -1;
+
+    return 0;
+}
+
+static int
+get_salt_parse_arg(const char *key __rte_unused, const char *value, void *extra_args)
+{
+    bool *flags = (bool *)extra_args;
+
+    if (strstr(value, "yes") != NULL) {
+        *flags = true;
+    } else if (strstr(value, "no") != NULL) {
+        *flags = false;
+    } else {
+        PSEC_LOG(ERR, "Failed to parse salt parse from key param: %s.", value);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static void
+psec_cryptodev_parse_input_params(struct psec_pmd_init_params *init_params, const char *params)
+{
+    int max_qp_nb = -1;
+    int socket_id = -1;
+    bool salt_parse = false;
+    char* name_psec;
+    struct rte_kvargs *kvlist = NULL;
+    int ret = 0;
+    const char *valid_arguments[] = {
+        RTE_CRYPTODEV_PMD_NAME_ARG,
+        RTE_CRYPTODEV_PMD_MAX_NB_QP_ARG,
+        RTE_CRYPTODEV_PMD_SOCKET_ID_ARG,
+        PSEC_PARSE_SALT_FROM_KEY_ARG,
+        NULL
+    };
+
+    name_psec = init_params->common.name;
+    ret = rte_kvargs_process(kvlist,
+                RTE_CRYPTODEV_PMD_NAME_ARG,
+                &get_psec_name_arg, name_psec);
+    if (ret < 0) {
+        PSEC_LOG(DEBUG, "psec parse name fail. ret %d", ret);
+    } else {
+        if (*name_psec != '\0')
+            PSEC_LOG(DEBUG, "psec parse name[%s] and update into init params", name_psec);
+    }
+
+    kvlist = rte_kvargs_parse(params, valid_arguments);
+    if (kvlist != NULL) {
+        ret = rte_kvargs_process(kvlist,
+                RTE_CRYPTODEV_PMD_MAX_NB_QP_ARG,
+                &get_int_val_arg, &max_qp_nb);
+        if (ret < 0) {
+            PSEC_LOG(ERR, "psec parse max qpair number fail. ret %d", ret);
+        } else {
+            if (max_qp_nb > 0) {
+                PSEC_LOG(DEBUG, "psec parse max qpair number %d, bha model expect <= 4", max_qp_nb);
+                if (max_qp_nb <= 4)
+                    init_params->common.max_nb_queue_pairs = max_qp_nb;
+            }
+        }
+
+        ret = rte_kvargs_process(kvlist,
+                RTE_CRYPTODEV_PMD_SOCKET_ID_ARG,
+                &get_int_val_arg, &socket_id);
+        if (ret < 0) {
+            PSEC_LOG(ERR, "psec parse socket id fail. ret %d", ret);
+        } else {
+            if (socket_id >= 0) {
+                PSEC_LOG(DEBUG, "psec parse socket id %d", socket_id);
+                init_params->common.socket_id = socket_id;
+            }
+        }
+
+        ret = rte_kvargs_process(kvlist,
+                PSEC_PARSE_SALT_FROM_KEY_ARG,
+                &get_salt_parse_arg, &salt_parse);
+        if (ret < 0) {
+            PSEC_LOG(ERR, "psec parse enable salt parse from key fail. ret %d", ret);
+        } else {
+            PSEC_LOG(DEBUG, "psec parse enable salt parse from key %d", salt_parse);
+            init_params->salt_parse_from_key = salt_parse;
+        }
+
+        rte_kvargs_free(kvlist);
+    }
+}
+
 /* initialise crypto device */
 static int
 cryptodev_psec_probe(struct rte_vdev_device* vdev)
 {
-    struct rte_cryptodev_pmd_init_params init_params = {
-        "",
-        sizeof(struct psec_crypto_private),
-        rte_socket_id(),
-        4 //model up to 4 //RTE_CRYPTODEV_PMD_DEFAULT_MAX_NB_QUEUE_PAIRS
+    struct psec_pmd_init_params init_params = {
+        .common = {
+            "",
+            sizeof(struct psec_crypto_private),
+            rte_socket_id(),
+            4 //model up to 4 //RTE_CRYPTODEV_PMD_DEFAULT_MAX_NB_QUEUE_PAIRS
+        },
+        .salt_parse_from_key = false,
     };
     const char *name, *args;
-    int retval;
 
     name = rte_vdev_device_name(vdev);
     if (name == NULL)
@@ -767,14 +909,8 @@ cryptodev_psec_probe(struct rte_vdev_device* vdev)
     vdev->device.numa_node = rte_socket_id();
 
     args = rte_vdev_device_args(vdev);
-
-    retval = rte_cryptodev_pmd_parse_input_args(&init_params, args);
-    if (retval) {
-        PSEC_LOG(ERR,
-            "Failed to parse initialisation arguments[%s]",
-            args);
-        return -EINVAL;
-    }
+    if (args != NULL)
+        psec_cryptodev_parse_input_params(&init_params, args);
 
     return cryptodev_psec_create(name, vdev, &init_params);
 }
@@ -807,7 +943,8 @@ RTE_PMD_REGISTER_VDEV(crypto_psec, cryptodev_psec_pmd_drv);
 RTE_PMD_REGISTER_ALIAS(crypto_psec, cryptodev_psec_pmd);
 RTE_PMD_REGISTER_PARAM_STRING(crypto_psec,
     "max_nb_queue_pairs=<int> "
-    "socket_id=<int>");
+    "socket_id=<int>"
+    "salt_parse_from_key=yes|no");
 RTE_PMD_REGISTER_CRYPTO_DRIVER(psec_crypto_drv, cryptodev_psec_pmd_drv.driver,
     cryptodev_driver_id);
 RTE_LOG_REGISTER_DEFAULT(psec_logtype, NOTICE);
