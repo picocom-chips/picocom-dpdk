@@ -2993,7 +2993,9 @@ static int pc802_mailbox(void *data)
     for (n = 0; n < N; n++) {
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
-            DBLOG("Recved PFI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            if (0 != blks[n]->cause) {
+                DBLOG("Recved PFI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            }
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_PFI);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
@@ -3002,8 +3004,8 @@ static int pc802_mailbox(void *data)
                 rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core], epcnt, core);
                 if (epcnt == rccnt)
                     continue;
-                DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u\n",
-                    core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt);
+                //DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u\n",
+                //    core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt);
                 while (rccnt != epcnt) {
                     re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core);
                     rccnt++;
@@ -3017,10 +3019,10 @@ static int pc802_mailbox(void *data)
                         }
                     }
                 }
-                DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
+                //DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
-            DBLOG("Recved eCPRI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            //DBLOG("Recved eCPRI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_ECPRI);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
@@ -3036,7 +3038,7 @@ static int pc802_mailbox(void *data)
                 }
             }
         } else { //DSPs
-            DBLOG("Recved DSPs mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            //DBLOG("Recved DSPs mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_DSP);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
