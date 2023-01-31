@@ -2940,88 +2940,16 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     return 1;
 }
 
-static void pc802_set_mailbox_xc_flags(uint8_t *flags, uint32_t start, int cnt)
+static uint8_t pc802_mailbox_get_rccnt(uint8_t *pRccnt, uint8_t epcnt)
 {
-    uint32_t idx = start;
-    while (cnt--) {
-        flags[idx] = 1;
-        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
-    }
-}
-
-static int pc802_mailbox_rv_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint32_t idx, uint32_t core)
-{
-    int num;
-    int cnt;
-    int acc;
-    uint32_t init_idx = idx;
-    uint32_t start;
-    uint64_t flags[2];
-    uint8_t * pflags = (uint8_t *)&flags[0];
-
-    flags[0] = 0;
-    flags[1] = 0;
-    num = 0;
-    acc = 0;
-    do {
-        start = idx;
-        cnt = handle_mailbox(port_id, mb, core);
-        pc802_set_mailbox_xc_flags(pflags, start, cnt);
-        num += cnt;
-        acc += (cnt + 1);
-        idx = (idx + 1) & (MB_MAX_C2H_MAILBOXES - 1);
-    } while (acc < MB_MAX_C2H_MAILBOXES);
-    PC802_LOG(port_id, core, RTE_LOG_INFO, "RV MB Clear Up: core %u init_idx %u idx %u flags: 0x%016lx 0x%016lx\n",
-        core, init_idx, idx, flags[1], flags[0]);
-    return num;
-}
-
-static uint32_t pc802_get_mailbox_xc_idx(uint8_t *flags)
-{
-    uint32_t k;
-    uint32_t sum = 0;
-    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++)
-        sum += flags[k];
-    if ((MB_MAX_C2H_MAILBOXES == sum) || (0 == sum))
-        return MB_MAX_C2H_MAILBOXES;
-    sum = 0;
-    for (k = 0; k < MB_MAX_C2H_MAILBOXES; k++) {
-        sum += flags[k];
-        if ((sum > 0) && (flags[k] == 0))
-            return k;
-    }
-    return 0;
-}
-
-static int pc802_mailbox_xc_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, uint32_t core)
-{
-    int num;
-    int cnt;
-    int acc;
-    uint32_t pos;
-    uint32_t start;
-    uint64_t flags[2];
-    uint8_t * pflags = (uint8_t *)&flags[0];
-
-    flags[0] = 0;
-    flags[1] = 0;
-    num = 0;
-    pos = 0;
-    acc = 0;
-    do {
-        start = pos;
-        cnt = handle_mailbox(port_id, mb, core);
-        pc802_set_mailbox_xc_flags(pflags, start, cnt);
-        num += cnt;
-        acc += (cnt + 1);
-        pos = (pos + 1) & (MB_MAX_C2H_MAILBOXES - 1);
-    } while (acc < MB_MAX_C2H_MAILBOXES);
-    *idx = pc802_get_mailbox_xc_idx(pflags);
-    if (MB_MAX_C2H_MAILBOXES != *idx) {
-        PC802_LOG(port_id, core, RTE_LOG_INFO, "XC MB Clear Up: core %u idx %u flags: 0x%016lx 0x%016lx\n",
-            core, *idx, flags[1], flags[0]);
-    }
-    return num;
+    uint8_t rccnt, used;
+    rccnt = *pRccnt;
+    used = epcnt - rccnt;
+    if (used <= MB_MAX_C2H_MAILBOXES)
+        return rccnt;
+    rccnt = epcnt - 1;
+    *pRccnt = rccnt;
+    return rccnt;
 }
 
 static int pc802_mailbox(void *data)
@@ -3068,8 +2996,8 @@ static int pc802_mailbox(void *data)
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
-                rccnt = pc802_mailbox_rc_counter[port_index][core];
                 epcnt = mb_cnts->wr[core];
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core], epcnt);
                 if (epcnt == rccnt)
                     continue;
                 DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u\n",
@@ -3096,8 +3024,8 @@ static int pc802_mailbox(void *data)
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
-                rccnt = pc802_mailbox_rc_counter[port_index][core + 16];
                 epcnt = mb_cnts->wr[core];
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 16], epcnt);
                 while (rccnt != epcnt) {
                     re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 16);
                     rccnt++;
@@ -3112,8 +3040,8 @@ static int pc802_mailbox(void *data)
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_DSP);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
-                rccnt = pc802_mailbox_rc_counter[port_index][core + 32];
                 epcnt = mb_cnts->wr[core];
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 32], epcnt);
                 while (rccnt != epcnt) {
                     re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 32);
                     rccnt++;
