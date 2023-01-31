@@ -2940,13 +2940,15 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     return 1;
 }
 
-static uint8_t pc802_mailbox_get_rccnt(uint8_t *pRccnt, uint8_t epcnt)
+static uint8_t pc802_mailbox_get_rccnt(uint8_t *pRccnt, uint8_t epcnt, uint16_t core)
 {
     uint8_t rccnt, used;
     rccnt = *pRccnt;
     used = epcnt - rccnt;
     if (used <= MB_MAX_C2H_MAILBOXES)
         return rccnt;
+    DBLOG("Adjust Mailbox RC counter: core %2u ep %3u rc %3u -> %3u\n",
+        (uint32_t)core, (uint32_t)epcnt, (uint32_t)rccnt, (uint32_t)(uint8_t)(epcnt - 1));
     rccnt = epcnt - 1;
     *pRccnt = rccnt;
     return rccnt;
@@ -2997,7 +2999,7 @@ static int pc802_mailbox(void *data)
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
                 epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core], epcnt);
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core], epcnt, core);
                 if (epcnt == rccnt)
                     continue;
                 DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u\n",
@@ -3024,7 +3026,7 @@ static int pc802_mailbox(void *data)
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
                 epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 16], epcnt);
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 16], epcnt, core + 16);
                 while (rccnt != epcnt) {
                     re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 16);
                     rccnt++;
@@ -3039,7 +3041,7 @@ static int pc802_mailbox(void *data)
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
                 epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 32], epcnt);
+                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 32], epcnt, core + 32);
                 while (rccnt != epcnt) {
                     re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 32);
                     rccnt++;
