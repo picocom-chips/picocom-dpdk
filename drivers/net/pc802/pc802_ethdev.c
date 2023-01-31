@@ -45,6 +45,7 @@
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
+#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
@@ -1988,6 +1989,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     if (1 == num_pc802s) {
         pthread_t tid;
+        mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
@@ -2586,8 +2588,6 @@ uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, ui
     return handle_non_pfi_0_vec_dump(port_id, file_id, address, length);
 }
 
-#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
-
 typedef struct stMbVecAccess_t {
     uint32_t *command;
     uint32_t *retval;
@@ -2658,6 +2658,7 @@ static void * pc802_vec_access(__rte_unused void *data)
             *msg.retval = (0 == re);
             *msg.command = MB_EMPTY;
         }
+        DBLOG("vec set to done: port=%d, core=%d, addr=%x\n", pc802_get_port_index(msg.port_id), msg.core,  &pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core]);
         pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_DONE;
     }
 
@@ -2796,6 +2797,7 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
         return 0;
     }
     if (PC802_VEC_ACCESS_DONE == pc802_vec_blocked[port_idx][core]) {
+        DBLOG("MB VEC ACCESS DONE: %d\n", n);
         n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
         *idx = n;
         pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_IDLE;
@@ -2811,29 +2813,31 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
             } else if (MB_SIM_STOP == action) {
                 handle_mb_sim_stop(&mb[n], core);
             } else if (MB_VEC_READ == action) {
+                DBLOG("MB VEC READ %d args: %x %x %x %x\n", n, mb[n].arguments[0], mb[n].arguments[1], mb[n].arguments[2], mb[n].arguments[3]);
                 msg.command = &mb[n].action;
                 msg.retval = &mb[n].retval;
-                msg.file_id = mb[n].arguments[0];
-                msg.offset = mb[n].arguments[1];
-                msg.address = mb[n].arguments[2];
-                msg.length = mb[n].arguments[3];
+                msg.file_id = PC802_READ_REG(mb[n].arguments[0]);
+                msg.offset = PC802_READ_REG(mb[n].arguments[1]);
+                msg.address = PC802_READ_REG(mb[n].arguments[2]);
+                msg.length = PC802_READ_REG(mb[n].arguments[3]);
                 msg.port_id = port_id;
                 msg.core = core;
-                pc802_vec_access_msg_send(fd, &msg);
                 pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
+                pc802_vec_access_msg_send(fd, &msg);
                 *idx = n;
                 num--;
                 return num;
             } else if (MB_VEC_DUMP == action) {
+                DBLOG("MB VEC DUMP %d args: %x %x %x\n", n, mb[n].arguments[0], mb[n].arguments[1], mb[n].arguments[2]);
                 msg.command = &mb[n].action;
                 msg.retval = &mb[n].retval;
-                msg.file_id = mb[n].arguments[0];
-                msg.address = mb[n].arguments[1];
-                msg.length = mb[n].arguments[2];
+                msg.file_id = PC802_READ_REG(mb[n].arguments[0]);
+                msg.address = PC802_READ_REG(mb[n].arguments[1]);
+                msg.length = PC802_READ_REG(mb[n].arguments[2]);
                 msg.port_id = port_id;
                 msg.core = core;
-                pc802_vec_access_msg_send(fd, &msg);
                 pc802_vec_blocked[pc802_get_port_index(port_id)][core] = PC802_VEC_ACCESS_WORK;
+                pc802_vec_access_msg_send(fd, &msg);
                 *idx = n;
                 num--;
                 return num;
@@ -3017,8 +3021,6 @@ static void * pc802_debug(__rte_unused void *data)
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
-
-    mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
 
     while( 1 )
     {
