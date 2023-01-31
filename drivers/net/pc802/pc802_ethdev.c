@@ -3022,7 +3022,6 @@ static int pc802_mailbox_xc_clear_up(uint16_t port_id, magic_mailbox_t *mb, uint
     return num;
 }
 
-
 static int pc802_mailbox(void *data)
 {
     static struct pc802_adapter *adapter[PC802_INDEX_MAX] = {NULL};
@@ -3064,7 +3063,7 @@ static int pc802_mailbox(void *data)
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
             DBLOG("Recved PFI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
-            mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
+            mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_PFI);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
@@ -3092,7 +3091,7 @@ static int pc802_mailbox(void *data)
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
             DBLOG("Recved eCPRI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
-            mb_cnts = (mailbox_counter_t *)(msg + 0x4300);
+            mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_ECPRI);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
@@ -3109,9 +3108,9 @@ static int pc802_mailbox(void *data)
             }
         } else { //DSPs
             DBLOG("Recved DSPs mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
-            mb_cnts = (mailbox_counter_t *)(msg + 3 * 0x400);
+            mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_DSP);
             for (core = 0; core < 3; core++) {
-                mb = (magic_mailbox_t *)(msg + 0x400 * core + sizeof(mailbox_registry_t));
+                mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
                 rccnt = pc802_mailbox_rc_counter[port_index][core + 32];
                 epcnt = mb_cnts->wr[core];
                 while (rccnt != epcnt) {

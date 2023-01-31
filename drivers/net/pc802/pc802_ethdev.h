@@ -371,6 +371,10 @@ struct PC802_BAR_Ext_t {
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
 
+#define NUM_CORES_PFI       16
+#define NUM_CORES_ECPRI     16
+#define NUM_CORES_DSP       3
+
 #define MB_NUM_ARGS              8
 #define MB_NUM_HANDLERS          8
 #define MB_HANDSHAKE_HOST_LEGACY 0xBEEFBEEF
@@ -464,6 +468,15 @@ typedef struct {
     };
     uint32_t rg;
 } mailbox_counter_t;
+
+#define MAILBOX_COUNTER_OFFSET_PFI \
+    (sizeof(mailbox_info_exclusive) * NUM_CORES_PFI + sizeof(mailbox_exclusive) * NUM_CORES_PFI)
+
+#define MAILBOX_COUNTER_OFFSET_ECPRI \
+    (sizeof(mailbox_exclusive) * NUM_CORES_ECPRI + sizeof(mailbox_info_exclusive) * NUM_CORES_ECPRI)
+
+#define MAILBOX_MEM_SIZE_PER_DSP    0x400
+#define MAILBOX_COUNTER_OFFSET_DSP (MAILBOX_MEM_SIZE_PER_DSP * NUM_CORES_DSP)
 
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
