@@ -3014,7 +3014,6 @@ static int pc802_mailbox(void *data)
                             usleep(1);
                         }
                     }
-                    pfi_idx[port_index][core]++;
                 }
                 DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
             }
@@ -3032,7 +3031,6 @@ static int pc802_mailbox(void *data)
                     if (1 == re) {
                         pc802_mailbox_rc_counter[port_index][core + 16] = rccnt;
                     }
-                    ecpri_idx[port_index][core]++;
                 }
             }
         } else { //DSPs
@@ -3048,7 +3046,6 @@ static int pc802_mailbox(void *data)
                     if (1 == re) {
                         pc802_mailbox_rc_counter[port_index][core + 32] = rccnt;
                     }
-                    dsp_idx[port_index][core]++;
                 }
             }
         }
