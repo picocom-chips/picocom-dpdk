@@ -2893,11 +2893,13 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     }
 
     action = mb->action;
+#if 0
     DBLOG("core = %u port_id =  %u action = %u num_args = %u act_no = %u\n", core, port_id, action, mb->num_args, action_cnt[core][action]++);
     uint32_t j;
     for (j = 0; j < mb->num_args; j++) {
         DBLOG("Args[%1u] = 0x%08X\n", j, mb->arguments[j]);
     }
+#endif
 
     if (MB_EMPTY == action ) {
         return 0;
@@ -3053,11 +3055,13 @@ static int pc802_mailbox(void *data)
     uint8_t epcnt, rccnt;
 
     N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
+#if 0
     static uint32_t ddd = 0;
     if ((ddd < 5) || (0 != N)) {
         DBLOG("come here ddd = %u N = %u\n", ddd, (uint32_t)N);
         ddd++;
     }
+#endif
 
     for (n = 0; n < N; n++) {
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
