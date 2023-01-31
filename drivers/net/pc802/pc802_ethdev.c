@@ -45,6 +45,7 @@
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
+#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
@@ -1988,6 +1989,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     if (1 == num_pc802s) {
         pthread_t tid;
+        mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
         pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
@@ -2587,8 +2589,6 @@ uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, ui
     return handle_non_pfi_0_vec_dump(port_id, file_id, address, length);
 }
 
-#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
-
 typedef struct stMbVecAccess_t {
     uint32_t command;
     uint32_t file_id;
@@ -2915,8 +2915,8 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.length = mb->arguments[3];
         msg.port_id = port_id;
         msg.core = core;
-        pc802_vec_access_msg_send(fd, &msg);
         pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        pc802_vec_access_msg_send(fd, &msg);
         return 2;
     } else if (MB_VEC_DUMP == action) {
         msg.command = MB_VEC_DUMP;
@@ -2925,8 +2925,8 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.length = mb->arguments[2];
         msg.port_id = port_id;
         msg.core = core;
-        pc802_vec_access_msg_send(fd, &msg);
         pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        pc802_vec_access_msg_send(fd, &msg);
         return 2;
     } else {
         num_args = mb[0].num_args;
@@ -3140,8 +3140,6 @@ static void * pc802_debug(__rte_unused void *data)
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
-
-    mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
 
     while( 1 )
     {
