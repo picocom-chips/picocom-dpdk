@@ -462,8 +462,7 @@ typedef struct {
         uint32_t rds[2][4];
         uint8_t rd[2][16];
     };
-    uint8_t rg;
-    uint8_t state;
+    uint32_t rg;
 } mailbox_counter_t;
 
 int pc802_kni_add_port(uint16_t port);
