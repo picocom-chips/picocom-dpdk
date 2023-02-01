@@ -1816,12 +1816,21 @@ static int pc802_check_rerun(struct pc802_adapter *adapter)
         adapter->DEVRDY, adapter->DRVSTATE);
     if (adapter->DEVRDY < 2)
         return 0;
-    uint32_t MB_RCCNT = PC802_READ_REG(ext->MB_RCCNT);
-    uint32_t MB_EPCNT = PC802_READ_REG(ext->MB_EPCNT);
-    uint32_t COMMAND = PC802_READ_REG(ext->MB_COMMAND);
-    if (MB_RCCNT != MB_EPCNT) {
-        DBLOG("Some PFI core is doing vec_access (COMMAND = %u MB_EPCNT = %u MB_RCCNT = %u) !\n",
-            COMMAND, MB_EPCNT, MB_RCCNT);
+    uint32_t VEC_RCCNT = PC802_READ_REG(ext->VEC_RCCNT);
+    uint32_t VEC_EPCNT = PC802_READ_REG(ext->VEC_EPCNT);
+    if (VEC_RCCNT != VEC_EPCNT) {
+        DBLOG("PFI 0 is doing vec_access (VEC_EPCNT = %u VEC_RCCNT = %u) !\n",
+            VEC_EPCNT, VEC_RCCNT);
+        DBLOG("Please reset PC802 and NPU driver is exiting !!!\n");
+        exit(0);
+    }
+    uint32_t DBGCMD = PC802_READ_REG(bar->DBGCMD);
+    uint32_t DBGEPCNT = PC802_READ_REG(bar->DBGEPCNT);
+    uint32_t DBGRCCNT = PC802_READ_REG(bar->DBGRCCNT);
+    if (DBGRCCNT != DBGEPCNT) {
+        DBLOG("PFI 0 PC802_debug( ) is running (DBGCMD = %u DBGEPCNT = %u DBGRCCNT = %u) !\n",
+            DBGCMD, DBGEPCNT, DBGRCCNT);
+        DBLOG("It is raised by vec access from some core other than PFI 0 or NPU!\n");
         DBLOG("Please reset PC802 and NPU driver is exiting !!!\n");
         exit(0);
     }
