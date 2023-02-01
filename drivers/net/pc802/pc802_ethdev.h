@@ -332,29 +332,9 @@ typedef struct {
 
 struct PC802_BAR_Ext_t {
     union {
-        uint32_t _a0[16];
-        struct {
-            volatile uint32_t MB_EPCNT;
-            uint32_t MB_COMMAND;
-            uint32_t MB_EPCORE;
-            uint32_t VEC_EPCNT;
-            uint32_t MB_ARGS[8];
-        };
+        uint32_t _mb_dsp[8];
+        Mailbox_RC_t MB_DSP[3];
     };
-    union {
-        uint32_t _a1[8];
-        struct {
-            uint32_t MB_RCCNT;
-            uint32_t MB_RESULT;
-            uint32_t VEC_RCCNT;
-            uint32_t VEC_BUFSIZE;
-            uint32_t VEC_BUFADDRL;
-            uint32_t VEC_BUFADDRH;
-        };
-    };
-    uint32_t TRACE_RCCNT[32];
-    TraceEpCnt_u TRACE_EPCNT[32];
-    TraceData_t TRACE_DATA[32];
     union {
         uint32_t _mb_pfi[8];
         Mailbox_RC_t MB_PFI[16];
@@ -364,9 +344,23 @@ struct PC802_BAR_Ext_t {
         Mailbox_RC_t MB_eCPRI[16];
     };
     union {
-        uint32_t _mb_dsp[8];
-        Mailbox_RC_t MB_DSP[3];
+        uint32_t _a0[8];
+        struct {
+            uint32_t VEC_EPCNT;
+        };
     };
+    union {
+        uint32_t _a1[8];
+        struct {
+            uint32_t VEC_RCCNT;
+            uint32_t VEC_BUFSIZE;
+            uint32_t VEC_BUFADDRL;
+            uint32_t VEC_BUFADDRH;
+        };
+    };
+    uint32_t TRACE_RCCNT[32];
+    TraceEpCnt_u TRACE_EPCNT[32];
+    TraceData_t TRACE_DATA[32];
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
