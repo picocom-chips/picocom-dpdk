@@ -459,7 +459,7 @@ typedef struct {
 
 typedef struct {
     union {
-        uint32_t wrs[4];
+        uint32_t wrs[8];
         uint8_t wr[16];
     };
     union {
