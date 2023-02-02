@@ -332,6 +332,10 @@ typedef struct {
 
 struct PC802_BAR_Ext_t {
     union {
+        uint32_t _mb_pfi[8];
+        Mailbox_RC_t MB_PFI[16];
+    };
+    union {
         uint32_t _a0[16];
         struct {
             volatile uint32_t MB_EPCNT;
