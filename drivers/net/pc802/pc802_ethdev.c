@@ -196,12 +196,6 @@ struct pc802_adapter {
 
     uint16_t port_index;
     uint16_t log_flag;
-    mailbox_exclusive *mailbox_pfi;
-    mailbox_exclusive *mailbox_ecpri;
-    mailbox_exclusive *mailbox_dsp[3];
-
-    mailbox_info_exclusive *mailbox_info_pfi;
-    mailbox_info_exclusive *mailbox_info_ecpri;
 };
 
 #define PC802_DEV_PRIVATE(adapter)  ((struct pc802_adapter *)adapter)
