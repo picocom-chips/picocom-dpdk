@@ -1904,6 +1904,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->log_flag = 0;
     adapter->port_index = num_pc802s-1;
 
+#if 0
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
         if (adapter->DEVRDY < 2) {
@@ -1931,6 +1932,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         rte_wmb();
         DBLOG("WARN: No PCIe based printf output !\n");
     }
+#else
+    adapter->log_flag |= (1<<PC802_LOG_PRINT);
+#endif
 
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
