@@ -344,19 +344,14 @@ struct PC802_BAR_Ext_t {
         Mailbox_RC_t MB_eCPRI[16];
     };
     union {
-        uint32_t _a0[16];
+        uint32_t _a0[8];
         struct {
-            volatile uint32_t MB_EPCNT;
-            uint32_t MB_COMMAND;
-            uint32_t MB_EPCORE;
             uint32_t VEC_EPCNT;
-            uint32_t MB_ARGS[8];
         };
     };
     union {
         uint32_t _a1[8];
         struct {
-            uint32_t MB_RCCNT;
             uint32_t MB_RESULT;
             uint32_t VEC_RCCNT;
             uint32_t VEC_BUFSIZE;
@@ -367,21 +362,6 @@ struct PC802_BAR_Ext_t {
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
-    union {
-        uint32_t _e0[16];
-        struct {
-            uint32_t EMB_EPCNT;
-            uint32_t EMB_COMMAND;
-            uint32_t EMB_ARGS[8];
-        };
-    };
-    union {
-        uint32_t _e1[8];
-        struct {
-            uint32_t EMB_RCCNT;
-            uint32_t EMB_RESULT;
-        };
-    };
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
