@@ -352,7 +352,6 @@ struct PC802_BAR_Ext_t {
     union {
         uint32_t _a1[8];
         struct {
-            uint32_t MB_RESULT;
             uint32_t VEC_RCCNT;
             uint32_t VEC_BUFSIZE;
             uint32_t VEC_BUFADDRL;
