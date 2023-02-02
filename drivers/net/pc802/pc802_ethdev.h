@@ -451,6 +451,18 @@ typedef struct {
     uint32_t m_next_h2c;
 } mailbox_info_exclusive;
 
+typedef struct {
+    union {
+        uint32_t wrs[8];
+        uint8_t wr[16];
+    };
+    union {
+        uint32_t rds[2][4];
+        uint8_t rd[2][16];
+    };
+    uint32_t rg;
+} mailbox_counter_t;
+
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
 uint16_t pc802_get_index_by_name(const char *name);
