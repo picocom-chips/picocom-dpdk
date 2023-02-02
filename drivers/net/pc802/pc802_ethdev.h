@@ -325,6 +325,11 @@ typedef struct {
     uint32_t d[PC802_TRACE_FIFO_SIZE];
 } TraceData_t;
 
+typedef struct {
+    uint8_t rccnt;
+    uint8_t result;
+} Mailbox_RC_t;
+
 struct PC802_BAR_Ext_t {
     union {
         uint32_t _a0[16];
