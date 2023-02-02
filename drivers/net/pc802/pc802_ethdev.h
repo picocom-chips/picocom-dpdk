@@ -336,6 +336,10 @@ struct PC802_BAR_Ext_t {
         Mailbox_RC_t MB_PFI[16];
     };
     union {
+        uint32_t _mb_ecpri[8];
+        Mailbox_RC_t MB_eCPRI[16];
+    };
+    union {
         uint32_t _a0[16];
         struct {
             volatile uint32_t MB_EPCNT;
