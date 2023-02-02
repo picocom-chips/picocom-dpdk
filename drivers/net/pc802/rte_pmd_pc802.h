@@ -43,6 +43,8 @@ typedef enum PC802_Traffic_Type_e {
 
     PC802_TRAFFIC_OAM,
 
+    PC802_TRAFFIC_MAILBOX,
+
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
 
