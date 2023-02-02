@@ -221,6 +221,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
+static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
@@ -1997,6 +1998,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
+        pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
@@ -2672,9 +2674,59 @@ static void * pc802_vec_access(__rte_unused void *data)
     return 0;
 }
 
-static inline void handle_trace_data(uint16_t port_id, uint32_t core, uint32_t rccnt, uint32_t tdata)
+static int trace_action_type[PC802_INDEX_MAX][32];
+static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
+static uint32_t trace_num_args[PC802_INDEX_MAX][32];
+static uint32_t trace_idx[PC802_INDEX_MAX][32];
+
+enum {
+    TRACE_ACTION_GENERIC,
+    TRACE_ACTION_PRINTF,
+    TRACE_ACTION_IDLE = 0xFFFFFFFF
+};
+
+static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
+
+static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata)
 {
-    PC802_LOG( port_id, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
+    int k;
+    if (0 == trace_num_args[port_idx][core]) {
+        trace_idx[port_idx][core] = 0;
+        trace_num_args[port_idx][core] = tdata;
+        return;
+    }
+
+    trace_datas[port_idx][core][trace_idx[port_idx][core]] = tdata;
+    trace_idx[port_idx][core]++;
+    if (trace_idx[port_idx][core] == trace_num_args[port_idx][core]) {
+        magic_mailbox_t mb;
+        mb.num_args = trace_num_args[port_idx][core];
+        for (k = 0; k < mb.num_args; k++)
+            mb.arguments[k] = trace_datas[port_idx][core][k];
+        handle_mb_printf(port_idx, &mb, core, 0);
+        trace_num_args[port_idx][core] = 0;
+        trace_idx[port_idx][core] = 0;
+        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+    }
+}
+
+static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t rccnt, uint32_t tdata)
+{
+    //PC802_LOG( port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
+    if (TRACE_ACTION_IDLE == trace_action_type[port_idx][core]) {
+        trace_action_type[port_idx][core] = tdata;
+        return;
+    }
+
+    if (TRACE_ACTION_GENERIC == trace_action_type[port_idx][core]) {
+        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
+        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+        return;
+    }
+
+    if (TRACE_ACTION_PRINTF == trace_action_type[port_idx][core]) {
+        handle_trace_printf(port_idx, core, tdata);
+    }
 }
 
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
@@ -2699,7 +2751,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
-            handle_trace_data(port_id, core, rccnt[port_index][core], trc_data);
+            handle_trace_data(port_index, core, rccnt[port_index][core], trc_data);
             rccnt[port_index][core]++;
             num++;
         }
@@ -2713,7 +2765,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return num;
 }
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core)
+static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
 {
     uint32_t num_args = PC802_READ_REG(mb->num_args);
     char str[2048];
@@ -2725,7 +2777,11 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     const char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "PRINTF: ");
+    if (cause) {
+        ps += sprintf(ps, "PRINTF: ");
+    } else {
+        ps += sprintf(ps, "TRCLOG: ");
+   }
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
@@ -2816,7 +2872,7 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
         if (MB_EMPTY != action ) {
             num++;
             if (MB_PRINTF == action) {
-                handle_mb_printf(port_id, &mb[n], core);
+                handle_mb_printf(port_id, &mb[n], core, 1);
             } else if (MB_SIM_STOP == action) {
                 handle_mb_sim_stop(&mb[n], core);
             } else if (MB_VEC_READ == action) {
@@ -3034,10 +3090,39 @@ static void * pc802_debug(__rte_unused void *data)
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
+        }
+        if ( 0 == num ) {
+            pc802_log_flush();
+            nanosleep(&req, NULL);
+        }
+    }
+    return NULL;
+}
+
+static void * pc802_trace_thread(__rte_unused void *data)
+{
+    int i = 0;
+    int j = 0;
+    int num = 0;
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 250*1000;
+
+    for (i = 0; i < PC802_INDEX_MAX; i++) {
+        for (j = 0; j < 32; j++) {
+            trace_action_type[i][j] = TRACE_ACTION_IDLE;
+        }
+    }
+
+    while( 1 )
+    {
+        num = 0;
+        for ( i=0; i<num_pc802s; i++ )
+        {
+            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
+                num += pc802_tracer(i, pc802_devices[i]->port_id);
         }
         if ( 0 == num ) {
             pc802_log_flush();
