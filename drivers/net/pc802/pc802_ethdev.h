@@ -332,6 +332,10 @@ typedef struct {
 
 struct PC802_BAR_Ext_t {
     union {
+        uint32_t _mb_dsp[8];
+        Mailbox_RC_t MB_DSP[3];
+    };
+    union {
         uint32_t _mb_pfi[8];
         Mailbox_RC_t MB_PFI[16];
     };
