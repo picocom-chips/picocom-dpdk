@@ -650,6 +650,400 @@ static int snow3gf9_verify(uint8_t* macI, uint8_t mac_len, uint8_t* key, uint32_
     	return snow3gf9_authentication_verify(macI, mac_len, key, 16, (uint8_t *)IV, 16, data, length);
 }
 
+/************snow3g decryption************************************************************/
+
+
+#ifndef TEST_TRACE_FAILURE
+# define TEST_TRACE_FAILURE(_file, _line, _func)
+#endif
+
+/* Compare two buffers (length in bytes) */
+#define TEST_ASSERT_BUFFERS_ARE_EQUAL(a, b, len,  msg, ...) do {	\
+	if (memcmp(a, b, len)) {                                        \
+		printf("TestCase %s() line %d failed: "              \
+			msg "\n", __func__, __LINE__, ##__VA_ARGS__);    \
+		TEST_TRACE_FAILURE(__FILE__, __LINE__, __func__);    \
+		return TEST_FAILED;                                  \
+	}                                                        \
+} while (0)
+
+
+/* Compare two buffers (length in bits) */
+#define TEST_ASSERT_BUFFERS_ARE_EQUAL_BIT(a, b, len, msg, ...) do {	\
+	uint8_t _last_byte_a, _last_byte_b;                       \
+	uint8_t _last_byte_mask, _last_byte_bits;                  \
+	TEST_ASSERT_BUFFERS_ARE_EQUAL(a, b, (len >> 3), msg);     \
+	if (len % 8) {                                              \
+		_last_byte_bits = len % 8;                   \
+		_last_byte_mask = ~((1 << (8 - _last_byte_bits)) - 1); \
+		_last_byte_a = ((const uint8_t *)a)[len >> 3];            \
+		_last_byte_b = ((const uint8_t *)b)[len >> 3];            \
+		_last_byte_a &= _last_byte_mask;                     \
+		_last_byte_b &= _last_byte_mask;                    \
+		if (_last_byte_a != _last_byte_b) {                  \
+			printf("TestCase %s() line %d failed: "              \
+				msg "\n", __func__, __LINE__, ##__VA_ARGS__);\
+			TEST_TRACE_FAILURE(__FILE__, __LINE__, __func__);    \
+			return TEST_FAILED;                                  \
+		}                                                        \
+	}                                                            \
+} while (0)
+
+
+struct snow3g_test_data {
+	struct {
+		uint8_t data[64];
+		unsigned len;
+	} key;
+
+	struct {
+		uint8_t data[64] __rte_aligned(16);
+		unsigned len;
+	} cipher_iv;
+
+	struct {
+		uint8_t data[1024];
+		unsigned len; /* length must be in Bits */
+	} plaintext;
+
+	struct {
+		uint8_t data[1024];
+		unsigned len; /* length must be in Bits */
+	} ciphertext;
+
+	struct {
+		unsigned len;
+	} validDataLenInBits;
+
+	struct {
+		unsigned len;
+	} validCipherLenInBits;
+
+	struct {
+		unsigned len;
+	} validAuthLenInBits;
+
+	struct {
+		uint8_t data[64];
+		unsigned len;
+	} auth_iv;
+
+	struct {
+		uint8_t data[64];
+		unsigned int len; /* length must be in Bytes */
+		unsigned int offset_bytes; /* offset must be in Bytes */
+	} digest;
+
+	struct {
+		unsigned int len_bits; /* length must be in Bits */
+		unsigned int offset_bits;
+	} cipher;
+
+	struct {
+		unsigned int len_bits; /* length must be in Bits */
+		unsigned int offset_bits;
+	} auth;
+};
+
+struct snow3g_test_data snow3g_test_case_1 = {
+	.key = {
+		.data = {
+			0x2B, 0xD6, 0x45, 0x9F, 0x82, 0xC5, 0xB3, 0x00,
+			0x95, 0x2C, 0x49, 0x10, 0x48, 0x81, 0xFF, 0x48
+		},
+		.len = 16
+	},
+	.cipher_iv = {
+		.data = {
+			0x72, 0xA4, 0xF2, 0x0F, 0x64, 0x00, 0x00, 0x00,
+			0x72, 0xA4, 0xF2, 0x0F, 0x64, 0x00, 0x00, 0x00
+		},
+		.len = 16
+	},
+	.plaintext = {
+		.data = {
+			0x7E, 0xC6, 0x12, 0x72, 0x74, 0x3B, 0xF1, 0x61,
+			0x47, 0x26, 0x44, 0x6A, 0x6C, 0x38, 0xCE, 0xD1,
+			0x66, 0xF6, 0xCA, 0x76, 0xEB, 0x54, 0x30, 0x04,
+			0x42, 0x86, 0x34, 0x6C, 0xEF, 0x13, 0x0F, 0x92,
+			0x92, 0x2B, 0x03, 0x45, 0x0D, 0x3A, 0x99, 0x75,
+			0xE5, 0xBD, 0x2E, 0xA0, 0xEB, 0x55, 0xAD, 0x8E,
+			0x1B, 0x19, 0x9E, 0x3E, 0xC4, 0x31, 0x60, 0x20,
+			0xE9, 0xA1, 0xB2, 0x85, 0xE7, 0x62, 0x79, 0x53,
+			0x59, 0xB7, 0xBD, 0xFD, 0x39, 0xBE, 0xF4, 0xB2,
+			0x48, 0x45, 0x83, 0xD5, 0xAF, 0xE0, 0x82, 0xAE,
+			0xE6, 0x38, 0xBF, 0x5F, 0xD5, 0xA6, 0x06, 0x19,
+			0x39, 0x01, 0xA0, 0x8F, 0x4A, 0xB4, 0x1A, 0xAB,
+			0x9B, 0x13, 0x48, 0x80
+		},
+		.len = 800
+	},
+	.ciphertext = {
+		.data = {
+			0x8C, 0xEB, 0xA6, 0x29, 0x43, 0xDC, 0xED, 0x3A,
+			0x09, 0x90, 0xB0, 0x6E, 0xA1, 0xB0, 0xA2, 0xC4,
+			0xFB, 0x3C, 0xED, 0xC7, 0x1B, 0x36, 0x9F, 0x42,
+			0xBA, 0x64, 0xC1, 0xEB, 0x66, 0x65, 0xE7, 0x2A,
+			0xA1, 0xC9, 0xBB, 0x0D, 0xEA, 0xA2, 0x0F, 0xE8,
+			0x60, 0x58, 0xB8, 0xBA, 0xEE, 0x2C, 0x2E, 0x7F,
+			0x0B, 0xEC, 0xCE, 0x48, 0xB5, 0x29, 0x32, 0xA5,
+			0x3C, 0x9D, 0x5F, 0x93, 0x1A, 0x3A, 0x7C, 0x53,
+			0x22, 0x59, 0xAF, 0x43, 0x25, 0xE2, 0xA6, 0x5E,
+			0x30, 0x84, 0xAD, 0x5F, 0x6A, 0x51, 0x3B, 0x7B,
+			0xDD, 0xC1, 0xB6, 0x5F, 0x0A, 0xA0, 0xD9, 0x7A,
+			0x05, 0x3D, 0xB5, 0x5A, 0x88, 0xC4, 0xC4, 0xF9,
+			0x60, 0x5E, 0x41, 0x40
+		},
+		.len = 800
+	},
+	.cipher = {
+		.offset_bits = 0
+	},
+	.validDataLenInBits = {
+		.len = 798
+	},
+	.validCipherLenInBits = {
+		.len = 800
+	},
+	.auth_iv = {
+		.data = {
+			 0x72, 0xA4, 0xF2, 0x0F, 0x64, 0x00, 0x00, 0x00,
+			 0x72, 0xA4, 0xF2, 0x0F, 0x64, 0x00, 0x00, 0x00
+		},
+		.len = 16
+	}
+};
+
+static int
+create_wireless_algo_cipher_session(uint8_t dev_id,
+			enum rte_crypto_cipher_operation op,
+			enum rte_crypto_cipher_algorithm algo,
+			const uint8_t *key, const uint8_t key_len,
+			uint8_t iv_len)
+{
+	uint8_t cipher_key[key_len];
+	int status;
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+
+	memcpy(cipher_key, key, key_len);
+
+	/* Setup Cipher Parameters */
+	ut_params->cipher_xform.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	ut_params->cipher_xform.next = NULL;
+
+	ut_params->cipher_xform.cipher.algo = algo;
+	ut_params->cipher_xform.cipher.op = op;
+	ut_params->cipher_xform.cipher.key.data = cipher_key;
+	ut_params->cipher_xform.cipher.key.length = key_len;
+	ut_params->cipher_xform.cipher.iv.offset = IV_OFFSET;
+	ut_params->cipher_xform.cipher.iv.length = iv_len;
+
+	debug_hexdump(stdout, "key:", key, key_len);
+
+	/* Create Crypto session */
+	ut_params->sess = rte_cryptodev_sym_session_create(
+			ts_params->session_mpool);
+
+	status = rte_cryptodev_sym_session_init(dev_id, ut_params->sess,
+			&ut_params->cipher_xform,
+			ts_params->session_priv_mpool);
+	   if (status < 0) {
+
+                TEST_ASSERT(status < 0,"Session creation succeeded unexpectedly");
+                rte_cryptodev_sym_session_free(ut_params->sess);
+                return status;
+        }
+
+        TEST_ASSERT_NOT_NULL(ut_params->sess, "Session creation failed");
+
+	return 0;
+}
+
+
+static int
+create_wireless_algo_cipher_operation(const uint8_t *iv, uint8_t iv_len,
+			unsigned int cipher_len,
+			unsigned int cipher_offset)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+
+	/* Generate Crypto op data structure */
+	ut_params->op = rte_crypto_op_alloc(ts_params->op_mpool,
+				RTE_CRYPTO_OP_TYPE_SYMMETRIC);
+	TEST_ASSERT_NOT_NULL(ut_params->op,
+				"Failed to allocate pktmbuf offload");
+
+	/* Set crypto operation data parameters */
+	rte_crypto_op_attach_sym_session(ut_params->op, ut_params->sess);
+
+	struct rte_crypto_sym_op *sym_op = ut_params->op->sym;
+
+	/* set crypto operation source mbuf */
+	sym_op->m_src = ut_params->ibuf;
+
+	/* iv */
+	rte_memcpy(rte_crypto_op_ctod_offset(ut_params->op, uint8_t *, IV_OFFSET),
+			iv, iv_len);
+	sym_op->cipher.data.length = cipher_len;
+	sym_op->cipher.data.offset = cipher_offset;
+	return 0;
+}
+
+static int test_snow3g_decryption(const struct snow3g_test_data *tdata)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+
+	int retval;
+
+	uint8_t *plaintext, *ciphertext;
+	unsigned ciphertext_pad_len;
+	unsigned ciphertext_len;
+
+	/* Verify the capabilities */
+	struct rte_cryptodev_sym_capability_idx cap_idx;
+	cap_idx.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
+	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
+			&cap_idx) == NULL)
+		return -ENOTSUP;
+
+	/* Create SNOW 3G session */
+	retval = create_wireless_algo_cipher_session(ts_params->valid_devs[0],
+					RTE_CRYPTO_CIPHER_OP_DECRYPT,
+					RTE_CRYPTO_CIPHER_SNOW3G_UEA2,
+					tdata->key.data, tdata->key.len,
+					tdata->cipher_iv.len);
+	if (retval < 0)
+		return retval;
+
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+
+	/* Clear mbuf payload */
+	memset(rte_pktmbuf_mtod(ut_params->ibuf, uint8_t *), 0,
+	       rte_pktmbuf_tailroom(ut_params->ibuf));
+
+	ciphertext_len = ceil_byte_length(tdata->ciphertext.len);
+	/* Append data which is padded to a multiple of */
+	/* the algorithms block size */
+	ciphertext_pad_len = RTE_ALIGN_CEIL(ciphertext_len, 16);
+	ciphertext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+				ciphertext_pad_len);
+	memcpy(ciphertext, tdata->ciphertext.data, ciphertext_len);
+
+	debug_hexdump(stdout, "ciphertext:", ciphertext, ciphertext_len);
+
+	/* Create SNOW 3G operation */
+	retval = create_wireless_algo_cipher_operation(tdata->cipher_iv.data,
+					tdata->cipher_iv.len,
+					tdata->validCipherLenInBits.len,
+					tdata->cipher.offset_bits);
+	if (retval < 0)
+		return retval;
+
+        ut_params->op = process_crypto_request(ts_params->valid_devs[0], ut_params->op);
+
+	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
+	ut_params->obuf = ut_params->op->sym->m_dst;
+	if (ut_params->obuf)
+		plaintext = rte_pktmbuf_mtod(ut_params->obuf, uint8_t *);
+	else
+		plaintext = ciphertext;
+
+	debug_hexdump(stdout, "plaintext:", plaintext, ciphertext_len);
+
+	/* Validate obuf */
+	TEST_ASSERT_BUFFERS_ARE_EQUAL_BIT(plaintext,
+				tdata->plaintext.data,
+				tdata->validDataLenInBits.len,
+				"SNOW 3G Plaintext data not as expected");
+	return 0;
+}
+
+
+static int
+test_snow3g_encryption(const struct snow3g_test_data *tdata)
+{
+	struct crypto_testsuite_params *ts_params = &testsuite_params;
+	struct crypto_unittest_params *ut_params = &unittest_params;
+
+	int retval;
+	uint8_t *plaintext, *ciphertext;
+	unsigned plaintext_pad_len;
+	unsigned plaintext_len;
+	struct rte_cryptodev_info dev_info;
+
+	rte_cryptodev_info_get(ts_params->valid_devs[0], &dev_info);
+	uint64_t feat_flags = dev_info.feature_flags;
+
+	if ((!(feat_flags & RTE_CRYPTODEV_FF_SYM_RAW_DP))) {
+		printf("Device doesn't support RAW data-path APIs.\n");
+		return -ENOTSUP;
+	}
+
+	/* Verify the capabilities */
+	struct rte_cryptodev_sym_capability_idx cap_idx;
+	cap_idx.type = RTE_CRYPTO_SYM_XFORM_CIPHER;
+	cap_idx.algo.cipher = RTE_CRYPTO_CIPHER_SNOW3G_UEA2;
+	if (rte_cryptodev_sym_capability_get(ts_params->valid_devs[0],
+			&cap_idx) == NULL)
+		return -ENOTSUP;
+
+	/* Create SNOW 3G session */
+	retval = create_wireless_algo_cipher_session(ts_params->valid_devs[0],
+					RTE_CRYPTO_CIPHER_OP_ENCRYPT,
+					RTE_CRYPTO_CIPHER_SNOW3G_UEA2,
+					tdata->key.data, tdata->key.len,
+					tdata->cipher_iv.len);
+	if (retval < 0)
+		return retval;
+
+	ut_params->ibuf = rte_pktmbuf_alloc(ts_params->mbuf_pool);
+
+	/* Clear mbuf payload */
+	memset(rte_pktmbuf_mtod(ut_params->ibuf, uint8_t *), 0,
+	       rte_pktmbuf_tailroom(ut_params->ibuf));
+
+	plaintext_len = ceil_byte_length(tdata->plaintext.len);
+	/* Append data which is padded to a multiple of */
+	/* the algorithms block size */
+	plaintext_pad_len = RTE_ALIGN_CEIL(plaintext_len, 16);
+	plaintext = (uint8_t *)rte_pktmbuf_append(ut_params->ibuf,
+				plaintext_pad_len);
+	memcpy(plaintext, tdata->plaintext.data, plaintext_len);
+
+	debug_hexdump(stdout, "plaintext:", plaintext, plaintext_len);
+
+	/* Create SNOW 3G operation */
+	retval = create_wireless_algo_cipher_operation(tdata->cipher_iv.data,
+					tdata->cipher_iv.len,
+					tdata->validCipherLenInBits.len,
+					0);
+	if (retval < 0)
+		return retval;
+
+        ut_params->op = process_crypto_request(ts_params->valid_devs[0], ut_params->op);
+
+	TEST_ASSERT_NOT_NULL(ut_params->op, "failed to retrieve obuf");
+
+	ut_params->obuf = ut_params->op->sym->m_dst;
+	if (ut_params->obuf)
+		ciphertext = rte_pktmbuf_mtod(ut_params->obuf, uint8_t *);
+	else
+		ciphertext = plaintext;
+
+	debug_hexdump(stdout, "ciphertext:", ciphertext, plaintext_len);
+
+	/* Validate obuf */
+	TEST_ASSERT_BUFFERS_ARE_EQUAL_BIT(
+		ciphertext,
+		tdata->ciphertext.data,
+		tdata->validDataLenInBits.len,
+		"SNOW 3G Ciphertext data not as expected");
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -676,12 +1070,24 @@ int main(int argc, char **argv)
   printf("sec setup\n");
   sec_setup();
 
+  printf("\nsnow3g decryption:\n");
+  test_snow3g_decryption(&snow3g_test_case_1);
+  crypto_free_memory();  
+  mpool_check_memory();
+
+  printf("\nsnow3g encryption:\n");
+  test_snow3g_encryption(&snow3g_test_case_1);
+  crypto_free_memory();  
+  mpool_check_memory();
+
   for(i = 0; i < 10000; i++)
   {
+    printf("\nsnow3gf9 authentication:\n");  
     dir = 0, fresh = 0xf8000000, count = 0x38a6f056, length = 88;
     snow3gf9(macI, key, count, fresh, dir, data, length);
     printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
 
+    printf("\nsnow3gf9 authentication verify:\n");  
     ret = snow3gf9_verify(macI, 4, key, count, fresh, dir, data, length);
     if(ret != 0)
     {
@@ -691,10 +1097,12 @@ int main(int argc, char **argv)
     printf("snow3gf9 authentication verify %d Success\n", ret);  
     crypto_free_memory();  
  
+    printf("\nsnow3gf9 authentication:\n");  
     length = 384, count =  0x14793E41, fresh = 0x0397E8FD, dir = 1;
     snow3gf9(macI, key1, count, fresh, dir, data1, length);
     printf("macI: %x %x %x %x\n", macI[0], macI[1], macI[2], macI[3]);
 
+    printf("\nsnow3gf9 authentication verify:\n");  
     ret = snow3gf9_verify(macI, 4, key1, count, fresh, dir, data1, length);
     if(ret != 0)
     {
