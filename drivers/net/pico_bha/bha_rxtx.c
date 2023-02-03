@@ -266,12 +266,12 @@ next_desc:
         }
 
         //prefetch next when curr one processing
-        rte_prefetch0(sw_ring[next_id].mbuf);
-        rte_prefetch0(&rx_ring_rsp[next_id]);
-        if ((next_id & 0x7) == 0) {
-            rte_prefetch0(&rx_ring[next_id]);
-            rte_prefetch0(&sw_ring[next_id]);
-        }
+        //rte_prefetch0(sw_ring[next_id].mbuf);
+        //rte_prefetch0(&rx_ring_rsp[next_id]);
+        //if ((next_id & 0x7) == 0) {
+            //rte_prefetch0(&rx_ring[next_id]);
+            //rte_prefetch0(&sw_ring[next_id]);
+        //}
 
         rxm = rxe->mbuf; //pick up mbuf for recved pkt
         rxe->mbuf = nmb; //insert new mbuf
@@ -285,7 +285,7 @@ next_desc:
 
         if (rxd_rsp.frame.end == 0) { //not the last seg
             next_rxe = &sw_ring[next_id];
-            rte_prefetch0(next_rxe);
+            //rte_prefetch0(next_rxe);
         }
 
         //update first seg or single pkt info, parse from 1st pkt
@@ -308,7 +308,7 @@ next_desc:
 
         //segments pkts or single pkt processing done
         //prefetch data of first segment
-		rte_prefetch0((char *)first_seg->buf_addr + first_seg->data_off);
+		//rte_prefetch0((char *)first_seg->buf_addr + first_seg->data_off);
 
         //put segs into rx_pkts
         rx_pkts[nb_rx++] = first_seg;
@@ -362,14 +362,20 @@ bha_xmit_desc_free(struct bha_tx_queue *txq)
     tx_id = txq->c_ptr.idx;
     if (hw_c_ptr.wrap == sw_c_ptr.wrap) {
         calc_nb_desc_free = hw_c_ptr.idx - sw_c_ptr.idx;
-        for (i = tx_id; i < hw_c_ptr.idx; i++)
+        for (i = tx_id; i < hw_c_ptr.idx; i++) {
             rte_pktmbuf_free_seg(sw_ring[i].mbuf);
+            sw_ring[i].mbuf = NULL;
+        }
     } else {
         calc_nb_desc_free = nb_tx_desc - sw_c_ptr.idx + hw_c_ptr.idx;
-        for (i = tx_id; i < nb_tx_desc; i++)
+        for (i = tx_id; i < nb_tx_desc; i++) {
             rte_pktmbuf_free_seg(sw_ring[i].mbuf);
-        for (i = 0; i < hw_c_ptr.idx; i++)
+            sw_ring[i].mbuf = NULL;
+        }
+        for (i = 0; i < hw_c_ptr.idx; i++) {
             rte_pktmbuf_free_seg(sw_ring[i].mbuf);
+            sw_ring[i].mbuf = NULL;
+        }
     }
 
     //update txq ring info
@@ -392,7 +398,6 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
     struct rte_mbuf     *tx_pkt;
     struct rte_mbuf     *m_seg;
     uint64_t buf_dma_addr;
-    uint32_t pkt_len;
     uint16_t slen;
     uint16_t nb_tx;
     uint16_t tx_id;
@@ -401,6 +406,8 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
     uint16_t nb_txd_used;
     uint8_t wrap_flag;
     union bha_ring_ptr producer_ptr;
+    uint32_t segs_calc = 0;
+    uint32_t pktlen_calc = 0;
 
 
     txq = tx_queue;
@@ -410,20 +417,20 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
     wrap_flag = txq->p_ptr.wrap; //producer wrap
     txe = &sw_ring[tx_id];
     nb_txd_used = 0;
-    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst, qid %d, tx burst lcore id %d", txq->port_id, txq->queue_id, rte_lcore_id());
-    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst, qid %d, nb_pkts %d, curr tx index %d, wrap %d", txq->port_id, txq->queue_id, nb_pkts, tx_id, wrap_flag);
+    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst, qid %d, lcore %d, nb_pkts %d, curr tx index %d, wrap %d", txq->port_id, txq->queue_id, rte_lcore_id(), nb_pkts, tx_id, wrap_flag);
 
     //free desc
     bha_xmit_desc_free(txq);
 
-    rte_prefetch0(&txe->mbuf->pool);
+    //rte_prefetch0(&txe->mbuf->pool);
     for (nb_tx = 0; nb_tx < nb_pkts; nb_tx++) {
-        tx_pkt = *tx_pkts++;
-		pkt_len = tx_pkt->pkt_len;
+        tx_pkt = tx_pkts[nb_tx];
+        segs_calc = 0;
+        pktlen_calc = 0;
 
         //no segments: 1; segments: total number of segs(in the first pkt mbuf)
         nb_segs = tx_pkt->nb_segs;
-        BHA_LOG(DEBUG, "ethdev bha tx burst, qid %d, nb segs %d, pkt len %d", txq->queue_id, nb_segs, pkt_len);
+        BHA_LOG(DEBUG, "ethdev bha tx burst, qid[%d], nb[%d], pkt len %d, data len %d, nb_segs %d", txq->queue_id, nb_tx, tx_pkt->pkt_len, tx_pkt->data_len, tx_pkt->nb_segs);
         if (nb_segs > txq->nb_tx_desc) {
             BHA_LOG(ERR, "ethdev bha tx burst, qid %d. desc number overflow, max %d, segs %d. return", txq->queue_id, txq->nb_tx_desc, nb_segs);
             //if nb_tx pkts had been ready in tx ring, push to hw and then exit
@@ -453,11 +460,11 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
             } else
                 tx_id_next = tx_id + 1;
             txe_n = &sw_ring[tx_id_next];
-            rte_prefetch0(&txe_n->mbuf->pool);
+            //rte_prefetch0(&txe_n->mbuf->pool);
 
-            //double confirm to free mbuf
-            if (txe->mbuf != NULL)
-                rte_pktmbuf_free_seg(txe->mbuf);
+            //double confirm to free mbuf. !attention to avoid double free
+            //if (txe->mbuf != NULL)
+            //    rte_pktmbuf_free_seg(txe->mbuf);
             txe->mbuf = m_seg;
 
             //fill tx desc
@@ -474,14 +481,16 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
             txe = txe_n;
             m_seg = m_seg->next;
             nb_txd_used++;
+            segs_calc++;
+            pktlen_calc += slen;
         } while (m_seg != NULL);
 
         //update last tx desc
         txd->frame.end = 1;
         //update 1st tx desc
-        if (nb_segs > 1) { //segments pkt
-            txd_1st->frame.total_size = pkt_len;
-            txd_1st->frame.n_blocks = nb_segs - 1;
+        if (segs_calc > 1) { //segments pkt
+            txd_1st->frame.n_blocks = segs_calc - 1;
+            txd_1st->frame.total_size = pktlen_calc;
         } else { //single pkt
             txd_1st->frame.total_size = slen;
             txd_1st->frame.n_blocks = 0;
@@ -490,17 +499,17 @@ eth_bha_tx_pkt_burst(void* tx_queue, struct rte_mbuf** tx_pkts,
         txd_1st->frame.start = 1;
 
         //update txq info
-        txq->nb_tx_free -= nb_segs;
+        txq->nb_tx_free -= segs_calc;
 
         //update statistics
         txq->stats.packets++;
-        txq->stats.bytes += tx_pkt->pkt_len;
+        txq->stats.bytes += pktlen_calc;
     }
 
 end_of_tx:
     rte_wmb();
 
-    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst end, qid[%d], nb_tx %d, tx_id %d", txq->port_id, txq->queue_id, nb_tx, tx_id);
+    BHA_LOG(DEBUG, "ethdev bha[%d] tx burst end, qid[%d], nb_tx %d, tx_id %d, txd used %d", txq->port_id, txq->queue_id, nb_tx, tx_id, nb_txd_used);
     //update producer ptr reg
     producer_ptr.ptr = bha_ring_advance_p_n(txq->tx_ring_reg_base, txq->nb_tx_desc, nb_txd_used);
     BHA_LOG(DEBUG, "ethdev bha burst xmit, txq[%d], after update producer ptr 0x%x, consumer ptr 0x%x", txq->queue_id, bha_reg_read(txq->tx_ring_reg_base + RING_REGS_P_PRODUCER_OFFSET), bha_reg_read(txq->tx_ring_reg_base + RING_REGS_P_CONSUMER_OFFSET));
