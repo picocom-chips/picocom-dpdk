@@ -69,3 +69,13 @@ New features
 
 Bug fixes
 *********
+
+PC802 driver 2.2
+##################
+
+New features
+************
+* SI-1335 Support VEC access from CEVA DSPs
+
+Bug fixes
+*********
