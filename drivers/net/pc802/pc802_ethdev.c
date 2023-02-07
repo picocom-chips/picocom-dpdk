@@ -2658,7 +2658,7 @@ static void * pc802_vec_access(__rte_unused void *data)
             *msg.retval = (0 == re);
             *msg.command = MB_EMPTY;
         }
-        DBLOG("vec set to done: port=%d, core=%d, addr=%x\n", pc802_get_port_index(msg.port_id), msg.core,  &pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core]);
+        DBLOG("vec set to done: port=%d, core=%d", pc802_get_port_index(msg.port_id), msg.core);
         pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_DONE;
     }
 
