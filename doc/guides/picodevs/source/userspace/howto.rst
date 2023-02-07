@@ -130,7 +130,11 @@ example:
 
 .. code-block:: console
 
-    #Boot up dpdk-testpc802 enable log:
+    #Preparations required for ARM platform NPU
+    apt install libpcap-dev
+    scp user@build:~/dpdk_arm_libs/bin/dpdk-pdump /usr/local/bin/
+
+    #Boot up dpdk-testpc802:
     dpdk-testpc802
 
     #in another terminal
