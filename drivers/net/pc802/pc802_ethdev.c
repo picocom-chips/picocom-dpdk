@@ -634,6 +634,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     if (nb_hold > rxq->rx_free_thresh) {
         rte_io_wmb();
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
+        if (PC802_TRAFFIC_MAILBOX == queue_id)
+            DBLOG("Write Mailbox MB_C2H_RCCNT = %u\n", rxq->rc_cnt);
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
@@ -2619,8 +2621,13 @@ typedef struct stMbVecAccess_t {
 #define PC802_VEC_ACCESS_WORK   1
 #define PC802_VEC_ACCESS_DONE   2
 
-static uint8_t pc802_vec_blocked[PC802_INDEX_MAX][35];
-static uint8_t pc802_mailbox_rc_counter[PC802_INDEX_MAX][35];
+static uint8_t pc802_vec_blocked[PC802_INDEX_MAX][36];
+union {
+    uint32_t rccnts[PC802_INDEX_MAX][9];
+    uint8_t  rccnt[PC802_INDEX_MAX][36];
+} pc802_mb_rccnt;
+#define pc802_mailbox_rc_counter        pc802_mb_rccnt.rccnt
+#define pc802_mb_rccnts                 pc802_mb_rccnt.rccnts
 
 static uint32_t pc802_vec_access_msg_send(int fd, MbVecAccess_t *msg)
 {
@@ -2908,12 +2915,13 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     }
 
     action = mb->action;
-#if 0
-    DBLOG("core = %u port_id =  %u action = %u num_args = %u act_no = %u\n", core, port_id, action, mb->num_args, action_cnt[core][action]++);
-    uint32_t j;
-    for (j = 0; j < mb->num_args; j++) {
-        DBLOG("Args[%1u] = 0x%08X\n", j, mb->arguments[j]);
-    }
+#if 1
+    DBLOG("port_id = %1u core = %2u action = %2u num_args = %1u\n", port_id, core, action, mb->num_args);
+#else
+    DBLOG("  Arg[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
+        mb->arguments[0], mb->arguments[1], mb->arguments[2], mb->arguments[3]);
+    DBLOG("  Arg[4] = 0x%08X [5] = 0x%08X [6] = 0x%08X [7] = 0x%08X\n",
+        mb->arguments[4], mb->arguments[5], mb->arguments[6], mb->arguments[7]);
 #endif
 
     if (MB_EMPTY == action ) {
@@ -2997,21 +3005,27 @@ static int pc802_mailbox(void *data)
     uint8_t epcnt, rccnt;
 
     N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
-#if 0
-    static uint32_t ddd = 0;
-    if ((ddd < 5) || (0 != N)) {
-        DBLOG("come here ddd = %u N = %u\n", ddd, (uint32_t)N);
-        ddd++;
+#if 1
+    if (0 != N) {
+        DBLOG("Rx mailbox msg N = %u\n", (uint32_t)N);
     }
 #endif
 
     for (n = 0; n < N; n++) {
+        DBLOG("Rx mailbox mb_idx = %1u cause = %1u in %1u of %1u\n",
+            (uint32_t)blks[n]->pkt_type, (uint32_t)blks[n]->cause, (uint32_t)n, (uint32_t)N);
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         if (0 == blks[n]->pkt_type) { //PFI
-            if (0 != blks[n]->cause) {
-                DBLOG("Recved PFI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
-            }
+            //if (0 != blks[n]->cause)
+            //{
+            //    DBLOG("Recved PFI mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
+            //}
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_PFI);
+            DBLOG("PFI   wrs[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
+                mb_cnts->wrs[0], mb_cnts->wrs[1], mb_cnts->wrs[2], mb_cnts->wrs[3]);
+            DBLOG("PFI   rds[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
+                pc802_mb_rccnts[port_index][0], pc802_mb_rccnts[port_index][1],
+                pc802_mb_rccnts[port_index][2], pc802_mb_rccnts[port_index][3]);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + 16 * sizeof(mailbox_info_exclusive) + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
@@ -3037,8 +3051,13 @@ static int pc802_mailbox(void *data)
                 //DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
-            //DBLOG("Recved eCPRI mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            //DBLOG("Recved eCPRI mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_ECPRI);
+            DBLOG("eCPRI wrs[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
+                mb_cnts->wrs[0], mb_cnts->wrs[1], mb_cnts->wrs[2], mb_cnts->wrs[3]);
+            DBLOG("eCPRI rds[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
+                pc802_mb_rccnts[port_index][4], pc802_mb_rccnts[port_index][5],
+                pc802_mb_rccnts[port_index][6], pc802_mb_rccnts[port_index][7]);
             for (core = 0; core < 16; core++) {
                 mbs = (mailbox_exclusive *)(msg + core * sizeof(mailbox_exclusive));
                 mb = mbs->m_cpu_to_host;
@@ -3053,8 +3072,10 @@ static int pc802_mailbox(void *data)
                 }
             }
         } else { //DSPs
-            //DBLOG("Recved DSPs mailbox request, cause = %u\n", (uint32_t)blks[n]->cause);
+            //DBLOG("Recved DSPs mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
             mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_DSP);
+            DBLOG("DSP   wrs[0] = 0x%08X\n", mb_cnts->wrs[0]);
+            DBLOG("DSP   rds[0] = 0x%08X\n", pc802_mb_rccnts[port_index][8]);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
                 epcnt = mb_cnts->wr[core];
