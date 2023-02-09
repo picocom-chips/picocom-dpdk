@@ -280,6 +280,7 @@ struct stPC802_EP_Counter_Mirror_t {
     union {
         PC802_CacheLine_t   cache_line_repcnt;
         volatile uint32_t REPCNT[MAX_UL_CH_NUM];
+        volatile uint32_t MB_C2H_EPCNT;
     };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
@@ -287,7 +288,7 @@ typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
 typedef struct PC802_Descs_t {
     PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
-    PC802_Descriptor_t  ul[MAX_UL_CH_NUM][MAX_DESC_NUM];
+    PC802_Descriptor_t  ul[MAX_UL_CH_NUM + 1][MAX_DESC_NUM]; //additional ul[MAX_UL_CH_NUM] for c2h mailbox
     PC802_EP_Counter_Mirror_t  mr;
 } PC802_Descs_t;
 
@@ -346,12 +347,15 @@ struct PC802_BAR_Ext_t {
     union {
         uint32_t _a0[8];
         struct {
+            uint32_t MB_C2H_EPCNT;
             uint32_t VEC_EPCNT;
         };
     };
     union {
         uint32_t _a1[8];
         struct {
+            uint32_t MB_C2H_RCCNT;
+            uint32_t MB_C2H_RDNUM;
             uint32_t VEC_RCCNT;
             uint32_t VEC_BUFSIZE;
             uint32_t VEC_BUFADDRL;

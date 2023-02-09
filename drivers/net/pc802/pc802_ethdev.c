@@ -47,6 +47,8 @@
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
+#define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
+
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
     __asm__ volatile ("" : : : "memory");
@@ -181,7 +183,7 @@ struct pc802_adapter {
     PC802_Descs_t *pDescs;
     uint64_t descs_phy_addr;
     struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
-    struct pc802_rx_queue  rxq[MAX_UL_CH_NUM];
+    struct pc802_rx_queue  rxq[PC802_TRAFFIC_NUM + 1]; //additional rxq for c2h mailbox
     struct rte_ether_addr eth_addr;
     uint16_t port_id;
     uint8_t started;
@@ -368,16 +370,23 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxdp++;
     }
 
-    rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
-    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
     rxq->nb_rx_desc = nb_desc;
     rxq->rc_cnt = 0;
     rxq->nb_rx_hold = 0;
     rxq->rx_free_thresh = nb_desc / 4;
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
+    if (PC802_TRAFFIC_MAILBOX == queue_id) {
+        PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(port_id);
+        rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
+        rxq->repcnt_mirror_addr = (volatile uint32_t *)&adapter->pDescs->mr.MB_C2H_EPCNT;
+        PC802_WRITE_REG(ext->MB_C2H_RDNUM, nb_desc);
+    } else {
+        rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
+        rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
+    }
 
-    if (PC802_READ_REG(bar->DEVEN)) {
+    if ((queue_id < PC802_TRAFFIC_MAILBOX) && (PC802_READ_REG(bar->DEVEN))) {
         PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
         rte_wmb();
         rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
@@ -1830,6 +1839,11 @@ static int pc802_check_rerun(struct pc802_adapter *adapter)
     return 0;
 }
 
+static int pc802_init_c2h_mailbox(struct pc802_adapter *adapter)
+{
+    return pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 64, 32);
+}
+
 static int
 eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 {
@@ -1985,8 +1999,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
 
-    pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 64, 32);
-    PC802_WRITE_REG(bar->RDNUM[PC802_TRAFFIC_MAILBOX], adapter->rxq[PC802_TRAFFIC_MAILBOX].nb_rx_desc);
+    pc802_init_c2h_mailbox(adapter);
 
     if (1 == num_pc802s) {
         pthread_t tid;
