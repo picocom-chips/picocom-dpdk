@@ -380,7 +380,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(port_id);
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
         rxq->repcnt_mirror_addr = (volatile uint32_t *)&adapter->pDescs->mr.MB_C2H_EPCNT;
-        PC802_WRITE_REG(ext->MB_C2H_RDNUM, nb_desc);
+        PC802_WRITE_REG(bar->MB_C2H_RDNUM, nb_desc);
     } else {
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
         rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];

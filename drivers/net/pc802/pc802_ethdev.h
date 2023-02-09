@@ -95,6 +95,7 @@ typedef struct PC802_BAR_t {
             uint32_t DBGRCAH;
             uint32_t MB_ANDES_DIS;
             uint32_t MB_DSP_DIS;
+            uint32_t MB_C2H_RDNUM;
         };
     };
     union {
@@ -355,7 +356,6 @@ struct PC802_BAR_Ext_t {
         uint32_t _a1[8];
         struct {
             uint32_t MB_C2H_RCCNT;
-            uint32_t MB_C2H_RDNUM;
             uint32_t VEC_RCCNT;
             uint32_t VEC_BUFSIZE;
             uint32_t VEC_BUFADDRL;
