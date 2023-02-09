@@ -561,7 +561,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
-    static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM] = {0};
+    static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM + 1] = {0};
 #if 0
     uint64_t tstart, tend, tdiff;
     tstart = rte_rdtsc();
@@ -637,6 +637,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
+    if (PC802_TRAFFIC_MAILBOX == queue_id)
+        return nb_rx;
     if( nb_rx )
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
     last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
