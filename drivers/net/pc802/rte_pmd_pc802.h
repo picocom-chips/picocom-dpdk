@@ -22,6 +22,7 @@ extern "C" {
     syslog(RTE_LOG_INFO, "NPU: %s : %u " format, __func__, __LINE__, ##__VA_ARGS__)
 
 #define  DBLOG_INFO(format, ...)
+#define  DBLOG_NONE(...)
 
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
