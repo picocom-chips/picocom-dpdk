@@ -2959,6 +2959,10 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         DBLOG("  0x%08X  0x%08X  0x%08X  0x%08X\n", mb[0].arguments[4], mb[0].arguments[5],
             mb[0].arguments[6], mb[0].arguments[7]);
     }
+    if (mb->blocked) {
+        PC802_BAR_Ext_t * ext = pc802_get_BAR_Ext(port_id);
+        pc802_write_mailbox_reg(ext, core, pc802_mailbox_rc_counter[port_idx][core] + 1, 1);
+    }
 
     return 1;
 }
