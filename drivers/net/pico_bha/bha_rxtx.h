@@ -13,7 +13,7 @@
 #define BHA_DESC_ALIGN_NUM 8
 
 #define BHA_RXQ_MAX_NUM 5 //hw define
-#define BHA_TXQ_MAX_NUM 1 //hw define
+#define BHA_TXQ_MAX_NUM 5 //hw define
 
 #define BHA_MAX_SEGMENTS_NUM 32 //[TODO] confirm
 #define BHA_MAX_TSO_SEGS_NUM 32 //[TODO] confirm

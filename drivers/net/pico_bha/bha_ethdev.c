@@ -66,6 +66,11 @@
 #define BHA_FILTER_ET_STR       "et"
 
 
+//BHA TAP mode. ipsec-gw need enable rx checksum offload
+#define BHA_RX_OFFLOAD  (RTE_ETH_RX_OFFLOAD_IPV4_CKSUM | \
+                         RTE_ETH_RX_OFFLOAD_UDP_CKSUM |  \
+                         RTE_ETH_RX_OFFLOAD_TCP_CKSUM)
+
 
 static int
 eth_bha_configure(struct rte_eth_dev* dev)
@@ -128,8 +133,13 @@ eth_bha_infos_get(__rte_unused struct rte_eth_dev* dev,
     dev_info->max_mtu = dev_info->max_rx_pktlen - (RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN);
     dev_info->min_mtu = RTE_ETHER_MIN_MTU;
 
+#ifdef RTE_NET_BHA_MODEL_EN
+    dev_info->rx_queue_offload_capa = BHA_RX_OFFLOAD;
+    dev_info->rx_offload_capa = dev_info->rx_queue_offload_capa;
+#else
     dev_info->rx_queue_offload_capa = 0;
     dev_info->rx_offload_capa = 0;
+#endif
     dev_info->tx_queue_offload_capa = 0;
     dev_info->tx_offload_capa = 0;
 

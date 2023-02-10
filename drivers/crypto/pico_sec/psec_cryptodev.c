@@ -678,9 +678,8 @@ psec_cryptodev_sym_dequeue_burst(void* queue_pair, struct rte_crypto_op** ops,
         if ((*(volatile uint64_t*)rsp) != 0) {
             PSEC_LOG(ERR, "psec[%d] qp[%d] dequeue response 0x%lx", qp->dev_id, qp->qp_id, (*(volatile uint64_t*)rsp));
             dequeue_op->status = RTE_CRYPTO_OP_STATUS_ERROR;
-            break;
-        }
-        dequeue_op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
+        } else
+            dequeue_op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
 
         ops[nb_dequeued] = dequeue_op;
 
@@ -737,8 +736,8 @@ cryptodev_psec_create(const char* name,
 
     dev->feature_flags = RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO
                        | RTE_CRYPTODEV_FF_HW_ACCELERATED
-                       | RTE_CRYPTODEV_FF_IN_PLACE_SGL;
-                       //| RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING
+                       | RTE_CRYPTODEV_FF_IN_PLACE_SGL
+                       | RTE_CRYPTODEV_FF_SYM_OPERATION_CHAINING;
                        //| RTE_CRYPTODEV_FF_DIGEST_ENCRYPTED
                        //| RTE_CRYPTODEV_FF_SYM_RAW_DP;
                        //| RTE_CRYPTODEV_FF_OOP_SGL_IN_SGL_OUT
