@@ -48,6 +48,7 @@
 
 //enable tap mode and input specific tap device
 #define BHA_MODE_TAP_ARG    "tap"
+#define BHA_MODE_TRACE_ARG  "tracing"
 //support queue numbers
 #define BHA_MAX_RXQN_ARG    "max_rxq_nb"
 //queue number to config default rx queue
@@ -283,6 +284,7 @@ eth_bha_close(struct rte_eth_dev* dev)
 #ifdef RTE_NET_BHA_MODEL_EN
     //bha model abort
     bha_abort();
+    bha_logger_dis();
 #endif
 
     return 0;
@@ -470,11 +472,13 @@ eth_bha_parse_input_params(struct rte_eth_dev* eth_dev, const char *params)
     int ret = 0;
 #ifdef RTE_NET_BHA_MODEL_EN
     char *ifname;
+    int trace_lvl = -1;
 #endif
 
     const char *valid_arguments[] = {
 #ifdef RTE_NET_BHA_MODEL_EN
         BHA_MODE_TAP_ARG,
+        BHA_MODE_TRACE_ARG,
 #endif
         BHA_MAX_RXQN_ARG,
         BHA_DEFAULTQ_ARG,
@@ -503,9 +507,33 @@ eth_bha_parse_input_params(struct rte_eth_dev* eth_dev, const char *params)
         } else {
             if (is_valid_tap_iface(adapter->tap_ifname)) {
                 BHA_LOG(DEBUG, "ethdev bha model get iface[%s] and enable tap mode", adapter->tap_ifname);
-                bha_simulate_tap(adapter->tap_ifname);
+                bha_simulate_tap(adapter->tap_ifname, rte_lcore_id());
                 adapter->tap_mode_en = true;
             }
+        }
+
+        ret = rte_kvargs_process(kvlist,
+                BHA_MODE_TRACE_ARG,
+                &get_int_val_arg, &trace_lvl);
+        if (ret < 0) {
+            BHA_LOG(DEBUG, "ethdev bha model parse tracing level fail. ret %d", ret);
+        } else {
+            BHA_LOG(DEBUG, "ethdev bha model parse tracing level %d", trace_lvl);
+            switch (trace_lvl) {
+                case BHA_TRACING_REG_ONLY:
+                    adapter->tracing_level = BHA_TRACING_REG_ONLY;
+                    break;
+                case BHA_TRACING_NO_REG:
+                    adapter->tracing_level = BHA_TRACING_NO_REG;
+                    break;
+                case BHA_TRACING_FULL:
+                    adapter->tracing_level = BHA_TRACING_FULL;
+                    break;
+                default:
+                    adapter->tracing_level = BHA_ENV_LOGGER;
+                    break;
+            }
+            bha_logger_en(adapter->tracing_level);
         }
 #endif
 
@@ -666,6 +694,7 @@ RTE_LOG_REGISTER_DEFAULT(bha_logtype, NOTICE);
 RTE_PMD_REGISTER_PARAM_STRING(net_bha,
 #ifdef RTE_NET_BHA_MODEL_EN
                             BHA_MODE_TAP_ARG "=<string>"
+                            BHA_MODE_TRACE_ARG "=<int>"
 #endif
                             BHA_MAX_RXQN_ARG "=<uint32>"
                             BHA_DEFAULTQ_ARG "=<int>"

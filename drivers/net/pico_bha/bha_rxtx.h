@@ -9,7 +9,7 @@
 
 
 #define BHA_MIN_DESC_NUM 8
-#define BHA_MAX_DESC_NUM 1024
+#define BHA_MAX_DESC_NUM 4096
 #define BHA_DESC_ALIGN_NUM 8
 
 #define BHA_RXQ_MAX_NUM 5 //hw define
@@ -19,7 +19,7 @@
 #define BHA_MAX_TSO_SEGS_NUM 32 //[TODO] confirm
 
 #define BHA_RX_BUF_MIN_SIZE 64   //[TODO] confirm
-#define BHA_RX_PKT_MAX_LEN  9000 //[TODO] confirm
+#define BHA_RX_PKT_MAX_LEN  9600 //[TODO] confirm
 
 
 struct bha_pkt_stats {

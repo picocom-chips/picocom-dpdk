@@ -369,7 +369,7 @@ void test_bha_crypto_aes256_gcm(void)
     uint8_t *ciphertext, *digest_tag, *aad_data, *iv_data, *plaintext;
     int ret = 0;
 
-    bha_logger_en();
+    //bha_logger_en();
     //bha_ipsec_simulate();
 
     test_bha_crypto_init();

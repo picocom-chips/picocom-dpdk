@@ -56,6 +56,8 @@
         # dqn - default queue id setting for rx packets of not match any filters. Currently support queue (0~4)
         # et?_qid - eth type filter (? is id[0~3]) bonding rx queue id. For example "et0_qid=0". Currently support eth type id (0~3)
         # et? - eth type filter configure type. For example "et0=0xaefe". So the bonding id rx queue 0 will receive ecpri type(0xaefe) packets only
+        # tracing - used to capture statistics data. For example "tracing=2", the input parameters defined in BHA model header file "bha_model.h" for enum "BhaLoggerLvl".
 
     4) BHA model crypto input parameters help
         # salt_parse_from_key - parse salt behind key if get input parameter is "yes", and the IV should remove the first 4Bytes salt; if get "no" or not setting it, the salt is in IV for first 4Bytes
+        # tracing - used to capture statistics data. For example "tracing=2", the input parameters defined in BHA model header file "bha_model.h" for enum "BhaLoggerLvl".

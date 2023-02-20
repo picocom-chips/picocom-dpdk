@@ -99,7 +99,7 @@ test_bha_model_pcap_mode_enable(enum bha_pcap_pkt_e pkt)
     TESTBHA_LOG(DEBUG, "port[%d] ethdev bha pcap input: %s\n", bha_portid, pcap_input_file);
     TESTBHA_LOG(DEBUG, "port[%d] ethdev bha pcap output: %s\n", bha_portid, pcap_output_file);
     TESTBHA_LOG(DEBUG, "port[%d] ethdev bha modle enable pcap mode\n", bha_portid);
-    bha_simulate_pcap(pcap_input_file, pcap_output_file);
+    bha_simulate_pcap(pcap_input_file, pcap_output_file, rte_lcore_id());
 }
 
 static void

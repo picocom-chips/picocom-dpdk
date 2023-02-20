@@ -16,9 +16,13 @@
 
 
 #define PSEC_PARSE_SALT_FROM_KEY_ARG        ("salt_parse_from_key")
+#define PSEC_TRACING_LEVEL_ARG              ("tracing")
 
 struct psec_pmd_init_params {
     struct rte_cryptodev_pmd_init_params common;
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    BhaLoggerLvl tracing_level;
+#endif
     bool salt_parse_from_key; //separate input salt behind key
 };
 
@@ -545,7 +549,7 @@ psec_cryptodev_sym_enqueue_burst(void* queue_pair, struct rte_crypto_op** ops,
     }
 
     while (nb_ops_sent != nb_ops_possible) {
-        op = (struct rte_crypto_op*)(*ops);
+        op = ops[nb_ops_sent];
         sym_op = op->sym;
         if (op->sess_type == RTE_CRYPTO_OP_WITH_SESSION) {
             if (likely(sym_op->session != NULL))
@@ -575,7 +579,6 @@ psec_cryptodev_sym_enqueue_burst(void* queue_pair, struct rte_crypto_op** ops,
 
         //update
         req_id = req_id_next;
-        ops++;
         nb_ops_sent++;
         queue->nb_desc_free--;
     }
@@ -583,6 +586,9 @@ psec_cryptodev_sym_enqueue_burst(void* queue_pair, struct rte_crypto_op** ops,
 exit_sym_enqueue:
 
     //PSEC_LOG(DEBUG, "enqueue[%d] build all request done. nb_enqueued %d, q nb desc free %d, req id %d", qp->qp_id, nb_ops_sent, queue->nb_desc_free, req_id);
+    if (nb_ops_sent == 0)
+        return 0;
+
     //update producer ptr
     producer_ptr.ptr = psec_ring_advance_p_n(qp->reg_base, qp->nb_desc, nb_ops_sent);
     queue->p_ptr.idx = req_id;
@@ -676,7 +682,7 @@ psec_cryptodev_sym_dequeue_burst(void* queue_pair, struct rte_crypto_op** ops,
         out_list = queue->sw_ring[rsp_id].out_list;
         rsp = &(ring_rsp[rsp_id]);
         if ((*(volatile uint64_t*)rsp) != 0) {
-            PSEC_LOG(ERR, "psec[%d] qp[%d] dequeue response 0x%lx", qp->dev_id, qp->qp_id, (*(volatile uint64_t*)rsp));
+            PSEC_LOG(DEBUG, "psec[%d] qp[%d] dequeue response 0x%lx", qp->dev_id, qp->qp_id, (*(volatile uint64_t*)rsp));
             dequeue_op->status = RTE_CRYPTO_OP_STATUS_ERROR;
         } else
             dequeue_op->status = RTE_CRYPTO_OP_STATUS_SUCCESS;
@@ -700,13 +706,13 @@ psec_cryptodev_sym_dequeue_burst(void* queue_pair, struct rte_crypto_op** ops,
         }
         rsp_id = rsp_id_next;
 
-        ops++;
         nb_dequeued++;
         nb_desc_avail--;
 
         queue->c_ptr.idx = rsp_id;
         queue->c_ptr.wrap = wrap_flag;
         queue->nb_dequeue_valid = nb_desc_avail;
+        queue->nb_desc_free++;
     }
 
     return nb_dequeued;
@@ -751,7 +757,9 @@ cryptodev_psec_create(const char* name,
     internals->salt_parse_from_key = init_params->salt_parse_from_key;
 
 #ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
-    bha_ipsec_simulate();
+    internals->tracing_level = init_params->tracing_level;
+    bha_ipsec_simulate(rte_lcore_id());
+    bha_logger_en(internals->tracing_level);
 #endif
 
     rte_cryptodev_pmd_probing_finish(dev);
@@ -820,6 +828,7 @@ psec_cryptodev_parse_input_params(struct psec_pmd_init_params *init_params, cons
 {
     int max_qp_nb = -1;
     int socket_id = -1;
+    int trace_lvl = -1;
     bool salt_parse = false;
     char* name_psec;
     struct rte_kvargs *kvlist = NULL;
@@ -828,6 +837,9 @@ psec_cryptodev_parse_input_params(struct psec_pmd_init_params *init_params, cons
         RTE_CRYPTODEV_PMD_NAME_ARG,
         RTE_CRYPTODEV_PMD_MAX_NB_QP_ARG,
         RTE_CRYPTODEV_PMD_SOCKET_ID_ARG,
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+        PSEC_TRACING_LEVEL_ARG,
+#endif
         PSEC_PARSE_SALT_FROM_KEY_ARG,
         NULL
     };
@@ -869,6 +881,31 @@ psec_cryptodev_parse_input_params(struct psec_pmd_init_params *init_params, cons
                 init_params->common.socket_id = socket_id;
             }
         }
+
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+        ret = rte_kvargs_process(kvlist,
+                PSEC_TRACING_LEVEL_ARG,
+                &get_int_val_arg, &trace_lvl);
+        if (ret < 0) {
+            PSEC_LOG(ERR, "psec parse tracing level fail. ret %d", ret);
+        } else {
+            PSEC_LOG(DEBUG, "psec parse tracing level %d", trace_lvl);
+            switch (trace_lvl) {
+                case BHA_TRACING_REG_ONLY:
+                    init_params->tracing_level = BHA_TRACING_REG_ONLY;
+                    break;
+                case BHA_TRACING_NO_REG:
+                    init_params->tracing_level = BHA_TRACING_NO_REG;
+                    break;
+                case BHA_TRACING_FULL:
+                    init_params->tracing_level = BHA_TRACING_FULL;
+                    break;
+                default:
+                    init_params->tracing_level = BHA_ENV_LOGGER;
+                    break;
+            }
+        }
+#endif
 
         ret = rte_kvargs_process(kvlist,
                 PSEC_PARSE_SALT_FROM_KEY_ARG,
@@ -943,6 +980,9 @@ RTE_PMD_REGISTER_ALIAS(crypto_psec, cryptodev_psec_pmd);
 RTE_PMD_REGISTER_PARAM_STRING(crypto_psec,
     "max_nb_queue_pairs=<int> "
     "socket_id=<int>"
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    "tracing=<int>"
+#endif
     "salt_parse_from_key=yes|no");
 RTE_PMD_REGISTER_CRYPTO_DRIVER(psec_crypto_drv, cryptodev_psec_pmd_drv.driver,
     cryptodev_driver_id);

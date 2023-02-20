@@ -166,6 +166,7 @@ psec_cryptodev_close(__rte_unused struct rte_cryptodev* dev)
 
 #ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
     bha_ipsec_abort();
+    bha_logger_dis();
 #endif
     return 0;
 }

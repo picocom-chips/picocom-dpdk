@@ -33,6 +33,9 @@ struct psec_crypto_private {
     struct rte_cryptodev* dev;
     unsigned int max_nb_qpairs;
     bool salt_parse_from_key;
+#ifdef RTE_CRYPTO_BHA_SEC_MODEL_EN
+    BhaLoggerLvl tracing_level;
+#endif
 };
 
 struct psec_sym_session {

@@ -24,6 +24,7 @@ struct bha_adapter {
     //bha model tap mode
     char tap_ifname[RTE_ETH_NAME_MAX_LEN];
     bool tap_mode_en;
+    BhaLoggerLvl tracing_level;
 #endif
 };
 
