@@ -2733,10 +2733,14 @@ static int trace_action_type[PC802_INDEX_MAX][32];
 static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
 static uint32_t trace_num_args[PC802_INDEX_MAX][32];
 static uint32_t trace_idx[PC802_INDEX_MAX][32];
+static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
 
 enum {
     TRACE_ACTION_GENERIC,
     TRACE_ACTION_PRINTF,
+    TRACE_ACTION_SSBL_LOAD = 0x8000,
+    TRACE_ACTION_SSBL_END,
+    TRACE_ACTION_END,
     TRACE_ACTION_IDLE = 0xFFFFFFFF
 };
 
@@ -2765,11 +2769,19 @@ static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata
     }
 }
 
+void mb_set_ssbl_end(void);
+
 static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
     //PC802_LOG( port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
     if (TRACE_ACTION_IDLE == trace_action_type[port_idx][core]) {
         trace_action_type[port_idx][core] = tdata;
+        if (TRACE_ACTION_SSBL_END == tdata) {
+            assert(core == 0);
+            PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
+            trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+            mb_set_ssbl_end();
+        }
         return;
     }
 
@@ -2781,6 +2793,15 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
 
     if (TRACE_ACTION_PRINTF == trace_action_type[port_idx][core]) {
         handle_trace_printf(port_idx, core, tdata);
+        return;
+    }
+
+    if (TRACE_ACTION_SSBL_LOAD == trace_action_type[port_idx][core]) {
+        assert(core == 0);
+        ssbl__cim_end[port_idx] = tdata;
+        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL__cim_end[%u] = 0x%08X\n", port_idx, tdata);
+        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+        return;
     }
 }
 
