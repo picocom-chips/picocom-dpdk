@@ -3146,6 +3146,8 @@ static void * pc802_debug(__rte_unused void *data)
     return NULL;
 }
 
+int mb_ssbl_image_ok();
+
 static void * pc802_trace_thread(__rte_unused void *data)
 {
     int i = 0;
@@ -3160,6 +3162,8 @@ static void * pc802_trace_thread(__rte_unused void *data)
             trace_action_type[i][j] = TRACE_ACTION_IDLE;
         }
     }
+
+    while (0 == mb_ssbl_image_ok());
 
     while( 1 )
     {
