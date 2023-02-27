@@ -79,3 +79,17 @@ New features
 
 Bug fixes
 *********
+
+PC802 driver 2.3
+##################
+
+New features
+************
+* NDF-90: mailbox v3 on NPU DPDK driver
+=======================================
+
+mailbox v3 supports NPU output printf from PC802 booted by FSBL v0
+and also reduces much CPU load of mailbox thread on NPU side.
+
+Bug fixes
+*********
