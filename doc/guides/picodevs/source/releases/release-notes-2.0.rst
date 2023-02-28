@@ -91,5 +91,7 @@ New features
 mailbox v3 supports NPU output printf from PC802 booted by FSBL v0
 and also reduces much CPU load of mailbox thread on NPU side.
 
+* SI-1584: support SSBL printf
+
 Bug fixes
 *********
