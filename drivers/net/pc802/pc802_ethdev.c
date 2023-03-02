@@ -2345,6 +2345,7 @@ __next_pfi_0_vec_read:
 
     if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
+        perror(__func__);
         return -5;
     }
 
