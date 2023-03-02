@@ -1074,6 +1074,10 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //bool autoneg;
 
     PMD_INIT_FUNC_TRACE();
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+        return 0;
+    }
 
     eth_pc802_stop(dev);
 
@@ -1088,11 +1092,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     adapter->stopped = 0;
 
-    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
-    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
-    PC802_WRITE_REG(bar->DBAL, laddr);
-    PC802_WRITE_REG(bar->DBAH, haddr);
-    DBLOG("DBA = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
 
     volatile uint32_t devRdy;
     volatile uint32_t drv_state;
@@ -1107,7 +1106,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     do {
         usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (devRdy < 5);
+    } while (devRdy != 5);
     old_drv_state = PC802_READ_REG(bar->DRVSTATE);
     old_devRdy = devRdy;
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
@@ -1684,6 +1683,25 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    pc802_devices[num_pc802s] = adapter;
+    num_pc802s++;
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        uint32_t drv_state;
+        bar = (PC802_BAR_t *)adapter->bar0_addr;
+        do {
+            usleep(1);
+            drv_state = PC802_READ_REG(bar->DRVSTATE);
+        } while (drv_state != 3);
+        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
+        uint32_t DBAH = PC802_READ_REG(bar->DBAH);
+        uint32_t DBAL = PC802_READ_REG(bar->DBAL);
+        DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
+        sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
+        const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
+        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        return 0;
+    }
     data = eth_dev->data;
     data->nb_rx_queues = 1;
     data->nb_tx_queues = 1;
@@ -1719,9 +1737,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
-    adapter->port_index = num_pc802s;
-    pc802_devices[num_pc802s] = adapter;
-    num_pc802s++;
+    adapter->port_index = num_pc802s-1;
 
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
         DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
@@ -1788,7 +1804,13 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
     DBLOG("descs_virt_addr = %p\n", adapter->pDescs);
 
+    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
+    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
+    PC802_WRITE_REG(bar->DBAL, laddr);
+    PC802_WRITE_REG(bar->DBAH, haddr);
+    DBLOG("Descriptor Rings Base = 0x%08X %08X\n", bar->DBAH, bar->DBAL);
     PC802_WRITE_REG(bar->DEVEN, 0);
+    DBLOG("NPU clear PC802 prot %d DEVEN = 0\n", adapter->port_id);
     usleep(1000);
 
     adapter->started = 1;
@@ -1920,6 +1942,7 @@ static int pc802_download_boot_image(uint16_t port)
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
         N = 0;
     } while (1);
+    printf("\n");
 
     *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
     fclose(fp);
