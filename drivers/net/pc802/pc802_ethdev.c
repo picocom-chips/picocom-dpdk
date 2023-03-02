@@ -2497,7 +2497,7 @@ __next_non_pfi_0_vec_read:
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
     PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
+    PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
     RCCNT++;
