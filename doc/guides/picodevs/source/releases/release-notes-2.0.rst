@@ -97,3 +97,13 @@ and also reduces much CPU load of mailbox thread on NPU side.
 Bug fixes
 *********
 * NDF-99: fix build warnings of PC802 driver and test cases
+
+PC802 driver 2.4
+##################
+
+New features
+************
+* SI-1602: PC802 can stop PCIe mini trace
+
+Bug fixes
+*********
