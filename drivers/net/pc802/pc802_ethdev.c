@@ -2423,8 +2423,9 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     FILE *fh_vector;
 
     if (is_core_dump) {
-        sprintf(file_name, "core_dump_%u_%u.elf", port_id, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", port_id, file_name);
+        uint16_t pc802_index = pc802_get_port_index(port_id);
+        sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
+        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else {
         get_vector_path(port_id, file_path);
@@ -2579,8 +2580,9 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
     FILE * fh_vector;
 
     if (is_core_dump) {
-        sprintf(file_name, "core_dump_%u_%u.elf", port_id, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", port_id, file_name);
+        uint16_t pc802_index = pc802_get_port_index(port_id);
+        sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
+        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else {
         get_vector_path(port_id, file_path);
