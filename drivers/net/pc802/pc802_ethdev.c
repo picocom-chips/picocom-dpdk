@@ -2778,7 +2778,7 @@ enum TraceAction_e {
     TRACE_ACTION_PRINTF,
     TRACE_ACTION_SSBL_LOAD = 0x8000,
     TRACE_ACTION_SSBL_END,
-    TRACE_ACTION_END,
+    TRACE_ACTION_END = 0xFFFF,
     TRACE_ACTION_IDLE = 0xFFFFFFFF
 };
 
@@ -2787,6 +2787,7 @@ static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
 static uint32_t trace_num_args[PC802_INDEX_MAX][32];
 static uint32_t trace_idx[PC802_INDEX_MAX][32];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
+static uint32_t trace_disable[PC802_INDEX_MAX] = {0};
 
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
@@ -2820,6 +2821,11 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
     //PC802_LOG( port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
     if (TRACE_ACTION_IDLE == trace_action_type[port_idx][core]) {
         trace_action_type[port_idx][core] = tdata;
+        if (TRACE_ACTION_END == tdata) {
+            PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "My PCIe mini trace END !\n");
+            trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+            trace_disable[port_idx] |= (1 << core);
+        }
         if (TRACE_ACTION_SSBL_END == tdata) {
             assert(core == 0);
             PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
@@ -2867,6 +2873,8 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     }
 
     for (core = 0; core < 32; core++) {
+        if (trace_disable[port_index] & (1 <<core))
+            continue;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
@@ -3208,11 +3216,17 @@ static void * pc802_trace_thread(__rte_unused void *data)
 
     while (0 == mb_ssbl_image_ok());
 
+    uint32_t active;
+
     while( 1 )
     {
         num = 0;
+        active = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
+            if (trace_disable[i] == 0xFFFFFFFF)
+                continue;
+            active++;
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
         }
@@ -3220,6 +3234,8 @@ static void * pc802_trace_thread(__rte_unused void *data)
             pc802_log_flush();
             nanosleep(&req, NULL);
         }
+        if (active == 0)
+            break;
     }
     return NULL;
 }
