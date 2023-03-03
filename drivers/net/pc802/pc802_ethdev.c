@@ -1686,6 +1686,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     pc802_devices[num_pc802s] = adapter;
     num_pc802s++;
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        DBLOG("Secondary PC802 process is waiting for completion of PCIe initialization ...\n");
         uint32_t drv_state;
         bar = (PC802_BAR_t *)adapter->bar0_addr;
         do {
@@ -1815,6 +1816,11 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     adapter->started = 1;
 
+    if (1 == num_pc802s) {
+        pthread_t tid;
+        pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
+    }
+
     PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
              eth_dev->data->port_id, pci_dev->id.vendor_id,
              pci_dev->id.device_id);
@@ -1871,10 +1877,8 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 /* see e1000_logs.c */
 RTE_INIT(picocom_pc802_init_log)
 {
-    pthread_t tid;
     printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
-    pc802_ctrl_thread_create( &tid, "PC802-Debug", NULL, pc802_debug, NULL);
 }
 
 char * picocom_pc802_version(void)
