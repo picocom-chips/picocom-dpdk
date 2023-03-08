@@ -96,21 +96,11 @@ static const struct rte_eth_conf dev_conf = {
 #ifdef MULTI_PC802
 #define PCXX_CALL0(fun,dev) fun(dev)
 #define PCXX_CALL(fun,dev,cell) fun(dev,cell)
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 #else
 #define PCXX_CALL0(fun,dev) fun()
 #define PCXX_CALL(fun,dev,cell) fun()
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 #endif
 
-static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
 
@@ -123,7 +113,6 @@ static int port_init( uint16_t pc802_index )
     //const struct rte_eth_rxconf rx_conf;
     char temp_name[32] = {0};
     int socket_id;
-    uint16_t cell;
     int port = pc802_get_port_id(pc802_index);
     if ( port < 0 )
         rte_exit( EXIT_FAILURE, "pc802 %d is notexist !\n", pc802_index );
@@ -357,87 +346,15 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
     return;
 }
 
+#ifdef MULTI_PC802
 static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
 static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2};
-
-static union {
-    const char *cc;
-    uint32_t   *up;
-} dl_a[PC802_INDEX_MAX][CELL_NUM_PRE_DEV][17];
-static uint32_t dl_a_num[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
+#else
+static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1};
+static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1};
+#endif
 
 static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
-
-#ifdef MULTI_PC802
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-#else
-static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#endif
-    payloadSize = payloadSize;
-    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
-    dl_a_num[dev_index][cell_index]++;
-    return 0;
-}
-
-#ifdef MULTI_PC802
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-#else
-static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#endif
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t *dl_msg;
-    dl_msg = dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index] - 1].up;
-    if (check_same(&dl_msg, 1, ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 1;
-    }
-    dl_a_num[dev_index][cell_index] = 0;
-    return payloadSize;
-}
-
-#ifdef MULTI_PC802
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-#else
-static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#endif
-    payloadSize = payloadSize;
-    dl_a[dev_index][cell_index][dl_a_num[dev_index][cell_index]].cc = buf;
-    dl_a_num[dev_index][cell_index]++;
-    return 0;
-}
-
-#ifdef MULTI_PC802
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-#else
-static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#endif
-    uint64_t addr = (uint64_t)buf;
-    uint32_t *ul_msg = (uint32_t *)addr;
-    swap_msg(ul_msg, payloadSize);
-    uint32_t **dl_msg;
-    dl_msg = &dl_a[dev_index][cell_index][0].up;
-    if (check_same(dl_msg, dl_a_num[dev_index][cell_index] - 1, ul_msg)) {
-        atl_test_result[dev_index][cell_index] |= 2;
-    }
-    return payloadSize;
-}
 
 static int case1(void)
 {
