@@ -1671,10 +1671,9 @@ int main(int argc, char** argv)
         port_id = pc802_get_port_id(pc802_index);
         if (port_id < 0)
             break;
-
-        port_init(pc802_index);
+        //port_init(pc802_index);
     }
-    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
+    prompt(NULL);
 
     while(!main_stop) {
         usleep(10);

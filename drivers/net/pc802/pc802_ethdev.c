@@ -1195,8 +1195,17 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PMD_INIT_FUNC_TRACE();
 
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
-        return 0;
+        int delay = 30;
+        while (delay-- )
+        {
+            if ( 3 == PC802_READ_REG(bar->DRVSTATE)) {
+                DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+                return 0;
+            }
+            sleep(1);
+        }
+        DBLOG("PC802 not ready(DRVSTATE=%d DEVRDY=%d), secondary process will start pc802.\n",
+                PC802_READ_REG(bar->DRVSTATE), PC802_READ_REG(bar->DEVRDY));
     }
 
     eth_pc802_stop(dev);
@@ -1811,23 +1820,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     pc802_devices[num_pc802s] = adapter;
     num_pc802s++;
-    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        uint32_t drv_state;
-        bar = (PC802_BAR_t *)adapter->bar0_addr;
-        do {
-            usleep(1);
-            drv_state = PC802_READ_REG(bar->DRVSTATE);
-        } while (drv_state != 3);
-        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
-        uint32_t DBAH = PC802_READ_REG(bar->DBAH);
-        uint32_t DBAL = PC802_READ_REG(bar->DBAL);
-        DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
-        sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
-        const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
-        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
-        DBLOG("mz_s->addr = %p\n", mz_s->addr);
-        return 0;
-    }
 
     data = eth_dev->data;
     data->nb_rx_queues = 1;
@@ -1848,6 +1840,23 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
 
     rte_eth_copy_pci_info(eth_dev, pci_dev);
+
+    if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
+        uint32_t drv_state;
+        bar = (PC802_BAR_t *)adapter->bar0_addr;
+        drv_state = PC802_READ_REG(bar->DRVSTATE);
+        DBLOG("Secondary PC802 App detect drv_state = %d !\n", drv_state);
+        uint32_t DBAH = PC802_READ_REG(bar->DBAH);
+        uint32_t DBAL = PC802_READ_REG(bar->DBAL);
+        DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
+        sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
+        const struct rte_memzone *mz_s;
+        while(NULL == (mz_s = rte_memzone_lookup(temp_name)))
+            usleep(1000);
+        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        return 0;
+    }
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     bar = (PC802_BAR_t *)adapter->bar0_addr;
