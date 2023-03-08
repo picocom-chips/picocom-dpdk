@@ -96,3 +96,4 @@ and also reduces much CPU load of mailbox thread on NPU side.
 
 Bug fixes
 *********
+* NDF-99: fix build warnings of PC802 driver and test cases
