@@ -19,7 +19,7 @@ static const char * (*get_mb_string)(uint32_t addr, uint32_t core);
 static const char * mb_get_string_N(uint32_t addr, uint32_t core);
 static const char * mb_get_string_d(uint32_t addr, uint32_t core);
 void mb_set_ssbl_end(void);
-int mb_ssbl_image_ok();
+int mb_ssbl_image_ok(void);
 
 typedef union {
     uint32_t _ed[16];
@@ -103,7 +103,7 @@ static int mb_string_common(void)
     return retval;
 }
 
-int mb_ssbl_image_ok()
+int mb_ssbl_image_ok(void)
 {
     return ssbl_img_ok;
 }

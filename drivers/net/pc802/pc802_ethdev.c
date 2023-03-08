@@ -252,7 +252,11 @@ static uint16_t pc802_get_port_index(uint16_t port_id)
 int pc802_get_port_id(uint16_t pc802_index)
 {
     static int32_t port_num = 0;
+#ifdef MULTI_PC802
     static int32_t port_id[PC802_INDEX_MAX] = {-1,-1,-1,-1};
+#else
+    static int32_t port_id[PC802_INDEX_MAX] = {-1};
+#endif
     int index = 0;
     int i;
     struct rte_pci_device *pci_dev;
@@ -1858,7 +1862,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar;
-    uint32_t dsp;
     char temp_name[32] = {0};
 
     pc802_devices[num_pc802s] = adapter;
@@ -2728,7 +2731,7 @@ static void * pc802_vec_access(__rte_unused void *data)
     MbVecAccess_t msg;
     int fd;
     uint32_t command;
-    uint32_t re;
+    uint32_t re = 0;
     uint16_t port_idx;
     uint8_t result;
 
@@ -2767,13 +2770,7 @@ static void * pc802_vec_access(__rte_unused void *data)
     return 0;
 }
 
-static int trace_action_type[PC802_INDEX_MAX][32];
-static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
-static uint32_t trace_num_args[PC802_INDEX_MAX][32];
-static uint32_t trace_idx[PC802_INDEX_MAX][32];
-static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
-
-enum {
+enum TraceAction_e {
     TRACE_ACTION_GENERIC,
     TRACE_ACTION_PRINTF,
     TRACE_ACTION_SSBL_LOAD = 0x8000,
@@ -2782,11 +2779,17 @@ enum {
     TRACE_ACTION_IDLE = 0xFFFFFFFF
 };
 
+static enum TraceAction_e trace_action_type[PC802_INDEX_MAX][32];
+static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
+static uint32_t trace_num_args[PC802_INDEX_MAX][32];
+static uint32_t trace_idx[PC802_INDEX_MAX][32];
+static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
+
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
 static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata)
 {
-    int k;
+    uint32_t k;
     if (0 == trace_num_args[port_idx][core]) {
         trace_idx[port_idx][core] = 0;
         trace_num_args[port_idx][core] = tdata;
@@ -3050,7 +3053,6 @@ static int pc802_mailbox(void *data)
     uint16_t port_index = ((struct pc802_adapter *)data)->port_index;
     int num = 0;
     int re;
-    volatile uint32_t mb_idx;
 
     if ( adapter[port_index] == NULL )
     {
@@ -3184,7 +3186,7 @@ static void * pc802_debug(__rte_unused void *data)
     return NULL;
 }
 
-int mb_ssbl_image_ok();
+extern int mb_ssbl_image_ok(void);
 
 static void * pc802_trace_thread(__rte_unused void *data)
 {
