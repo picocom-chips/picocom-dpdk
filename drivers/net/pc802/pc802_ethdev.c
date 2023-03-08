@@ -1861,6 +1861,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     uint32_t dsp;
     char temp_name[32] = {0};
 
+    if (!num_pc802s)
+        syslog(LOG_INFO, "%s built at %s on %s.", picocom_pc802_version(), __TIME__, __DATE__ );
+
     pc802_devices[num_pc802s] = adapter;
     num_pc802s++;
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
@@ -2068,14 +2071,14 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 /* see e1000_logs.c */
 RTE_INIT(picocom_pc802_init_log)
 {
-    printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
+    printf( "%s lib built at %s on %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
     pc802_init_log();
 }
 
 char * picocom_pc802_version(void)
 {
     static char ver[256];
-    snprintf(ver, sizeof(ver), "PC802 Driver %s", PC802_UDRIVER_VERSION);
+    snprintf(ver, sizeof(ver), "PC802 UDriver %s", PC802_UDRIVER_VERSION);
     return ver;
 }
 
