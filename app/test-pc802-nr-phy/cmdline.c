@@ -47,7 +47,7 @@ struct cmd_start_result {
 };
 
 static void cmd_start_parsed(__attribute__((unused)) void *parsed_result,
-                struct cmdline *cl,
+                __attribute__((unused)) struct cmdline *cl,
                 __attribute__((unused)) void *data)
 {
     start_flag = 1;
@@ -71,7 +71,7 @@ struct cmd_stop_result {
 };
 
 static void cmd_stop_parsed(__attribute__((unused)) void *parsed_result,
-                struct cmdline *cl,
+                __attribute__((unused)) struct cmdline *cl,
                 __attribute__((unused)) void *data)
 {
     start_flag = 0;
