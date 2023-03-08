@@ -87,18 +87,16 @@ signal_handler(int signum)
 }
 
 static const struct rte_eth_conf dev_conf = {
-        .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
-        },
-    };
+    .rxmode = {
+        .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+    },
+};
 
 #ifdef MULTI_PC802
 #define PCXX_CALL0(fun,dev) fun(dev)
 #define PCXX_CALL(fun,dev,cell) fun(dev,cell)
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index );
 #else
@@ -106,14 +104,11 @@ static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint1
 #define PCXX_CALL(fun,dev,cell) fun()
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize);
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 #endif
 
 static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   oam_cb_info  = {process_ul_oam_msg,  process_dl_oam_msg };
 static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
@@ -197,19 +192,20 @@ static int produce_random_dl_src_data(uint32_t *buf, uint32_t msg_length)
 
 static int produce_dl_src_data(uint32_t *buf, uint16_t qId, uint32_t msg_length)
 {
+    (void)qId;
     produce_random_dl_src_data(buf, msg_length);
     return 0;
 }
 
 static int check_ul_msg(const char *buf)
 {
-    uint32_t *msg = (uint32_t *)buf;
+    const uint32_t *msg = (const uint32_t *)buf;
     uint32_t d = msg[0];
     uint32_t N = msg[1];
     uint32_t e = msg[2];
     int k;
     int M = (int)N;
-    uint32_t *p = &msg[3];
+    const uint32_t *p = &msg[3];
     e += d;
 
     for (k = 1; k < M; k++) {
@@ -251,26 +247,6 @@ static uint32_t __process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uin
     return payloadSize;
 }
 
-static uint32_t __process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
-{
-    VOID(buf);
-    VOID(payloadSize);
-    VOID(dev_index);
-    VOID(cell_index);
-
-    return 0;
-}
-
-static uint32_t __process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-    VOID(buf);
-    VOID(payloadSize);
-    VOID(dev_index);
-    VOID(cell_index);
-
-    return payloadSize;
-}
-
 static uint32_t __process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
     VOID(buf);
@@ -307,16 +283,6 @@ static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint1
     return __process_ul_ctrl_msg(buf, payloadSize, dev_index, cell_index);
 }
 
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, __rte_unused uint16_t cell_index )
-{
-    return __process_dl_oam_msg(buf, payloadSize, dev_index, cell_index );
-}
-
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
-{
-    return __process_ul_oam_msg(buf, payloadSize, dev_index, cell_index);
-}
-
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
 {
     return __process_dl_data_msg(buf, payloadSize, dev_index, cell_index);
@@ -335,16 +301,6 @@ static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize)
 static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize)
 {
     return __process_ul_ctrl_msg(buf, payloadSize, 0, 0);
-}
-
-static uint32_t process_dl_oam_msg(const char* buf, uint32_t payloadSize)
-{
-    return __process_dl_oam_msg(buf, payloadSize, 0, 0);
-}
-
-static uint32_t process_ul_oam_msg(const char* buf, uint32_t payloadSize )
-{
-    return __process_ul_oam_msg(buf, payloadSize, 0, 0);
 }
 
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize)
@@ -416,6 +372,7 @@ static int dl_worker(void *arg)
             N = 0;
         }
     }while(0 == quit_flag);
+    return 0;
 }
 
 static int ul_worker(void *arg)
@@ -464,14 +421,13 @@ static unsigned int get_a_isolated_lcore(void)
 {
     FILE *fp = NULL;
     char buffer[128] = {0};
-    char *ret = NULL;
     static unsigned int min = 0xFFFF;
     static unsigned int max;
     unsigned int lcore;
 
     if (0xFFFF == min) {
         fp = popen("cat /sys/devices/system/cpu/isolated", "r");
-        ret = fgets(buffer, sizeof(buffer), fp);
+        assert(NULL != fgets(buffer, sizeof(buffer), fp));
         pclose(fp);
         sscanf( buffer, "%u-%u", &min, &max);
     }
