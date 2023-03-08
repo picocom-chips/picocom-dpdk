@@ -32,7 +32,7 @@ checkout:
     - dpdk_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@glhk.picocomtech.com/tools/dpdk.git"
     - echo ${dpdk_URL}
     - if [ -d dpdk ]; then
-    -   rm -df dpdk
+    -   rm -rdf dpdk
     -   git clone ${dpdk_URL}
     -   pushd dpdk
     -   git log -2
