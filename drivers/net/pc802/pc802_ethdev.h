@@ -365,6 +365,10 @@ struct PC802_BAR_Ext_t {
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
+    union {
+        uint32_t _dump[16];
+        Mailbox_RC_t DUMP_RC[32];
+    };
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
@@ -412,6 +416,7 @@ typedef enum {
     MB_VEC_BIN_DUMP,            // 28 - Trigger binary file dump (host side)
     MB_RPC_CALL,                // 29 - Trigger RPC call
     MB_DDR_RUNNING,             // 30 - Notify host DDR is running
+    MB_DATA_DUMP,               // 31 - Phy in PC802 dump data without blocking
 } mailbox_action_t;
 
 typedef struct {
