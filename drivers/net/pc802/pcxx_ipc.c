@@ -287,10 +287,8 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
 }
 
 static uint64_t last_poll_ctrl;
-//static uint64_t last_poll_data;
 static uint64_t last_recv_ctrl;
 static uint64_t last_recv_ctrl_type_1;
-//static uint64_t last_recv_data;
 static uint32_t last_num_data;
 static uint32_t num_ctrl = 0;
 
@@ -373,13 +371,11 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
         return -1;
     mblk_ctrl = (PC802_Mem_Block_t *)(cell->rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
     if (1 == mblk_ctrl->pkt_type) {
-        //last_poll_data = rte_rdtsc();
         num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_DATA[cell_index], &mblk_data, 1);
         if (0 == num_rx)
             return -1;
         cell->rx_data_buf = (char *)&mblk_data[1];
         last_num_data++;
-        //last_recv_data = rte_rdtsc();
     }
 
     if (cell->rx_data_buf) {
