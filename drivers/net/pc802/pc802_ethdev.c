@@ -2016,7 +2016,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
-        pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
+        if (0xFFFFFFFF != bar->BOOTRCCNT) {
+            pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
+        }
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
@@ -2116,6 +2118,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
+        mb_set_ssbl_end();
         return 0;
     }
 
@@ -2813,8 +2816,6 @@ static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
     }
 }
-
-void mb_set_ssbl_end(void);
 
 static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t rccnt, uint32_t tdata)
 {
