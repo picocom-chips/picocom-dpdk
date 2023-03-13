@@ -318,7 +318,7 @@ int pcxxCheckRecv(void)
     static uint32_t num_data_recv_time_out = 0;
     if ((num_data_recv_time_out < 10) && (diff > cycles_of_a_slot) && (last_num_data == 0)) {
         NPU_SYSLOG("Warn: Data_Recv time out : diff = %lu", diff);
-        num_ctrl_recv_time_out++;
+        num_data_recv_time_out++;
     }
     return 0;
 }
