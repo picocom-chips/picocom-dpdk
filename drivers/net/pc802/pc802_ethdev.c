@@ -216,6 +216,7 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
+static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length, uint32_t flag);
 static void * pc802_debug(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access(void *data);
@@ -2406,11 +2407,11 @@ __next_pfi_0_vec_read:
 
 #define FILE_ID_PC802_CORE_DUMP_MIN     0x80000000
 
-static bool is_pc802_core_dump(uint32_t file_id, uint32_t address, uint32_t length)
+static bool is_pc802_core_dump(uint32_t command, uint32_t file_id, uint32_t address, uint32_t length)
 {
     (void)address;
     (void)length;
-    return (file_id > FILE_ID_PC802_CORE_DUMP_MIN);
+    return (file_id > FILE_ID_PC802_CORE_DUMP_MIN) && (MB_VEC_DUMP  == command);
 }
 
 // -----------------------------------------------------------------------------
@@ -2424,7 +2425,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
        return -1;
     }
 
-    bool is_core_dump = is_pc802_core_dump(file_id, address, length);
+    bool is_core_dump = is_pc802_core_dump(MB_VEC_DUMP, file_id, address, length);
 
     // Check if the golden vector file exists
     char file_path[PATH_MAX];
@@ -2574,15 +2575,16 @@ __next_non_pfi_0_vec_read:
 // -----------------------------------------------------------------------------
 // handle_vec_dump: Handle task vector dump requests
 // -----------------------------------------------------------------------------
-static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
+static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t file_id, uint32_t address, uint32_t length, uint32_t flag)
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
-       DBLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
+       DBLOG("ERROR: dump address and length must be word aligned!\n");
        return -1;
     }
 
-    bool is_core_dump = is_pc802_core_dump(file_id, address, length);
+    bool is_core_dump = is_pc802_core_dump(command, file_id, address, length);
+    bool is_data_dump = (MB_DATA_DUMP == command);
 
     char file_path[PATH_MAX];
     char file_name[PATH_MAX+NAME_MAX];
@@ -2593,6 +2595,16 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
         sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
         DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
+    } else if (is_data_dump) {
+        uint16_t pc802_index = pc802_get_port_index(port_id);
+        get_vector_path(port_id, file_path);
+        sprintf(file_name, "%s/%u_%u.bin", file_path, pc802_index, file_id);
+        DBLOG("Generating PC802 %d data dump file %s with flag = %u\n", pc802_index, file_name, flag);
+        if (flag) {
+            fh_vector = fopen(file_name, "wb");
+        } else {
+            fh_vector = fopen(file_name, "ab");
+        }
     } else {
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
@@ -2623,7 +2635,7 @@ __next_non_pfi_0_vec_dump:
     } while (EPCNT != RCCNT);
 
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-    if (is_core_dump) {
+    if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
     } else {
         for (offset = 0; offset < data_size; offset += 4) {
@@ -2646,6 +2658,16 @@ __next_non_pfi_0_vec_dump:
     return 0;
 }
 
+static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length)
+{
+    return handle_pc802_dump(port_id, MB_VEC_DUMP, file_id, address, length, 0);
+}
+
+static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length, uint32_t flag)
+{
+    return handle_pc802_dump(port_id, MB_DATA_DUMP, file_id, address, length, flag);
+}
+
 uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     return handle_non_pfi_0_vec_read(port_id, file_id, offset, address, length);
@@ -2662,6 +2684,7 @@ typedef struct stMbVecAccess_t {
     uint32_t offset;
     uint32_t address;
     uint32_t length;
+    uint32_t flag;
     uint16_t port_id;
     uint16_t core;
 } MbVecAccess_t;
@@ -2732,6 +2755,22 @@ static void pc802_write_mailbox_reg(PC802_BAR_Ext_t *ext, uint16_t core, uint8_t
     }
 }
 
+static void pc802_write_dump_reg(PC802_BAR_Ext_t *ext, uint16_t core, uint8_t result)
+{
+    assert(core < 32);
+    union {
+        uint32_t _dump[16];
+        Mailbox_RC_t DUMP_RC[32];
+    } regs;
+
+    uint32_t idx;
+    idx = core / 2;
+    regs._dump[idx] = PC802_READ_REG(ext->_dump[idx]);
+    regs.DUMP_RC[core].rccnt++;
+    regs.DUMP_RC[core].result = result;
+    PC802_WRITE_REG(ext->_dump[idx], regs._dump[idx]);
+}
+
 static void * pc802_vec_access(__rte_unused void *data)
 {
     MbVecAccess_t msg;
@@ -2749,6 +2788,12 @@ static void * pc802_vec_access(__rte_unused void *data)
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         port_idx = pc802_get_port_index(msg.port_id);
         command = msg.command;
+        if (MB_DATA_DUMP == command) {
+            re = handle_data_dump(msg.port_id, msg.file_id, msg.address, msg.length, msg.flag);
+            result = (0 == re);
+            pc802_write_dump_reg(ext, msg.core, result);
+            continue;
+        }
         if (0 == msg.core) {
             pc802_mailbox_rc_counter[port_idx][0]++;
             pc802_write_mailbox_reg(ext, 0, pc802_mailbox_rc_counter[port_idx][0], 2);
@@ -3025,6 +3070,16 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.port_id = port_id;
         msg.core = core;
         pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        pc802_vec_access_msg_send(fd, &msg);
+        return 2;
+    } else if (MB_DATA_DUMP == action) {
+        msg.command = MB_DATA_DUMP;
+        msg.file_id = mb->arguments[0];
+        msg.address = mb->arguments[1];
+        msg.length = mb->arguments[2];
+        msg.flag = mb->arguments[3];
+        msg.port_id = port_id;
+        msg.core = core;
         pc802_vec_access_msg_send(fd, &msg);
         return 2;
     } else {
