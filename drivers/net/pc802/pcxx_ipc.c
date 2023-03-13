@@ -2,6 +2,7 @@
 
 #include "rte_common.h"
 #include <rte_debug.h>
+#include <rte_cycles.h>
 
 #include "rte_pmd_pc802.h"
 #include "pc802_ethdev.h"
@@ -67,6 +68,7 @@ struct pcxx_dev_info_st{
 typedef struct pcxx_dev_info_st pcxx_dev_info_t;
 
 static pcxx_dev_info_t pcxx_devs[DEV_INDEX_MAX];
+static uint32_t cycles_of_a_slot; //0.5ms
 
 #ifndef MULTI_PC802
 int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
@@ -81,6 +83,13 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
         return -1;
+
+    uint64_t hz = rte_get_timer_hz();
+    NPU_SYSLOG("PC802 Driver on NPU side built AT %s ON %s\n", __TIME__, __DATE__);
+    NPU_SYSLOG("NPU CPU Hz = %lu\n", hz);
+    cycles_of_a_slot = hz / 2000;
+    NPU_SYSLOG("cycles_of_a_slot = %u\n", cycles_of_a_slot);
+
     pcxx_cell_info_t *cell_info = &pcxx_devs[dev_index].cell_info[cell_index];
 
     if ( cell_info->pcxx_ctrl_ul_handle != NULL ) {
@@ -277,6 +286,45 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
+static uint64_t last_poll_ctrl;
+//static uint64_t last_poll_data;
+static uint64_t last_recv_ctrl;
+static uint64_t last_recv_ctrl_type_1;
+//static uint64_t last_recv_data;
+static uint32_t last_num_data;
+static uint32_t num_ctrl = 0;
+
+int pcxxCheckRecv(void)
+{
+    uint64_t diff;
+
+    if (num_ctrl < 10)
+        return 0;
+
+    uint64_t now = rte_rdtsc();
+    diff = now - last_poll_ctrl;
+    static uint32_t num_ctrl_poll_time_out = 0;
+    if ((num_ctrl_poll_time_out < 10) && (diff > cycles_of_a_slot)) {
+        NPU_SYSLOG("Warn: Ctrl_Poll time out : diff = %lu", diff);
+        num_ctrl_poll_time_out++;
+    }
+
+    diff = now - last_recv_ctrl;
+    static uint32_t num_ctrl_recv_time_out = 0;
+    if ((num_ctrl_recv_time_out < 10) && (diff > 2 * cycles_of_a_slot)) {
+        NPU_SYSLOG("Warn: Ctrl_Recv time out : diff = %lu", diff);
+        num_ctrl_recv_time_out++;
+    }
+
+    diff = now - last_recv_ctrl_type_1;
+    static uint32_t num_data_recv_time_out = 0;
+    if ((num_data_recv_time_out < 10) && (diff > cycles_of_a_slot) && (last_num_data == 0)) {
+        NPU_SYSLOG("Warn: Data_Recv time out : diff = %lu", diff);
+        num_ctrl_recv_time_out++;
+    }
+    return 0;
+}
+
 #ifndef MULTI_PC802
 int pcxxCtrlRecv(void)
 {
@@ -307,18 +355,31 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     }
 #endif
     if (NULL == cell->rx_ctrl_buf) {
+        last_poll_ctrl = rte_rdtsc();
         num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index], &mblk_ctrl, 1);
-        if (num_rx)
+        if (num_rx) {
             cell->rx_ctrl_buf = (char *)&mblk_ctrl[1];
+            last_recv_ctrl = rte_rdtsc();
+            num_ctrl++;
+            if (num_ctrl > 1000) num_ctrl = 1000;
+            mblk_ctrl = (PC802_Mem_Block_t *)(cell->rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
+            if (1 == mblk_ctrl->pkt_type) {
+                last_recv_ctrl_type_1 = rte_rdtsc();
+                last_num_data = 0;
+            }
+        }
     }
     if (NULL == cell->rx_ctrl_buf)
         return -1;
     mblk_ctrl = (PC802_Mem_Block_t *)(cell->rx_ctrl_buf - sizeof(PC802_Mem_Block_t));
     if (1 == mblk_ctrl->pkt_type) {
+        //last_poll_data = rte_rdtsc();
         num_rx = pc802_rx_mblk_burst(pcxx_devs[dev_index].port_id, QID_DATA[cell_index], &mblk_data, 1);
         if (0 == num_rx)
             return -1;
         cell->rx_data_buf = (char *)&mblk_data[1];
+        last_num_data++;
+        //last_recv_data = rte_rdtsc();
     }
 
     if (cell->rx_data_buf) {

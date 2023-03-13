@@ -2870,6 +2870,8 @@ static int pc802_mailbox(void *data)
     return num;
 }
 
+int pcxxCheckRecv(void);
+
 static void * pc802_debug(__rte_unused void *data)
 {
     int i = 0;
@@ -2899,6 +2901,8 @@ static void * pc802_debug(__rte_unused void *data)
         }
         else
             idle = 0;
+
+        pcxxCheckRecv();
     }
     return NULL;
 }
