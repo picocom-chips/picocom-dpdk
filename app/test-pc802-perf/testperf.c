@@ -74,6 +74,8 @@ static const struct rte_eth_conf dev_conf = {
         },
     };
 
+uint16_t pc802_port = 0;
+
 static int port_init(uint16_t port)
 {
     struct rte_mempool *mbuf_pool;
@@ -128,7 +130,7 @@ static int port_init(uint16_t port)
 static uint32_t * alloc_tx_blk(uint16_t qId)
 {
     PC802_Mem_Block_t *mblk;
-    mblk = pc802_alloc_tx_mem_block(0, qId);
+    mblk = pc802_alloc_tx_mem_block(pc802_port, qId);
     if (mblk)
         return (uint32_t *)&mblk[1];
     return NULL;
@@ -150,13 +152,13 @@ static uint16_t tx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
     RTE_ASSERT(nb_blks <= 32);
     for (k = 0; k <nb_blks; k++)
         tx_blks[k] = (PC802_Mem_Block_t *)((char *)blks[k] - sizeof(PC802_Mem_Block_t));
-    return pc802_tx_mblk_burst(0, qId, tx_blks, nb_blks);
+    return pc802_tx_mblk_burst(pc802_port, qId, tx_blks, nb_blks);
 }
 
 static uint16_t rx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
 {
     uint16_t k;
-    nb_blks = pc802_rx_mblk_burst(0, qId, (PC802_Mem_Block_t **)blks, nb_blks);
+    nb_blks = pc802_rx_mblk_burst(pc802_port, qId, (PC802_Mem_Block_t **)blks, nb_blks);
     for (k = 0; k < nb_blks; k++) {
         blks[k] += (sizeof(PC802_Mem_Block_t) / sizeof(uint32_t));
     }
@@ -382,7 +384,8 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    port_init(0);
+    pc802_port = pc802_get_port_id(0);
+    port_init( pc802_port );
 
     prompt(NULL);
 
