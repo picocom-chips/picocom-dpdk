@@ -2589,6 +2589,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
     char file_path[PATH_MAX];
     char file_name[PATH_MAX+NAME_MAX];
     FILE * fh_vector;
+    uint32_t buf_sz = PC802_DEBUG_BUF_SIZE;
 
     if (is_core_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
@@ -2605,6 +2606,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
         } else {
             fh_vector = fopen(file_name, "ab");
         }
+        buf_sz = 64 * 1024;
     } else {
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
@@ -2623,7 +2625,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
 
 __next_non_pfi_0_vec_dump:
     PC802_WRITE_REG(bar->DBGEPADDR, address);
-    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    data_size = (left < buf_sz) ? left : buf_sz;
     PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     RCCNT++;
@@ -2637,6 +2639,10 @@ __next_non_pfi_0_vec_dump:
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
     if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
+        if (is_data_dump) {
+            DBLOG("data_dump(%u, 0x%08X, %u, %u);\n",
+                file_id, address, data_size, flag);
+        }
     } else {
         for (offset = 0; offset < data_size; offset += 4) {
             unsigned int mem_data = *pd++;;
