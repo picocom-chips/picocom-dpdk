@@ -3032,6 +3032,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
 
     if (fd < 0) {
         fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
+        mb_set_ssbl_end();
     }
 
     port_id = adapter->port_id;
