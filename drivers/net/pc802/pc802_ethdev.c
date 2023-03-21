@@ -2832,6 +2832,7 @@ enum TraceAction_e {
     TRACE_ACTION_PRINTF,
     TRACE_ACTION_SSBL_LOAD = 0x8000,
     TRACE_ACTION_SSBL_END,
+    TRACE_ACTION_BOOT_BITMAP,
     TRACE_ACTION_END = 0xFFFF,
     TRACE_ACTION_IDLE = 0xFFFFFFFF
 };
@@ -2904,6 +2905,13 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL__cim_end[%u] = 0x%08X\n", port_idx, tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
         return;
+    }
+
+    if (TRACE_ACTION_BOOT_BITMAP == trace_action_type[port_idx][core]) {
+        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
+        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+        tdata |= 1; //PFI 0 is always active when receving this trace
+        trace_disable[port_idx] |= (~tdata);
     }
 }
 
