@@ -105,6 +105,7 @@ New features
 ************
 * SI-1599: support PC802 dump data on the fly
 * SI-1602: PC802 can stop PCIe mini trace
+* SI-1630: stop trace for inactive cores
 
 Bug fixes
 *********
