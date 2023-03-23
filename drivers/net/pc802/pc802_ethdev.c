@@ -3315,6 +3315,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
         if (active == 0)
             break;
     }
+    DBLOG("PC802 PCIe Mini Trace thread will be stopped !\n");
     return NULL;
 }
 
