@@ -2923,7 +2923,8 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 {
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
     static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
-    int num = 0;
+    int num;
+    int N = 0;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
@@ -2939,6 +2940,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     for (core = 0; core < 32; core++) {
         if (trace_disable[port_index] & (1 <<core))
             continue;
+        num = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
@@ -2951,10 +2953,11 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
         {
             rte_wmb();
             PC802_WRITE_REG(ext[port_index]->TRACE_RCCNT[core], rccnt[port_index][core]);
+            N += num;
         }
     }
 
-    return num;
+    return N;
 }
 
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
