@@ -2842,7 +2842,11 @@ static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
 static uint32_t trace_num_args[PC802_INDEX_MAX][32];
 static uint32_t trace_idx[PC802_INDEX_MAX][32];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
-static uint32_t trace_disable[PC802_INDEX_MAX] = {0};
+#ifdef MULTI_PC802
+static uint32_t trace_disable[PC802_INDEX_MAX] = {0xFFFFFFFE, 0xFFFFFFFE, 0xFFFFFFFE, 0xFFFFFFFE};
+#else
+static uint32_t trace_disable[PC802_INDEX_MAX] = {0xFFFFFFFE};
+#endif
 
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
@@ -2911,7 +2915,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
         tdata |= 1; //PFI 0 is always active when receving this trace
-        trace_disable[port_idx] |= (~tdata);
+        trace_disable[port_idx] &= (~tdata);
     }
 }
 
