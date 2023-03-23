@@ -217,7 +217,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length, uint32_t flag);
-static void * pc802_debug(void *data);
+static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access(void *data);
 
@@ -2020,7 +2020,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         if (0xFFFFFFFF != bar->BOOTRCCNT) {
             pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         }
-        pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-Mailbox", NULL, pc802_mailbox_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
         pc802_pdump_init( );
     }
@@ -3251,7 +3251,7 @@ static int pc802_mailbox(void *data)
     return num;
 }
 
-static void * pc802_debug(__rte_unused void *data)
+static void * pc802_mailbox_thread(__rte_unused void *data)
 {
     int i = 0;
     int num = 0;
