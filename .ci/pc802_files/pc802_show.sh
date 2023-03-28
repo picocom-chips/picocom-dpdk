@@ -37,6 +37,17 @@ function dislist(){
     echo $str
 }
 
+function discharlist(){
+    a=$1
+    str=""
+    for((i=1;i<=$2;i++));
+    do
+        str=$str"    "$(busybox devmem $a 8);
+        ((a=$a+1))
+    done
+    echo $str
+}
+
 #typedef struct PC802_BAR_t {
 #    union {
 ((addr=$bar0))#        PC802_CacheLine_t _cahce_line;
@@ -117,7 +128,8 @@ echo #    union {
 echo DBGRCAL: $(busybox devmem $addr);((addr=$addr+4))      #       uint32_t DBGRCAL;
 echo DBGRCAH: $(busybox devmem $addr);((addr=$addr+4))      #       uint32_t DBGRCAH;
 echo MB_ANDES_DIS: $(busybox devmem $addr);((addr=$addr+4)) #       uint32_t MB_ANDES_DIS;
-echo MB_DSP_DIS: $(busybox devmem $addr);((addr=$addr+4))   #       uint32_t MB_DSP_DIS;
+echo MB_DSP_DIS:   $(busybox devmem $addr);((addr=$addr+4)) #       uint32_t MB_DSP_DIS;
+echo MB_C2H_RDNUM: $(busybox devmem $addr);((addr=$addr+4)) #       uint32_t MB_C2H_RDNUM;
 #        };
 #    };
 echo #    union {
@@ -272,66 +284,91 @@ echo "RX_RST_EPCNT[PC802_TRAFFIC_NUM]:";dislist $addr 8 #            uint32_t RX
 #    };
 #} PC802_BAR_t;
 
-((ext=$bar0+4096));((addr=$ext));((cahce=0));printf "ext:0x%x\n" $addr #struct PC802_BAR_Ext_t {
+echo
+echo
+((ext=$bar0+4096));((addr=$ext));((cahce=0));printf "ext:0x%x\n" $addr
+#struct PC802_BAR_Ext_t {
+echo
 #    union {
-#        uint32_t _a0[16];
+#        uint32_t _mb_dsp[8];
+echo "Mailbox_RC_t MB_DSP[0-3]:" #        Mailbox_RC_t MB_DSP[3];
+echo "rccnt result"
+for value in {1..3}
+do
+     discharlist $addr 2;((addr=$addr+2))
+done
+#    };
+((cahce=$cahce+4*8));((addr=$ext+$cahce))
+
+echo
+#    union {
+#        uint32_t _mb_pfi[8];
+echo "Mailbox_RC_t MB_PFI[0-16]:"  #        Mailbox_RC_t MB_PFI[16];
+echo "rccnt result"
+for value in {1..16}
+do
+     discharlist $addr 2;((addr=$addr+2))
+done
+#    };
+((cahce=$cahce+4*8));((addr=$ext+$cahce))
+
+echo
+#    union {
+#        uint32_t _mb_ecpri[8];
+echo "Mailbox_RC_t MB_eCPRI[0-16]:"  #        Mailbox_RC_t MB_eCPRI[16];
+echo "rccnt result"
+for value in {1..16}
+do
+     discharlist $addr 2;((addr=$addr+2))
+done
+#    };
+((cahce=$cahce+4*8));((addr=$ext+$cahce))
+
+echo
+#    union {
+#        uint32_t _a0[8];
 #        struct {
-echo "MB_EPCNT:   $(busybox devmem $addr)";((addr=$addr+4))    #volatile uint32_t MB_EPCNT;
-echo "MB_COMMAND: $(busybox devmem $addr)";((addr=$addr+4))    #uint32_t MB_COMMAND;
-echo "MB_EPCORE: $(busybox devmem $addr)";((addr=$addr+4))     #uint32_t MB_EPCORE;
-echo "VEC_EPCNT:  $(busybox devmem $addr)";((addr=$addr+4))    #uint32_t VEC_EPCNT;
-echo "MB_ARGS[8]:" #uint32_t MB_ARGS[8];
-dislist $addr 8
+echo "MB_C2H_EPCNT: $(busybox devmem $addr)";((addr=$addr+4))    #uint32_t MB_C2H_EPCNT;
+echo "VEC_EPCNT:  	$(busybox devmem $addr)";((addr=$addr+4))    #uint32_t VEC_EPCNT;
 #        };
 #    };
-((cahce=$cahce+4*16));((addr=$ext+$cahce));echo  #    union {
+((cahce=$cahce+4*8));((addr=$ext+$cahce))
+
+echo
+#    union {
 #        uint32_t _a1[8];
 #        struct {
-echo "MB_RCCNT:     $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t MB_RCCNT;
-echo "MB_RESULT:    $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t MB_RESULT;
+echo "MB_C2H_RCCNT: $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t MB_C2H_RCCNT;
 echo "VEC_RCCNT:    $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t VEC_RCCNT;
 echo "VEC_BUFSIZE:  $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t VEC_BUFSIZE;
 echo "VEC_BUFADDRL: $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t VEC_BUFADDRL;
 echo "VEC_BUFADDRH: $(busybox devmem $addr)";((addr=$addr+4))  #uint32_t VEC_BUFADDRH;
 #        };
 #    };
-((cahce=$cahce+4*8));((addr=$ext+$cahce));echo
+((cahce=$cahce+4*8));((addr=$ext+$cahce));
 
+echo
 echo "TRACE_RCCNT[0-32]:" #uint32_t TRACE_RCCNT[32];
 dislist $addr 8;((addr=$addr+4*8))
 dislist $addr 8;((addr=$addr+4*8))
 dislist $addr 8;((addr=$addr+4*8))
 dislist $addr 8;((addr=$addr+4*8))
-
 ((cahce=$cahce+4*32));((addr=$ext+$cahce));echo
+
 echo "TRACE_EPCNT[0-32]:" #TraceEpCnt_u TRACE_EPCNT[32];
 echo "    v            s"
 for value in {1..32}
 do
      dislist $addr 2;((addr=$addr+32))
 done
+((cahce=$cahce+4*8*32));((addr=$ext+$cahce))
 
-((cahce=$cahce+4*8*32));((addr=$ext+$cahce));echo
+echo
 echo "TRACE_DATA[32]:" #TraceData_t TRACE_DATA[32];
 for value in {1..32}
 do
      dislist $addr 16;((addr=$addr+4*16))
 done
+((cahce=$cahce+4*16*32));((addr=$ext+$cahce))
 
-((cahce=$cahce+4*16*32));((addr=$ext+$cahce));echo    #    union {
-#        uint32_t _e0[16];
-#        struct {
-echo "EMB_EPCNT:     $(busybox devmem $addr)";((addr=$addr+4))  #            uint32_t EMB_EPCNT;
-echo "EMB_COMMAND:   $(busybox devmem $addr)";((addr=$addr+4))  #            uint32_t EMB_COMMAND;
-echo "MB_ARGS[8]:"  #            uint32_t EMB_ARGS[8];
-dislist $addr 8
-#        };
-#    };
-((cahce=$cahce+4*16));((addr=$ext+$cahce));echo   #    union {
-#        uint32_t _e1[8];
-#        struct {
-echo "EMB_RCCNT:   $(busybox devmem $addr)";((addr=$addr+4))  #            uint32_t EMB_RCCNT;
-echo "EMB_RESULT:  $(busybox devmem $addr)";((addr=$addr+4))  #            uint32_t EMB_RESULT;
-#        };
-#    };
 #} __attribute__((__aligned__(32)));
