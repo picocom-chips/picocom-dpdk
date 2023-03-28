@@ -13,7 +13,7 @@
     #parameter 1 is the test packet length in K bytes (1K = 1024), the default value 0 will use 1K
     #parameter 2 is the test duration in second, the default value 0 will use 60 seconds
     #parameter 3 is the test channel bitmap, the default value 0 will use 0x70
-    #parameter 4 is the test mode, only use 0
+    #parameter 4 is the test type, only use 0
 
 3. test result
 	#After the start, each of the upstream and downstream performance test data will be output every second.
@@ -67,6 +67,7 @@ PC802>>
 秒(毫秒):方向 PPS:每秒包数    BPS:每秒流量    ( 通道4:PPS, BPS;    通道5:PPS,BPS;    通道6:PPS,BPS;  )
 2(1000):UL PPS: 6652, BPS: 13623296Kbits/sec ( 4: 3326, 6811648; 5: 1663, 3405824; 6: 1663, 3405824;)
 2(1000):DL PPS: 9978, BPS: 20434944Kbits/sec ( 4: 3326, 6811648; 5: 3326, 6811648; 6: 3326, 6811648;)
+“毫秒”指统计周期内毫秒计数，通常都是1000
 
 2、该工具能否看出PCIe通道是否有异常呢？
 
