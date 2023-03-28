@@ -10,9 +10,9 @@
 	sudo npu_run.sh dpdk-test-pc802-perf
 	#After normal startup, you can get the command line prompt: "PC802>>"
 	#Performance test command example: "test pcie 250 10 0 0"
-    #parameter 1 is the test packet length, the default value 0 will use 1K
-    #parameter 2 is the test duration, the default value 0 will use 60 seconds
-    #parameter 3 is the test channel, the default value 0 will use 0x70
+    #parameter 1 is the test packet length in K bytes (1K = 1024), the default value 0 will use 1K
+    #parameter 2 is the test duration in second, the default value 0 will use 60 seconds
+    #parameter 3 is the test channel bitmap, the default value 0 will use 0x70
     #parameter 4 is the test mode, only use 0
 
 3. test result
