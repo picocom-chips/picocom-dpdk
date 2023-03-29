@@ -2945,7 +2945,7 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if ((pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) && (idle > 4 * 100)) {
+            if (pc802_devices[i]->log_flag & (1 << PC802_LOG_VEC)) {
                 num += pc802_process_phy_test_vectors(pc802_devices[i]);
             }
         }
