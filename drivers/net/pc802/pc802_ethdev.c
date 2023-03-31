@@ -220,8 +220,9 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
-static void * pc802_debug(void *data);
-static void * pc802_vec_access(void *data);
+static void * pc802_mailbox_thread(void *data);
+static void * pc802_mini_trace_thread(void *data);
+static void * pc802_vec_access_thread(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1990,8 +1991,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
-        pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
-        pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_mini_trace_thread, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-MB", NULL, pc802_mailbox_thread, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access_thread, NULL);
         pc802_pdump_init( );
     }
 
@@ -2626,7 +2628,7 @@ static uint32_t pc802_vec_access_msg_recv(int fd, MbVecAccess_t *msg)
     return sizeof(MbVecAccess_t);
 }
 
-static void * pc802_vec_access(__rte_unused void *data)
+static void * pc802_vec_access_thread(__rte_unused void *data)
 {
     MbVecAccess_t msg;
     int fd;
@@ -2675,6 +2677,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
     static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
     int num = 0;
+    int cnt;
     uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
@@ -2688,16 +2691,18 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     }
 
     for (core = 0; core < 32; core++) {
+        cnt = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
             handle_trace_data(port_id, core, rccnt[port_index][core], trc_data);
             rccnt[port_index][core]++;
-            num++;
+            cnt++;
         }
-        if ( num>0 )
+        if (cnt >  0)
         {
+            num += cnt;
             rte_wmb();
             PC802_WRITE_REG(ext[port_index]->TRACE_RCCNT[core], rccnt[port_index][core]);
         }
@@ -3014,7 +3019,40 @@ static int pc802_mailbox(void *data)
     return num;
 }
 
-static void * pc802_debug(__rte_unused void *data)
+static void * pc802_mini_trace_thread(__rte_unused void *data)
+{
+    int i = 0;
+    int num = 0;
+    int idle = 0;
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 250*1000;
+
+    while( 1 )
+    {
+        num = 0;
+        for ( i=0; i<num_pc802s; i++ )
+        {
+            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
+                num += pc802_tracer(i, pc802_devices[i]->port_id);
+        }
+        if ( 0 == num ) {
+            idle++;
+            if (idle >= 10) {
+                idle = 10;
+                req.tv_nsec = 10 * 1000 * 1000; // 10ms
+            }
+            pc802_log_flush();
+            nanosleep(&req, NULL);
+        } else {
+            idle = 0;
+            req.tv_nsec = 250 * 1000; // 250 us
+        }
+    }
+    return NULL;
+}
+
+static void * pc802_mailbox_thread(__rte_unused void *data)
 {
     int i = 0;
     int num = 0;
@@ -3027,8 +3065,6 @@ static void * pc802_debug(__rte_unused void *data)
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(i, pc802_devices[i]->port_id);
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_PRINT))
                 num += pc802_mailbox(pc802_devices[i]);
         }
