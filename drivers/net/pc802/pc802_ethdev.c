@@ -2843,9 +2843,9 @@ static uint32_t trace_num_args[PC802_INDEX_MAX][32];
 static uint32_t trace_idx[PC802_INDEX_MAX][32];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
 #ifdef MULTI_PC802
-static uint32_t trace_disable[PC802_INDEX_MAX] = {0xFFFFFFFE, 0xFFFFFFFE, 0xFFFFFFFE, 0xFFFFFFFE};
+static uint32_t trace_enable[PC802_INDEX_MAX] = {1, 1, 1, 1};
 #else
-static uint32_t trace_disable[PC802_INDEX_MAX] = {0xFFFFFFFE};
+static uint32_t trace_enable[PC802_INDEX_MAX] = {1};
 #endif
 
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
@@ -2881,7 +2881,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         if (TRACE_ACTION_END == tdata) {
             PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "My PCIe mini trace END !\n");
             trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-            trace_disable[port_idx] |= (1 << core);
+            trace_enable[port_idx] &= ~(1 << core);
         }
         if (TRACE_ACTION_SSBL_END == tdata) {
             assert(core == 0);
@@ -2914,8 +2914,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
     if (TRACE_ACTION_BOOT_BITMAP == trace_action_type[port_idx][core]) {
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-        tdata |= 1; //PFI 0 is always active when receving this trace
-        trace_disable[port_idx] &= (~tdata);
+        trace_enable[port_idx] |= tdata;
     }
 }
 
@@ -2938,7 +2937,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     }
 
     for (core = 0; core < 32; core++) {
-        if (trace_disable[port_index] & (1 <<core))
+        if (0 == (trace_enable[port_index] & (1 << core)))
             continue;
         num = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
@@ -3302,7 +3301,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
         active = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if (trace_disable[i] == 0xFFFFFFFF)
+            if (trace_enable[i] == 0)
                 continue;
             active++;
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
