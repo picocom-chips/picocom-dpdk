@@ -219,7 +219,7 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint3
 static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length, uint32_t flag);
 static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
-static void * pc802_vec_access(void *data);
+static void * pc802_vec_access_thread(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -2021,7 +2021,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
             pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         }
         pc802_ctrl_thread_create(&tid, "PC802-Mailbox", NULL, pc802_mailbox_thread, NULL);
-        pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access_thread, NULL);
         pc802_pdump_init( );
     }
 
@@ -2777,7 +2777,7 @@ static void pc802_write_dump_reg(PC802_BAR_Ext_t *ext, uint16_t core, uint8_t re
     PC802_WRITE_REG(ext->_dump[idx], regs._dump[idx]);
 }
 
-static void * pc802_vec_access(__rte_unused void *data)
+static void * pc802_vec_access_thread(__rte_unused void *data)
 {
     MbVecAccess_t msg;
     int fd;
