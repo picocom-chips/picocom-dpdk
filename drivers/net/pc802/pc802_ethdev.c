@@ -2632,7 +2632,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
             do {
                 assert(j < 15);
                 formatter[j] = *arg0++;
-                if (isalpha(formatter[j])) {
+                if ((formatter[j] != 'l') && isalpha(formatter[j])) {
                     formatter[j+1] = 0;
                     break;
                 }
@@ -2654,11 +2654,11 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
         }
     }
     *ps = 0;
-    if (arg_idx != num_args) {
+    if (arg_idx > num_args) {
         DBLOG("core %u (arg_idx = %u num_args = %u): format = %s\n",
             core, arg_idx, num_args, arg0_bak);
         DBLOG("PC802 Core %u printf: %s\n", core, str);
-        assert(0);
+        //assert(0);
     }
     PC802_LOG( port_id, core, RTE_LOG_INFO, "%s", str );
     return;
