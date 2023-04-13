@@ -109,3 +109,4 @@ New features
 
 Bug fixes
 *********
+* NDF-111: fix duplicated and invalid mailbox message
