@@ -2,8 +2,15 @@
 
 1. Install PC802 User Plane Driver
 
-	sudo dpkg -i PC802_User_Plane_Driver_arm64_2.3-eb3c9a25.deb
+	sudo dpkg -i PC802_User_Plane_Driver_amd64_2.0.1-a1933be5.deb
 	sudo reboot
+
+	x86 platform, the dpdk library needs to be recompiled before reboot, refer the command:
+
+	cd ${your_DPDK_PATH}
+	patch -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
+	meson build
+	ninja -C build install
 
 2. run pc802 pcie performance test app
 

@@ -105,6 +105,9 @@ static int port_init(uint16_t port)
 
     pcxxCtrlOpen(&ctrl_cb_info, 0, 0);
 
+    pc802_create_tx_queue(0, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
+    pc802_create_rx_queue(0, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
+
     rte_eth_dev_start(port);
 
     printf("Finished port_init !\n");
@@ -241,7 +244,6 @@ static int pc802_test_pcie_recv( void *arg )
 int pc802_test_pcie( int len, int time, int ch, int type );
 int pc802_test_pcie( int len, int time, int ch, int type )
 {
-    #define RECV_CORE_ID 2
 //  int ch=0x46;               //channel mask
 //  int len=arg0*1024;
 //  int time=60;
@@ -266,7 +268,7 @@ int pc802_test_pcie( int len, int time, int ch, int type )
     printf( "\tTest duration:\t%d seconds\n", time);
     printf( "\tTest type:\t%d\n\n", type);
 
-    rte_eal_remote_launch( pc802_test_pcie_recv, (void*)((uint64_t)time+5), RECV_CORE_ID );
+    rte_eal_remote_launch( pc802_test_pcie_recv, (void*)((uint64_t)time+5), rte_get_next_lcore(-1, 1, 0) );
 
     start = rte_rdtsc( );
     for ( t=0; t<time; )
@@ -328,7 +330,7 @@ int pc802_test_pcie( int len, int time, int ch, int type )
         }
     }
 
-    rte_eal_wait_lcore( RECV_CORE_ID );
+    rte_eal_mp_wait_lcore( );
     printf("Tx total send pkgs %lu.\n", total);
 
     return total;
@@ -368,7 +370,7 @@ int main(int argc, char** argv)
 
     prompt(NULL);
 
-    rte_eal_wait_lcore( 1 );
+    rte_eal_mp_wait_lcore( );
     return 0;
 }
 
