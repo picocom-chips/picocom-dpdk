@@ -478,7 +478,6 @@ typedef struct {
 } mailbox_counter_t;
 
 typedef struct {
-    mailbox_info_exclusive info[16];
     mailbox_counter_t cnts;
     mailbox_exclusive e[16];
 } mailbox_mem_t;

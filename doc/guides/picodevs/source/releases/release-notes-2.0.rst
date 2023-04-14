@@ -107,6 +107,10 @@ New features
 * SI-1602: PC802 can stop PCIe mini trace
 * SI-1630: stop trace for inactive cores
 
+Enhancement
+***********
+* NDF-112: NPU doesn't get unnecessary mailbox memory
+
 Bug fixes
 *********
 * NDF-111: fix duplicated and invalid mailbox message
