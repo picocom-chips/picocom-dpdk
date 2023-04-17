@@ -115,3 +115,4 @@ Enhancement
 Bug fixes
 *********
 * NDF-111: fix duplicated and invalid mailbox message
+* NDF-125: Fix kni not starting when there are multiple dpdk devices
