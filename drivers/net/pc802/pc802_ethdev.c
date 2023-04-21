@@ -3145,11 +3145,11 @@ static int pc802_mailbox(void *data)
             }
         } else { //DSPs
             //DBLOG("Recved DSPs mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
-            mb_cnts = (mailbox_counter_t *)(msg + MAILBOX_COUNTER_OFFSET_DSP);
+            mb_cnts = (mailbox_counter_t *)msg;
             DBLOG_NONE("DSP   wrs[0] = 0x%08X\n", mb_cnts->wrs[0]);
             DBLOG_NONE("DSP   rds[0] = 0x%08X\n", pc802_mb_rccnts[port_index][8]);
             for (core = 0; core < 3; core++) {
-                mb = (magic_mailbox_t *)(msg + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
+                mb = (magic_mailbox_t *)(msg + DSP_MAILBOX_COUNTERS_SIZE + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
                 epcnt = mb_cnts->wr[core];
                 rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 32], epcnt, core + 32);
                 while (rccnt != epcnt) {
