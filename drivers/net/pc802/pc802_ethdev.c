@@ -2718,7 +2718,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     const char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "PRINTF: ");
+    ps += sprintf(ps, "PRINTF(%15lu): ", mb->time);
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
