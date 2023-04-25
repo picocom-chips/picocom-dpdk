@@ -2816,6 +2816,7 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                 DBLOG("MB VEC READ %d args: %x %x %x %x\n", n, mb[n].arguments[0], mb[n].arguments[1], mb[n].arguments[2], mb[n].arguments[3]);
                 msg.command = &mb[n].action;
                 msg.retval = &mb[n].retval;
+                PC802_WRITE_REG(mb[n].error, 0);
                 msg.file_id = PC802_READ_REG(mb[n].arguments[0]);
                 msg.offset = PC802_READ_REG(mb[n].arguments[1]);
                 msg.address = PC802_READ_REG(mb[n].arguments[2]);
@@ -2831,6 +2832,7 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                 DBLOG("MB VEC DUMP %d args: %x %x %x\n", n, mb[n].arguments[0], mb[n].arguments[1], mb[n].arguments[2]);
                 msg.command = &mb[n].action;
                 msg.retval = &mb[n].retval;
+                PC802_WRITE_REG(mb[n].error, 0);
                 msg.file_id = PC802_READ_REG(mb[n].arguments[0]);
                 msg.address = PC802_READ_REG(mb[n].arguments[1]);
                 msg.length = PC802_READ_REG(mb[n].arguments[2]);
