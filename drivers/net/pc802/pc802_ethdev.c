@@ -2294,9 +2294,16 @@ static char * get_vector_path(uint16_t port_id, char *file_path)
 static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
-    if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+    if ((offset & 3) | (address & 3)) {
+        DBLOG("ERROR: VEC_READ address, offset must be word aligned!\n");
         return -1;
+    }
+    if ((0xFFFFFFFF != length) && (length & 3)) {
+        DBLOG("ERROR: VEC_READ length must be word aligned or -1 !\n");
+        return -1;
+    }
+    if (0xFFFFFFFF == length) {
+        end = 0xFFFFFFFF;
     }
 
     char file_name[PATH_MAX];
@@ -2312,15 +2319,17 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
+    char         * buf_fgets;
     uint32_t       *pd;
     uint32_t       data_size;
+    uint32_t       send_size = 0;
     uint32_t       buf_full;
 
 __next_pfi_0_vec_read:
     pd = (uint32_t *)pc802_get_debug_mem(port_id);
     data_size = 0;
     buf_full = 0;
-    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
+    while ((0 == buf_full) && ((buf_fgets = fgets(buffer, sizeof(buffer), fh_vector)) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
@@ -2343,7 +2352,7 @@ __next_pfi_0_vec_read:
         line++;
     }
 
-    if ((0 == buf_full) && (vec_cnt < end)) {
+    if ((0 == buf_full) && (vec_cnt < end) && (0xFFFFFFFF != end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
@@ -2352,25 +2361,35 @@ __next_pfi_0_vec_read:
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
-    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
-    uint32_t vec_rccnt;
-    volatile uint32_t vec_epcnt;
-    vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
-    vec_rccnt++;
-    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
-    do {
-        usleep(1);
-        vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
-    } while (vec_epcnt != vec_rccnt);
+    if (data_size > 0) {
+        PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+        PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+        PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
+        uint32_t vec_rccnt;
+        volatile uint32_t vec_epcnt;
+        vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+        vec_rccnt++;
+        PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
+        do {
+            usleep(1);
+            vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
+        } while (vec_epcnt != vec_rccnt);
+        send_size += data_size;
+    }
 
-    if (vec_cnt < end)
-        goto __next_pfi_0_vec_read;
-
+    if (0xFFFFFFFF != end) {
+        if (vec_cnt < end)
+            goto __next_pfi_0_vec_read;
+    } else {
+        if (NULL == buf_fgets) {
+            PC802_WRITE_REG(ext->VEC_RCCNT, 0xFFFFFFFF);
+        } else {
+            goto __next_pfi_0_vec_read;
+        }
+    }
     fclose(fh_vector);
 
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    DBLOG("Loaded a total of %u bytes from %s\n", send_size, file_name);
     return 0;
 }
 
@@ -2440,9 +2459,16 @@ __next_pfi_0_vec_dump:
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length)
 {
     unsigned int end = offset + length;
-    if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+    if ((offset & 3) | (address & 3)) {
+        DBLOG("ERROR: VEC_READ address, offset must be word aligned!\n");
         return -1;
+    }
+    if ((0xFFFFFFFF != length) && (length & 3)) {
+        DBLOG("ERROR: VEC_READ length must be word aligned or -1 !\n");
+        return -1;
+    }
+    if (0xFFFFFFFF == length) {
+        end = 0xFFFFFFFF;
     }
 
     char file_name[PATH_MAX];
@@ -2458,16 +2484,18 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
+    char         * buf_fgets;
 
     uint32_t *pd;
     uint32_t data_size;
+    uint32_t send_size = 0;
     uint32_t buf_full;
 
 __next_non_pfi_0_vec_read:
     pd = (uint32_t *)pc802_get_debug_mem(port_id);
     data_size = 0;
     buf_full = 0;
-    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
+    while ((0 == buf_full) && ((buf_fgets = fgets(buffer, sizeof(buffer), fh_vector)) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
@@ -2490,31 +2518,40 @@ __next_non_pfi_0_vec_read:
         line++;
     }
 
-    if ((0 == buf_full) && (vec_cnt < end)) {
+    if ((0 == buf_full) && (vec_cnt < end) && (0xFFFFFFFF != end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
-    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
-    uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
-    RCCNT++;
-    PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
-    volatile uint32_t EPCNT;
-    do {
-        usleep(1);
-        EPCNT = PC802_READ_REG(bar->DBGEPCNT);
-    } while (EPCNT != RCCNT);
+    if (data_size > 0) {
+        PC802_WRITE_REG(bar->DBGEPADDR, address);
+        PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
+        PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
+        uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+        RCCNT++;
+        PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
+        volatile uint32_t EPCNT;
+        do {
+            usleep(1);
+            EPCNT = PC802_READ_REG(bar->DBGEPCNT);
+        } while (EPCNT != RCCNT);
+        send_size += data_size;
+    }
 
-    if (vec_cnt < end) {
-        address += data_size;
-        goto __next_non_pfi_0_vec_read;
+    address += data_size;
+    if (0xFFFFFFFF != end) {
+        if (vec_cnt < end) {
+            goto __next_non_pfi_0_vec_read;
+        }
+    } else {
+        if (NULL != buf_fgets) {
+            goto __next_non_pfi_0_vec_read;
+        }
     }
 
     fclose(fh_vector);
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    DBLOG("Loaded a total of %u bytes from %s\n", send_size, file_name);
     return 0;
 }
 

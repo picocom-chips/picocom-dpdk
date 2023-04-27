@@ -17,7 +17,7 @@ New features
 * SI-801: Added support for ORANIC board
 * SI-808: Added support for rerun app without rebooting NPU
 * SI-806: Added support for enable KNI interface for PC802
-
+* NDF-118: support vec_read to read file to end with input length = -1
 
 Bug fixes
 *********
