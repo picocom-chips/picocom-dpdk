@@ -2309,6 +2309,8 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     char file_name[PATH_MAX];
     if ( NULL == get_vector_file_name(port_id, file_id, file_name) ) {
         DBLOG("ERROR: Vector %d file not found.\n", file_id);
+        PC802_WRITE_REG(ext->MB_RESULT, 0);
+        PC802_WRITE_REG(ext->VEC_RCCNT, 0xFFFFFFFF);
         return -2;
     }
 
