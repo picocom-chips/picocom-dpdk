@@ -156,6 +156,9 @@ static int port_init( uint16_t pc802_index )
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
+#ifdef MULTI_PC802
+    pcxxCtrlOpen(&ctrl_cb_info, pc802_index, LEGACY_CELL_INDEX);
+#endif
 
     RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
     RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
@@ -379,10 +382,10 @@ static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1}
 static union {
     const char *cc;
     uint32_t   *up;
-} dl_a[PC802_INDEX_MAX][CELL_NUM_PRE_DEV][17];
-static uint32_t dl_a_num[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
+} dl_a[PC802_INDEX_MAX][CELL_NUM_PRE_DEV+1][17];
+static uint32_t dl_a_num[PC802_INDEX_MAX][CELL_NUM_PRE_DEV+1] = {0};
 
-static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV] = {0};
+static int atl_test_result[PC802_INDEX_MAX][CELL_NUM_PRE_DEV+1] = {0};
 
 #ifdef MULTI_PC802
 static uint32_t process_dl_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev_index, uint16_t cell_index )
@@ -799,6 +802,33 @@ static int case105(void)
             return -1;
     }
     return 0;
+}
+
+static int case106(void)
+{
+#ifdef MULTI_PC802
+    char *a;
+    uint32_t *A;
+    uint32_t length, avail;
+
+    PCXX_CALL(pcxxSendStart, g_pc802_index, LEGACY_CELL_INDEX);
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, LEGACY_CELL_INDEX));
+    A = (uint32_t *)a;
+    produce_dl_src_data(A, PC802_TRAFFIC_5G_URLLC);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a, length, g_pc802_index, LEGACY_CELL_INDEX);
+
+    PCXX_CALL(pcxxSendEnd, g_pc802_index, LEGACY_CELL_INDEX);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, LEGACY_CELL_INDEX));
+
+    int re = atl_test_result[g_pc802_index][LEGACY_CELL_INDEX];
+    atl_test_result[g_pc802_index][LEGACY_CELL_INDEX] = 0;
+    return re;
+#else
+    return 0;
+#endif
 }
 
 static int case201(void)
@@ -1502,6 +1532,10 @@ static void run_case(int caseNo)
         break;
     case 105:
         diag = case105();
+        disp_test_result(caseNo, diag);
+        break;
+    case 106:
+        diag = case106();
         disp_test_result(caseNo, diag);
         break;
     case 201:
