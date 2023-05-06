@@ -11,7 +11,7 @@
 
 
 static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
-static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2};
+static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV+1] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2, PC802_TRAFFIC_5G_URLLC};
 
 #define DATA_QUEUE_BLOCK_SIZE   (256*1024)
 #define CTRL_QUEUE_BLOCK_SIZE   (256*1024)
@@ -64,7 +64,7 @@ struct pcxx_dev_info_st{
         PC802_CacheLine_t   cache_line;
         uint16_t port_id;
     };
-    pcxx_cell_info_t cell_info[CELL_NUM_PRE_DEV];
+    pcxx_cell_info_t cell_info[CELL_NUM_PRE_DEV+1];
 }__rte_cache_aligned;
 typedef struct pcxx_dev_info_st pcxx_dev_info_t;
 
@@ -115,7 +115,7 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
 __Init_Timing_Stats_Finished:
 #endif
 
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
         return -1;
@@ -212,7 +212,7 @@ int pcxxSendStart(void)
 #else
 int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
 #endif
     PC802_Mem_Block_t *mblk;
     int k;
@@ -238,7 +238,7 @@ int pcxxSendEnd(void)
 #else
 int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
 #endif
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
@@ -270,7 +270,7 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
 int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->ctrl_buf) {
@@ -296,7 +296,7 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
 int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     //RTE_ASSERT(0 == (bufLen & 3));
@@ -384,7 +384,7 @@ int pcxxCtrlRecv(void)
 #else
 int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
 #endif
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
