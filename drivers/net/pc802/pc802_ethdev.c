@@ -2623,7 +2623,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     const char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "PRINTF: ");
+    ps += sprintf(ps, "PRINTF(%10u): ", mb->time);
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
@@ -2706,6 +2706,7 @@ static int handle_mailbox(uint16_t port_id, magic_mailbox_t *mb, uint32_t *idx, 
                     mb[n].arguments[6], mb[n].arguments[7]);
             }
             rte_mb();
+            PC802_WRITE_REG(mb[n].error, 0);
             PC802_WRITE_REG(mb[n].action, MB_EMPTY);
             n = (n == (MB_MAX_C2H_MAILBOXES - 1)) ? 0 : n+1;
         }
