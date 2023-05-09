@@ -619,7 +619,7 @@ int pcxxDataDestroy(void)
 #else
 int pcxxCtrlDestroy( uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV+1) );
     return 0;
 }
 int pcxxDataDestroy( uint16_t dev_index, uint16_t cell_index )
