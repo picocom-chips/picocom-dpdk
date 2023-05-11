@@ -2623,7 +2623,10 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     const char *sub_str;
     uint32_t j;
 
-    ps += sprintf(ps, "PRINTF: ");
+    if (core < 32)
+        ps += sprintf(ps, "PRINTF(%10u): ", mb->mtime);
+    else
+        ps += sprintf(ps, "PRINTF: ");
     while (*arg0) {
         if (*arg0 == '%') {
             formatter[0] = '%';
