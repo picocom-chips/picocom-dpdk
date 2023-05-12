@@ -29,6 +29,7 @@ typedef enum {
 typedef struct{
     uint32_t start_flag;         //0xd1c2b3a4
     uint32_t msg_type;
+    uint32_t seq_id;
     uint32_t sub_msg_num;		 //Message burst
 }oam_msg_head_t;
 
@@ -98,6 +99,7 @@ int pcxx_oam_init(void)
 
 int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub_msg_t **sub_msg, uint32_t msg_num )
 {
+    static uint32_t seq_id = 0;
     char *buf = NULL;
     PC802_Mem_Block_t *mblk = NULL;
     oam_message_t *msg = NULL;
@@ -121,6 +123,7 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     msg = (oam_message_t *)buf;
     msg->head.start_flag = OAM_START_FLAG;
     msg->head.msg_type   = msg_type;
+    msg->head.seq_id     = seq_id++;
     msg->head.sub_msg_num = 0;
     len += sizeof(oam_msg_head_t);
 

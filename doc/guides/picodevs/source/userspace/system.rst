@@ -39,6 +39,6 @@ X86 platform:
 
     DPDK Version `DPDK 21.08.0 <http://fast.dpdk.org/rel/dpdk-21.08.tar.xz>`_
 
-LXP LS1046A platform:
+NXP LS1046A platform:
 
     DPDK Version in `LSDK 21.08 <https://www.nxp.com/design/software/embedded-software/linux-software-and-development-tools/layerscape-software-development-kit-v21-08:LAYERSCAPE-SDK>`_

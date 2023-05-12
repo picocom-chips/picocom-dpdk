@@ -106,8 +106,8 @@ New features
 * SI-1599: support PC802 dump data on the fly
 * SI-1602: PC802 can stop PCIe mini trace
 * SI-1630: stop trace for inactive cores
+* NDF-54:  Oam message header add seq_id field
 * NDF-121: ATLL interface adds support for legacy cell queues
-
 Enhancement
 ***********
 * NDF-112: NPU doesn't get unnecessary mailbox memory
