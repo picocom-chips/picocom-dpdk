@@ -45,6 +45,8 @@
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
+#define PCI_DEVICE_PICOCOM_PC806    0x0806
+
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
 #define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
@@ -76,6 +78,7 @@ static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802_OLD) },
+    { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC806) },
     { .vendor_id = 0, /* sentinel */ },
 };
 
@@ -271,7 +274,8 @@ int pc802_get_port_id(uint16_t pc802_index)
         DBLOG( "ETH DEV %d: %s\n", i, rte_eth_devices[i].device->name );
         pci_dev = RTE_ETH_DEV_TO_PCI(&rte_eth_devices[i]);
         if ( (PCI_VENDOR_PICOCOM==pci_dev->id.vendor_id) &&
-             ( (PCI_DEVICE_PICOCOM_PC802_OLD==pci_dev->id.device_id) || (PCI_DEVICE_PICOCOM_PC802==pci_dev->id.device_id) ) )
+             ( (PCI_DEVICE_PICOCOM_PC802_OLD==pci_dev->id.device_id) || (PCI_DEVICE_PICOCOM_PC802==pci_dev->id.device_id)
+                || (PCI_DEVICE_PICOCOM_PC806==pci_dev->id.device_id) ) )
         {
             DBLOG( "PC802 index %d port is %d:%s\n", index, i, rte_eth_devices[i].device->name );
             port_id[index++] = i;
