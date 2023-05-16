@@ -127,3 +127,4 @@ New features
 
 Bug fixes
 *********
+* NDF-130: fix freeing ssbl_img twice

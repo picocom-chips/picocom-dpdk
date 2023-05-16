@@ -377,7 +377,10 @@ static const char * mb_get_string_d(uint32_t addr, uint32_t core)
 
 void mb_set_ssbl_end(void)
 {
-    rte_free(ssbl_img);
+    if (NULL != ssbl_img) {
+        rte_free(ssbl_img);
+        ssbl_img = NULL;
+    }
     ssbl_end = 1;
 }
 
