@@ -7,8 +7,12 @@
 
 #include <stdint.h>
 
-int mb_string_init(void);
-const char *mb_get_string(uint32_t addr, uint32_t core);
-void mb_set_ssbl_end(void);
+int32_t mb_string_init(uint16_t pc802_index);
+
+int32_t mb_get_ssbl(uint16_t pc802_index, uint8_t **ssbl_buf);
+int32_t mb_get_img(uint16_t pc802_index, uint8_t **img_buf);
+
+const char *mb_get_string(uint16_t pc802_index, uint32_t addr, uint32_t core);
+void mb_set_ssbl_end(uint16_t pc802_index);
 
 #endif
