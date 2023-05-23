@@ -214,7 +214,7 @@ static char CUR_PATH[] = ".";
 int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
-static int pc802_download_boot_image(uint16_t port);
+static int pc802_download_boot_image(uint16_t port, uint16_t port_idx);
 static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
@@ -1934,7 +1934,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         syslog(LOG_INFO, "%s built at %s on %s.", picocom_pc802_version(), __TIME__, __DATE__ );
 
     pc802_devices[num_pc802s] = adapter;
-    num_pc802s++;
+
 
     eth_dev->dev_ops = &eth_pc802_ops;
     eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
@@ -1944,6 +1944,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         uint32_t devRdy;
 
         DBLOG("Secondary PC802 process wait primary complete init...\n");
+
+        num_pc802s++;
         bar = (PC802_BAR_t *)adapter->bar0_addr;
         do {
             usleep(1);
@@ -1992,7 +1994,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
-    adapter->port_index = num_pc802s-1;
+    adapter->port_index = num_pc802s;
 
 #if 0
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
@@ -2075,6 +2077,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("NPU clear PC802 prot %d DEVEN = 0\n", adapter->port_id);
     usleep(1000);
 
+    mb_string_init(adapter->port_index);
+
     adapter->started = 1;
 
     PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
@@ -2082,8 +2086,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              pci_dev->id.device_id);
 
     pc802_init_c2h_mailbox(adapter);
+    num_pc802s++;
 
-    if (1 == num_pc802s) {
+    if (0 == adapter->port_index) {
         pthread_t tid;
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
         if (0xFFFFFFFF != bar->BOOTRCCNT) {
@@ -2094,7 +2099,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         pc802_pdump_init( );
     }
 
-    pc802_download_boot_image(data->port_id);
+    pc802_download_boot_image(data->port_id, adapter->port_index);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
         adapter->log_flag  |= (1<<PC802_LOG_VEC);
@@ -2157,28 +2162,7 @@ char * picocom_pc802_version(void)
     return ver;
 }
 
-static FILE * get_image_file(uint16_t port, const char *image_name)
-{
-    char *path[] = {DEFAULT_IMAGE_PATH, CUR_PATH};
-    char file_name[PATH_MAX];
-    uint16_t index = pc802_get_port_index(port);
-    uint32_t i;
-    FILE *fp = NULL;
-
-    for (i = 0; i < RTE_DIM(path); i++) {
-        sprintf(file_name, "%s/pc802_%d/%s", path[i], index, image_name);
-        if (NULL != (fp = fopen(file_name, "rb")))
-            break;
-
-        sprintf(file_name, "%s/%s", path[i], image_name);
-        if (NULL != (fp = fopen(file_name, "rb")))
-            break;
-    }
-    DBLOG("Prepare pc802 %d image file:%s\n", index, file_name);
-    return fp;
-}
-
-static int pc802_download_boot_image(uint16_t port)
+static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
@@ -2188,7 +2172,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
-        mb_set_ssbl_end();
+        mb_set_ssbl_end(port_idx);
         return 0;
     }
 
@@ -2213,34 +2197,26 @@ static int pc802_download_boot_image(uint16_t port)
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
-    FILE *fp = get_image_file(port, "pc802.ssbl");
-    if (NULL==fp) {
-        DBLOG("Failed to open pc802.ssbl .\n");
-        return -1;
-    }
-
     bar->BOOTSRCL = (uint32_t)(mz->iova);
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    uint32_t N, sum;
-    sum = 0;
-    do {
-        N = fread(pimg, 1, tsize, fp);
-        if (N < 4)
-            break;
+    uint32_t N=0, sum;
+    uint8_t *buf;
+
+    sum = mb_get_ssbl(port_idx, &buf);
+    while( N < sum ) {
+        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        sum += N;
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
-        N = 0;
-    } while (1);
+        N += RTE_MIN(tsize, sum-N);
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
+    };
     printf("\n");
 
     *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
-    fclose(fp);
     DBLOG("Finish dowloading SSBL !\n");
 
     DBLOG("Waiting for PC802 SSBL boot(DEVRDY=2) ...\n");
@@ -2257,31 +2233,21 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download application(port=%hu) ... \n",
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
-    fp = get_image_file(port, "pc802.img");
-    if (NULL==fp) {
-        DBLOG("Failed to open pc802.img .\n");
-        return -1;
-    }
-
-    sum = 0;
-    do {
-        N = fread(pimg, 1, tsize, fp);
-        if (N < 4) {
-            break;
-        }
+    N = 0;
+    sum = mb_get_img(port_idx, &buf);
+    while( N < sum ) {
+        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        sum += N;
+        N += RTE_MIN(tsize, sum-N);
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
-        N = 0;
-    } while (1);
+    };
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
-    fclose(fp);
 
     printf("Finish pc802 download image !\n");
     return 0;
@@ -2917,7 +2883,7 @@ static uint32_t trace_enable[PC802_INDEX_MAX] = {1, 1, 1, 1};
 static uint32_t trace_enable[PC802_INDEX_MAX] = {1};
 #endif
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
+static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
 static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata)
 {
@@ -2956,7 +2922,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
             assert(core == 0);
             PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
             trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-            mb_set_ssbl_end();
+            mb_set_ssbl_end(port_idx);
         }
         return;
     }
@@ -3028,12 +2994,12 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return N;
 }
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
+static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
 {
     uint32_t num_args = mb->num_args;
     char str[2048];
     char formatter[16];
-    const char *arg0 = mb_get_string(mb->arguments[0], core);
+    const char *arg0 = mb_get_string(port_idx, mb->arguments[0], core);
     const char *arg0_bak = arg0;
     char *ps = &str[0];
     uint32_t arg_idx = 1;
@@ -3063,7 +3029,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
             if (formatter[j] == 's') {
-                sub_str = mb_get_string(mb->arguments[arg_idx++], core);
+                sub_str = mb_get_string(port_idx, mb->arguments[arg_idx++], core);
                 ps += snprintf(ps, sizeof(str), formatter, sub_str);
             } else {
                 ps += snprintf(ps, sizeof(str), formatter, mb->arguments[arg_idx++]);
@@ -3076,23 +3042,23 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     }
     *ps = 0;
     if (arg_idx != num_args) {
-        PC802_LOG(port_id, core, RTE_LOG_INFO,
+        PC802_LOG(port_idx, core, RTE_LOG_INFO,
             "WARNING -- core %u (arg_idx = %u num_args = %u): format = %s\n",
             core, arg_idx, num_args, arg0_bak);
-        PC802_LOG(port_id, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
+        PC802_LOG(port_idx, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
         return;
     }
-    PC802_LOG( port_id, core, RTE_LOG_INFO, "%s", str );
+    PC802_LOG(port_idx, core, RTE_LOG_INFO, "%s", str );
     return;
 }
 
-static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
+static void handle_mb_sim_stop(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core)
 {
     uint32_t num_args = PC802_READ_REG(mb->num_args);
     if (1 == num_args) {
         DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
     } else if (3 == num_args) {
-        const char *func_name = mb_get_string(mb->arguments[1], core);
+        const char *func_name = mb_get_string(port_idx, mb->arguments[1], core);
         DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
             num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
     } else {
@@ -3111,16 +3077,15 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     volatile uint32_t action;
     volatile uint32_t num_args;
     MbVecAccess_t msg;
-    uint16_t port_idx;
+    uint16_t port_idx = adapter->port_index;
     uint16_t port_id;
 
     if (fd < 0) {
         fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
-        mb_set_ssbl_end();
+        mb_set_ssbl_end(port_idx);
     }
 
     port_id = adapter->port_id;
-    port_idx = pc802_get_port_index(port_id);
 
     if ((0 != core) && (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_idx][core])) {
         return 0;
@@ -3141,7 +3106,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     } else if (MB_PRINTF == action) {
         handle_mb_printf(port_id, mb, core, 1);
     } else if (MB_SIM_STOP == action) {
-        handle_mb_sim_stop(mb, core);
+        handle_mb_sim_stop(port_idx, mb, core);
     } else if (MB_VEC_READ == action) {
         msg.command = MB_VEC_READ;
         msg.file_id = mb->arguments[0];
@@ -3215,7 +3180,6 @@ static int pc802_mailbox(void *data)
     if ( adapter[port_index] == NULL )
     {
         adapter[port_index] = (struct pc802_adapter *)data;
-        mb_string_init();
         pc802_log_flush();
         DBLOG("come here\n");
     }
@@ -3346,8 +3310,6 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
     return NULL;
 }
 
-extern int mb_ssbl_image_ok(void);
-
 static void * pc802_trace_thread(__rte_unused void *data)
 {
     int i = 0;
@@ -3362,8 +3324,6 @@ static void * pc802_trace_thread(__rte_unused void *data)
             trace_action_type[i][j] = TRACE_ACTION_IDLE;
         }
     }
-
-    while (0 == mb_ssbl_image_ok());
 
     uint32_t active;
 

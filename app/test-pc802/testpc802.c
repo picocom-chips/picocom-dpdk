@@ -1455,10 +1455,11 @@ static int cell_worker( void *arg )
 
 static int case_n8802(void)
 {
-    uint16_t cell;
+    int cell, core=-1;
     for ( cell = 0; cell < CELL_NUM_PRE_DEV; cell++) {
-        rte_eal_wait_lcore( cell+1 );
-        rte_eal_remote_launch(cell_worker, (void *)((uint64_t)cell), cell+1);
+        core = rte_get_next_lcore(core, true, false);
+        rte_eal_wait_lcore(core);
+        rte_eal_remote_launch(cell_worker, (void *)((uint64_t)cell), core);
     }
     return 0;
 }
