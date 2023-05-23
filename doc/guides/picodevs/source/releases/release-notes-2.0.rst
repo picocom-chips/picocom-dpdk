@@ -108,6 +108,7 @@ New features
 * SI-1630: stop trace for inactive cores
 * NDF-54:  Oam message header add seq_id field
 * NDF-121: ATLL interface adds support for legacy cell queues
+
 Enhancement
 ***********
 * NDF-112: NPU doesn't get unnecessary mailbox memory
@@ -116,3 +117,13 @@ Bug fixes
 *********
 * NDF-111: fix duplicated and invalid mailbox message
 * NDF-125: Fix kni not starting when there are multiple dpdk devices
+
+PC802 driver 2.5
+##################
+
+New features
+************
+* SI-1703: support PC806
+
+Bug fixes
+*********
