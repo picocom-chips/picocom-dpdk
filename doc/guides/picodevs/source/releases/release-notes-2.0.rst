@@ -129,3 +129,4 @@ New features
 Bug fixes
 *********
 * NDF-130: fix freeing ssbl_img twice
+* NDF-131: fix mailbox log not support different FW
