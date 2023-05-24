@@ -61,6 +61,8 @@
 
 int testpc802_data_mode = 0;
 int testpc802_exit_loop = 0;
+int testpc802_case_id = 0;
+uint32_t testpc802_case_times = 0;
 
 struct rte_mempool *mpool_pc802_tx;
 
@@ -1226,6 +1228,8 @@ static int case_n800(void)
             testpc802_exit_loop = 0;
             return 0;
         }
+        if ( testpc802_case_id && (k>testpc802_case_times) )
+            break;
     }
     return 0;
 }
@@ -1259,6 +1263,8 @@ static int case_n1000(void)
             DBLOG("Case -1000 Passed %u Loops.\n", k+1);
             testpc802_exit_loop = 0;
             return 0;
+        if ( testpc802_case_id && (k>testpc802_case_times) )
+            break;
         }
     }
     return 0;
@@ -1295,6 +1301,8 @@ static int case_n802(void)
             testpc802_exit_loop = 0;
             return 0;
         }
+        if ( testpc802_case_id && (k>testpc802_case_times) )
+            break;
     }
     return 0;
 }
@@ -1370,6 +1378,8 @@ static int case_n4802(void)
                     testpc802_exit_loop = 0;
                     return 0;
                 }
+                if ( testpc802_case_id && (k[dev][cell]>testpc802_case_times) )
+                    break;
             }
         }
         // DBLOG("Case n4802 passed pc802 %d test.\n\n", dev);
@@ -1483,15 +1493,17 @@ static int case_n2000(void)
             testpc802_exit_loop = 0;
             return 0;
         }
+        if ( testpc802_case_id && (k>testpc802_case_times) )
+            break;
     }
     return 0;
 }
 
-static void run_case(int caseNo)
+static int run_case(int caseNo)
 {
-    int diag;
+    int diag = -1;
     if (0 == caseNo)
-        return;
+        return -1;
     printf("Begin Test Case %d\n", caseNo);
     switch(caseNo) {
     case 1:
@@ -1589,6 +1601,8 @@ static void run_case(int caseNo)
         DBLOG("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
     }
     test_case_No = 0;
+
+    return diag;
 }
 
 int main_stop = 0;
@@ -1691,6 +1705,7 @@ void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
 
 int main(int argc, char** argv)
 {
+    int opt;
     int diag;
     int port_id = 0;
     int pc802_index = 0;
@@ -1705,6 +1720,23 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
+	argc -= diag;
+	argv += diag;
+
+	while ((opt = getopt(argc, argv, "C:T:")) != EOF) {
+		switch (opt) {
+		case 'C':
+			testpc802_case_id = strtol(optarg, NULL, 10);
+			break;
+		case 'T':
+			testpc802_case_times = strtol(optarg, NULL, 10);
+			break;
+		default:
+			rte_exit(EXIT_FAILURE, "Invalid option: %s\n", argv[optind]);
+			return -1;
+		}
+	}
+
     for ( pc802_index=0; pc802_index<PC802_INDEX_MAX; pc802_index++ )
     {
         port_id = pc802_get_port_id(pc802_index);
@@ -1713,6 +1745,10 @@ int main(int argc, char** argv)
 
         port_init(pc802_index);
     }
+
+    if (testpc802_case_id)
+        return run_case(testpc802_case_id);
+
     rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
 
     while(!main_stop) {
