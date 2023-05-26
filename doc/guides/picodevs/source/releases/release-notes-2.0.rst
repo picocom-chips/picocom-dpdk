@@ -124,6 +124,7 @@ PC802 driver 2.5
 New features
 ************
 * SI-1703: support PC806
+* NDF-100: support secondary process start PC802
 
 Bug fixes
 *********

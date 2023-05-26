@@ -1252,8 +1252,25 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PMD_INIT_FUNC_TRACE();
 
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
-        return 0;
+        int delay = 3;
+        while (delay--) {
+            if (PC802_READ_REG(bar->DEVEN)) {
+                volatile uint32_t drv_state;
+
+                DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+                DBLOG("Waiting for PC802 boot(DRVSTATE=3) ...\n");
+                do {
+                    usleep(1);
+                    drv_state = PC802_READ_REG(bar->DRVSTATE);
+                } while (drv_state != 3);
+                DBLOG("DRVSTATE=%d, DEVRDY=%d.\n", drv_state, PC802_READ_REG(bar->DEVRDY));
+
+                return 0;
+            }
+            sleep(1);
+        }
+        DBLOG("PC802 not start(DEVEN=%d,DRVSTATE=%d,DEVRDY=%d), secondary process will start pc802.\n",
+                PC802_READ_REG(bar->DEVEN), PC802_READ_REG(bar->DRVSTATE), PC802_READ_REG(bar->DEVRDY));
     }
 
     eth_pc802_stop(dev);
@@ -1874,14 +1891,22 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     pc802_devices[num_pc802s] = adapter;
     num_pc802s++;
+
+    eth_dev->dev_ops = &eth_pc802_ops;
+    eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
+    eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
+
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        uint32_t drv_state;
+        uint32_t devRdy;
+
+        DBLOG("Secondary PC802 process wait primary complete init...\n");
         bar = (PC802_BAR_t *)adapter->bar0_addr;
         do {
             usleep(1);
-            drv_state = PC802_READ_REG(bar->DRVSTATE);
-        } while (drv_state != 3);
-        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
+            devRdy = PC802_READ_REG(bar->DEVRDY);;
+        } while ( !((devRdy >= 5) && (devRdy <= 8)) );
+        DBLOG("Secondary PC802 process detect devRdy = %u !\n", devRdy);
+
         uint32_t DBAH = PC802_READ_REG(bar->DBAH);
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
@@ -1905,10 +1930,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->eth_addr.addr_bytes[3] = 0xB4;
     adapter->eth_addr.addr_bytes[4] = 0xC0;
     adapter->eth_addr.addr_bytes[5] = 0x00;
-
-    eth_dev->dev_ops = &eth_pc802_ops;
-    eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
-    eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
 
     rte_eth_copy_pci_info(eth_dev, pci_dev);
 
