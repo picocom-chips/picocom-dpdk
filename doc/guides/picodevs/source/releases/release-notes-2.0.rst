@@ -125,6 +125,7 @@ New features
 ************
 * SI-1703: support PC806
 * NDF-100: support secondary process start PC802
+* NDF-141: support queue memory allocated by block
 
 Bug fixes
 *********
