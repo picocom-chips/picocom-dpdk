@@ -1746,8 +1746,10 @@ int main(int argc, char** argv)
         port_init(pc802_index);
     }
 
-    if (testpc802_case_id)
+    if (testpc802_case_id){
+        sleep(10);
         return run_case(testpc802_case_id);
+    }
 
     rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
 
