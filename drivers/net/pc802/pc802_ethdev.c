@@ -2242,7 +2242,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
         N += RTE_MIN(tsize, sum-N);
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
     };
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
