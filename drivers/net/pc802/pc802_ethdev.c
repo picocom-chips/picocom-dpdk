@@ -3202,7 +3202,7 @@ static int pc802_mailbox(void *data)
 #endif
 
     for (n = 0; n < N; n++) {
-        DBLOG_NONE("Rx mailbox mb_idx = %1u cause = %1u in %1u of %1u\n",
+        NPU_SYSLOG("Rx mailbox mb_idx = %1u cause = %1u in %1u of %1u\n",
             (uint32_t)blks[n]->pkt_type, (uint32_t)blks[n]->cause, (uint32_t)n, (uint32_t)N);
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         mb_mem = (mailbox_mem_t *)msg;
