@@ -2208,6 +2208,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     while( N < sum ) {
         rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
+        CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
@@ -2238,6 +2239,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     while( N < sum ) {
         rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
+        CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
