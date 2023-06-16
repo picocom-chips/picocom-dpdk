@@ -475,8 +475,10 @@ static int case1(void)
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
-    if ((type != 2) || (eop != 1))
+    if ((type != 2) || (eop != 1)){
+        DBLOG("ERROR: type = %u  eop = %u\n", type, eop);
         return -1;
+    }
     swap_msg(b, length);
     //printf("CASE1: UL msg length = %u\n", length);
     //check_ul_dst_data(b, length);

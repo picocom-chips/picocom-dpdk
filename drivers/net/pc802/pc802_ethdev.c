@@ -224,6 +224,28 @@ static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
 
+int dma_mem_fd;
+void * dma_mem_addr;
+#include <sys/mman.h>
+
+static void * rk_dma_mem_init(uintptr_t phy_addr)
+{
+	dma_mem_fd = open("/dev/mem", O_RDWR);
+	if(dma_mem_fd < 0)
+    {
+        printf("cannot open /dev/mem.\n");
+        return NULL;
+    }
+	dma_mem_addr = mmap(0, 1*1024*1024, PROT_READ | PROT_WRITE, MAP_SHARED, dma_mem_fd, phy_addr);
+	if(dma_mem_addr == MAP_FAILED)
+    {
+        printf("mmap failed %s!\n", strerror(errno));
+        return NULL;
+    }
+    printf("mmap %p to %p...\n", (void*)phy_addr, dma_mem_addr);
+	return dma_mem_addr;
+}
+
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
@@ -647,6 +669,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     while (nb_rx < nb_blks) {
         idx = rx_id & mask;
         rxdp = &rx_ring[idx];
+        INVALIDATE(rxdp);
 
         nmb = rxq->mpool.first;
         if (nmb == NULL) {
@@ -662,7 +685,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
 
         rxm = sw_ring[idx].mblk;
         rte_prefetch0(rxm);
-        INVALIDATE(rxdp);
 
         if ((idx & 0x3) == 0) {
             rte_prefetch0(&rx_ring[idx]);
@@ -2181,6 +2203,7 @@ char * picocom_pc802_version(void)
 
 static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
+    const uintptr_t reserved_mem_addr = 0x00000000e5c00000+0x1400000;
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
     volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
@@ -3308,6 +3331,8 @@ static int pc802_mailbox(void *data)
     return num;
 }
 
+int exit_mailbox = 1;
+
 static void * pc802_mailbox_thread(__rte_unused void *data)
 {
     int i = 0;
@@ -3316,7 +3341,7 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
 
-    while( 1 )
+    while( exit_mailbox )
     {
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
