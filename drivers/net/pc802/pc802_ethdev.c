@@ -2162,6 +2162,27 @@ char * picocom_pc802_version(void)
     return ver;
 }
 
+static FILE * get_image_file(uint16_t port, const char *image_name)
+{
+    char *path[] = {CUR_PATH, DEFAULT_IMAGE_PATH};
+    char file_name[PATH_MAX];
+    uint16_t index = pc802_get_port_index(port);
+    uint32_t i;
+    FILE *fp = NULL;
+
+    for (i = 0; i < RTE_DIM(path); i++) {
+        sprintf(file_name, "%s/pc802_%d/%s", path[i], index, image_name);
+        if (NULL != (fp = fopen(file_name, "rb")))
+            break;
+
+        sprintf(file_name, "%s/%s", path[i], image_name);
+        if (NULL != (fp = fopen(file_name, "rb")))
+            break;
+    }
+    DBLOG("Prepare pc802 %d image file:%s\n", index, file_name);
+    return fp;
+}
+
 static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
@@ -2197,26 +2218,34 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 
     uint8_t *pimg = (uint8_t *)mz->addr;
 
+    FILE *fp = get_image_file(port, "pc802.ssbl");
+    if (NULL==fp) {
+        DBLOG("Failed to open pc802.ssbl .\n");
+        return -1;
+    }
+
     bar->BOOTSRCL = (uint32_t)(mz->iova);
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    uint32_t N=0, sum;
-    uint8_t *buf;
-
-    sum = mb_get_ssbl(port_idx, &buf);
-    while( N < sum ) {
-        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
+    uint32_t N, sum;
+    sum = 0;
+    do {
+        N = fread(pimg, 1, tsize, fp);
+        if (N < 4)
+            break;
         rte_wmb();
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += RTE_MIN(tsize, sum-N);
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
-    };
+        sum += N;
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
+        N = 0;
+    } while (1);
     printf("\n");
 
     *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
+    fclose(fp);
     DBLOG("Finish dowloading SSBL !\n");
 
     DBLOG("Waiting for PC802 SSBL boot(DEVRDY=2) ...\n");
@@ -2233,21 +2262,31 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download application(port=%hu) ... \n",
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
-    N = 0;
-    sum = mb_get_img(port_idx, &buf);
-    while( N < sum ) {
-        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
+    fp = get_image_file(port, "pc802.img");
+    if (NULL==fp) {
+        DBLOG("Failed to open pc802.img .\n");
+        return -1;
+    }
+
+    sum = 0;
+    do {
+        N = fread(pimg, 1, tsize, fp);
+        if (N < 4) {
+            break;
+        }
         rte_wmb();
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += RTE_MIN(tsize, sum-N);
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
-    };
+        sum += N;
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
+        N = 0;
+    } while (1);
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
+    fclose(fp);
 
     printf("Finish pc802 download image !\n");
     return 0;
