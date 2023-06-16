@@ -641,6 +641,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
+    INVALIDATE(rxq->repcnt_mirror_addr);
     ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
     while (nb_rx < nb_blks) {
@@ -661,6 +662,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
 
         rxm = sw_ring[idx].mblk;
         rte_prefetch0(rxm);
+        INVALIDATE(rxdp);
 
         if ((idx & 0x3) == 0) {
             rte_prefetch0(&rx_ring[idx]);
@@ -671,6 +673,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
         rte_prefetch0(&rxm[1]);
+        INVALIDATE_SIZE(&rxm[1],rxm->pkt_length);
         //DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
@@ -756,10 +759,12 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
             pc802_free_mem_block(txe->mblk);
         }
 
+        CLEAN_SIZE(&tx_blk[1], tx_blk->pkt_length);
         txd->phy_addr = tx_blk->buf_phy_addr;
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
+        CLEAN(txd);
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
@@ -1475,6 +1480,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
+    INVALIDATE(rxq->repcnt_mirror_addr);
     ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     mb_pkts = (ep_txed < nb_pkts) ? ep_txed : nb_pkts;
     while (nb_rx < mb_pkts) {
@@ -1839,6 +1845,17 @@ static const cpu_set_t * get_ctrl_cpuset( void )
             for( core=min; core<=max; core++ )
                 CPU_CLR( core, &ctrl_cpuset );
         }
+#if 0
+        //select first core
+        for (core = 0; core < _NUM_SETS(CPU_SETSIZE); core++)
+            if (CPU_ISSET(core, &ctrl_cpuset) != 0LL)
+                break;
+        CPU_ZERO( &ctrl_cpuset );
+        CPU_SET( core, &ctrl_cpuset );
+#else
+        CPU_ZERO( &ctrl_cpuset );
+        CPU_SET( 4, &ctrl_cpuset );
+#endif
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
     }
@@ -2201,17 +2218,19 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    uint32_t N=0, sum;
+    uint32_t N=0, sum, size;
     uint8_t *buf;
 
     sum = mb_get_ssbl(port_idx, &buf);
     while( N < sum ) {
-        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
+        size = RTE_MIN(tsize, sum-N);
+        rte_memcpy(pimg, &buf[N], size);
         rte_wmb();
+        CLEAN_SIZE(pimg, size);
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += RTE_MIN(tsize, sum-N);
+        N += size;
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
     };
     printf("\n");
@@ -2236,12 +2255,14 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     N = 0;
     sum = mb_get_img(port_idx, &buf);
     while( N < sum ) {
-        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
+        size = RTE_MIN(tsize, sum-N);
+        rte_memcpy(pimg, &buf[N], size);
         rte_wmb();
+        CLEAN_SIZE(pimg, size);
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += RTE_MIN(tsize, sum-N);
+        N += size;
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
     };
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
@@ -2378,12 +2399,12 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
-    uint32_t       *pd;
+    uint32_t       *pd, *addr;
     uint32_t       data_size;
     uint32_t       buf_full;
 
 __next_pfi_0_vec_read:
-    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    addr = pd = (uint32_t *)pc802_get_debug_mem(port_id);
     data_size = 0;
     buf_full = 0;
     while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
@@ -2413,6 +2434,7 @@ __next_pfi_0_vec_read:
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
+    CLEAN_SIZE(addr, data_size);
 
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =

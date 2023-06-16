@@ -1699,8 +1699,8 @@ int main(int argc, char** argv)
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
 
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    //signal(SIGINT, signal_handler);
+    //signal(SIGTERM, signal_handler);
 
     diag = rte_eal_init(argc, argv);
     if (diag < 0)
@@ -1714,7 +1714,7 @@ int main(int argc, char** argv)
 
         port_init(pc802_index);
     }
-    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
+    rte_eal_remote_launch(prompt, NULL, rte_get_next_lcore(-1, 1, 0));
 
     while(!main_stop) {
         usleep(10);
