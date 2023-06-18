@@ -131,3 +131,10 @@ Bug fixes
 *********
 * NDF-130: fix freeing ssbl_img twice
 * NDF-131: fix mailbox log not support different FW
+
+PC802 driver 2.5.1
+##################
+
+Bug fixes
+*********
+* NDF-146: DPDK driver breaks secure boot process
