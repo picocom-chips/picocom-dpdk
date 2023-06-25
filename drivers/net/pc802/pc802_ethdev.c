@@ -627,6 +627,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
+    INVALIDATE_SIZE(&mblk[1], mblk->pkt_length);
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
@@ -645,6 +646,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     volatile PC802_Descriptor_t *rx_ring;
     volatile PC802_Descriptor_t *rxdp;
@@ -663,13 +665,20 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-    INVALIDATE(rxq->repcnt_mirror_addr);
-    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
+
+    if ( PC802_TRAFFIC_MAILBOX == queue_id )
+    {
+        INVALIDATE(rxq->repcnt_mirror_addr);
+        ep_txed = *rxq->repcnt_mirror_addr - rx_id;
+    }
+    else
+    {
+        ep_txed = PC802_READ_REG(bar->REPCNT[queue_id]) - rx_id;
+    }
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
     while (nb_rx < nb_blks) {
         idx = rx_id & mask;
         rxdp = &rx_ring[idx];
-        INVALIDATE(rxdp);
 
         nmb = rxq->mpool.first;
         if (nmb == NULL) {
@@ -695,7 +704,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
         rte_prefetch0(&rxm[1]);
-        INVALIDATE_SIZE(&rxm[1],rxm->pkt_length);
         //DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
@@ -703,6 +711,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
+        INVALIDATE(nmb);
+        INVALIDATE(rxdp);
 
         rx_id++;
         nb_hold++;
