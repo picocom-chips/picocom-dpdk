@@ -3046,7 +3046,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
     uint32_t j;
 
     if (cause) {
-        ps += sprintf(ps, "PRINTF: ");
+        ps += sprintf(ps, "PRINTF(%6u : %10u): ", mb->tH, mb->tL);
     } else {
         ps += sprintf(ps, "TRCLOG: ");
    }
@@ -3093,7 +3093,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
 
 static void handle_mb_sim_stop(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core)
 {
-    uint32_t num_args = PC802_READ_REG(mb->num_args);
+    uint32_t num_args = mb->num_args;
     if (1 == num_args) {
         DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
     } else if (3 == num_args) {
