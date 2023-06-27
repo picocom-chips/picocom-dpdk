@@ -74,6 +74,7 @@ static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
 
 static uint16_t num_pc802s = 0;
 static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
+int exit_mailbox = 1;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
@@ -703,8 +704,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         }
 #endif
         if (queue_id != PC802_TRAFFIC_MAILBOX){
-            DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
-                queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+            //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
+            //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
 
             //DBLOG("idx=%u: rxdp=%p rxm=%p nb_rx=%d nb_blks=%d\n", idx, rxdp, rxm, nb_rx, nb_blks);
             if(0 == rxdp->length){
@@ -727,7 +728,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
 
-        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+1024);
+        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+2*1024);
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
@@ -741,9 +742,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
         rte_io_wmb();
-        DBLOG("set queue %d rccnt from %u to %u\n", queue_id, *rxq->rrccnt_reg_addr, rxq->rc_cnt);
-        for (idx = *rxq->rrccnt_reg_addr; idx < rxq->rc_cnt; idx++)
-            INVALIDATE( &rx_ring[idx&mask]);
+        //DBLOG("set queue %d rccnt from %u to %u\n", queue_id, *rxq->rrccnt_reg_addr, rxq->rc_cnt);
+        //for (idx = *rxq->rrccnt_reg_addr; idx < rxq->rc_cnt; idx++)
+        //    INVALIDATE( &rx_ring[idx&mask]);
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
         nb_hold = 0;
     }
@@ -1881,7 +1882,7 @@ static const cpu_set_t * get_ctrl_cpuset( void )
         CPU_SET( core, &ctrl_cpuset );
 #else
         CPU_ZERO( &ctrl_cpuset );
-        CPU_SET( 4, &ctrl_cpuset );
+        CPU_SET( 1, &ctrl_cpuset );
 #endif
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
@@ -2876,7 +2877,7 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
     (void)data;
 
     fd = open(FIFO_PC802_VEC_ACCESS, O_RDONLY, 0);
-    while (1) {
+    while( exit_mailbox ){
         pc802_vec_access_msg_recv(fd, &msg);
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         port_idx = pc802_get_port_index(msg.port_id);
@@ -3337,8 +3338,6 @@ static int pc802_mailbox(void *data)
 
     return num;
 }
-
-int exit_mailbox = 1;
 
 static void * pc802_mailbox_thread(__rte_unused void *data)
 {
