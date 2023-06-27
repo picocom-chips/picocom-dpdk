@@ -29,7 +29,7 @@ static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
          begin+=RTE_CACHE_LINE_MIN_SIZE;
     }while(begin<end);
 }
-	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)p,(((uintptr_t)p)+size))
+	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)p,(((uintptr_t)p)+(size)))
 
 static inline void prefetch_for_load(void *p)
 {
@@ -43,7 +43,7 @@ static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
          begin+=RTE_CACHE_LINE_MIN_SIZE;
     }while(begin<end);
 }
-	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)p,(((uintptr_t)p)+size))
+	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)p,(((uintptr_t)p)+(size)))
 #else
 	#define CLEAN(p)
     #define CLEAN_RANGE(begin,end)
@@ -300,11 +300,14 @@ typedef struct PC802_BAR_t {
 
 #define NPU_CACHE_LINE_SZ   64
 
-typedef struct stPC802_Descriptor_t{
+typedef union stPC802_Descriptor_t{
+  struct {
     uint64_t phy_addr;  // pointer to start physical address of a buffer in NPU memory
     uint32_t length;    // length of content to be sent in bytes
     uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
     uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
+  };
+  uint8_t cache_line[NPU_CACHE_LINE_SZ];
 } PC802_Descriptor_t;
 
 struct stPC802_EP_Counter_Mirror_t {

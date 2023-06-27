@@ -336,8 +336,10 @@ static int check_single_same(uint32_t *a, uint32_t *b)
             DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
                 k, a[k], k, b[k]);
             err_cnt++;
-            if (16 == err_cnt)
+            if (16 == err_cnt){
+                assert(0);
                 return -1;
+            }
         }
    }
    return res;
@@ -475,8 +477,8 @@ static int case1(void)
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
-    if ((type != 2) || (eop != 1)){
-        DBLOG("ERROR: type = %u  eop = %u\n", type, eop);
+    if ((type != 2) || (eop != 1) || (N!=length)){
+        DBLOG("ERROR: type = %u  eop = %u N=%u, length=%u\n", type, eop, N, length);
         return -1;
     }
     swap_msg(b, length);
@@ -1719,7 +1721,7 @@ int main(int argc, char** argv)
     rte_eal_remote_launch(prompt, NULL, rte_get_next_lcore(-1, 1, 0));
 
     while(!main_stop) {
-        usleep(10);
+        usleep(100);
         run_case(test_case_No);
     }
 
