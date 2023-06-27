@@ -59,12 +59,13 @@ cmdline_parse_token_num_t cmd_test_pcie_channel =
     TOKEN_NUM_INITIALIZER(struct cmd_test_pcie, channel, RTE_UINT32);
 cmdline_parse_token_num_t cmd_test_pcie_mode =
     TOKEN_NUM_INITIALIZER(struct cmd_test_pcie, mode, RTE_UINT32);
-
+extern int exit_mailbox;
 static void cmd_test_pcie_parsed(void *parsed,
                 __attribute__((unused)) struct cmdline *cl,
                 __attribute__((unused)) void *data)
 {
     struct cmd_test_pcie *res = parsed;
+    //exit_mailbox=0;
     pc802_test_pcie( res->len, res->time, res->channel, res->mode );
 }
 

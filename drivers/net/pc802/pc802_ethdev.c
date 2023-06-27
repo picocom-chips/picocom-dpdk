@@ -225,29 +225,6 @@ static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
 
-#if 0
-int dma_mem_fd;
-void * dma_mem_addr;
-#include <sys/mman.h>
-
-static void * rk_dma_mem_init(uintptr_t phy_addr)
-{
-	dma_mem_fd = open("/dev/mem", O_RDWR);
-	if(dma_mem_fd < 0)
-    {
-        printf("cannot open /dev/mem.\n");
-        return NULL;
-    }
-	dma_mem_addr = mmap(0, 1*1024*1024, PROT_READ | PROT_WRITE, MAP_SHARED, dma_mem_fd, phy_addr);
-	if(dma_mem_addr == MAP_FAILED)
-    {
-        printf("mmap failed %s!\n", strerror(errno));
-        return NULL;
-    }
-    printf("mmap %p to %p...\n", (void*)phy_addr, dma_mem_addr);
-	return dma_mem_addr;
-}
-#endif
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
@@ -422,7 +399,6 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxep->mblk->alloced = 1;
         rxdp->phy_addr = rxep->mblk->buf_phy_addr;
         rxdp->length = 0;
-        INVALIDATE(rxdp);
         DBLOG_INFO("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
         rxep++;
         rxdp++;
@@ -438,7 +414,6 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(port_id);
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
         rxq->repcnt_mirror_addr = (volatile uint32_t *)&adapter->pDescs->mr.MB_C2H_EPCNT;
-        INVALIDATE(&adapter->pDescs->mr.MB_C2H_EPCNT);
         PC802_WRITE_REG(bar->MB_C2H_RDNUM, nb_desc);
     } else {
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
@@ -635,7 +610,6 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
-    //INVALIDATE_SIZE(&mblk[1], mblk->pkt_length);
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
@@ -645,6 +619,12 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
+    static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM + 1] = {0};
+#if 0
+    uint64_t tstart, tend, tdiff;
+    tstart = rte_rdtsc();
+#endif
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
@@ -695,35 +675,28 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         nmb->alloced = 1;
 
         rxm = sw_ring[idx].mblk;
-#if 0
         rte_prefetch0(rxm);
 
         if ((idx & 0x3) == 0) {
             rte_prefetch0(&rx_ring[idx]);
             rte_prefetch0(&sw_ring[idx]);
         }
-#endif
+
         if (queue_id != PC802_TRAFFIC_MAILBOX){
             //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
             //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
 
-            //DBLOG("idx=%u: rxdp=%p rxm=%p nb_rx=%d nb_blks=%d\n", idx, rxdp, rxm, nb_rx, nb_blks);
-            if(0 == rxdp->length){
-                DBLOG("queue_id0 %d rxdp(length=%u pkt_type=%d eop=%d)\n", queue_id, rxdp->length, rxdp->type, rxdp->eop);
-                while (0 == rxdp->length){
-                    sleep(1);
-                    DBLOG("queue_id1 %d rxdp(length=%u pkt_type=%d eop=%d)\n", queue_id, rxdp->length, rxdp->type, rxdp->eop);
-                }
-                DBLOG("queue_id %d rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n", queue_id, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
-                //assert(0);
+            while(0 == rxdp->length) {
+                DBLOG("UL DESC[%1u][%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
+                    queue_id, idx, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+                sleep(1);
             }
         }
 
         rxm->pkt_length = rxdp->length;
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
-        //rte_wmb();
-        //rte_prefetch0(&rxm[1]);
+        rte_prefetch0(&rxm[1]);
         //DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
@@ -742,13 +715,39 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
         rte_io_wmb();
-        //DBLOG("set queue %d rccnt from %u to %u\n", queue_id, *rxq->rrccnt_reg_addr, rxq->rc_cnt);
-        //for (idx = *rxq->rrccnt_reg_addr; idx < rxq->rc_cnt; idx++)
-        //    INVALIDATE( &rx_ring[idx&mask]);
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
+#if 0
+        if (PC802_TRAFFIC_MAILBOX == queue_id)
+            DBLOG("Write Mailbox MB_C2H_RCCNT = %u\n", rxq->rc_cnt);
+#endif
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
+    if (PC802_TRAFFIC_MAILBOX == queue_id)
+        return nb_rx;
+    if( nb_rx )
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
+    last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
+
+#if 0
+    tend = rte_rdtsc();
+    tdiff = tend - tstart;
+    uint32_t stat_no = 0xFF;
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        if (nb_rx)
+            stat_no = NO_CTRL_BURST_GOT;
+        else
+            stat_no = NO_CTRL_BURST_NULL;
+    } else if (PC802_TRAFFIC_5G_EMBB_DATA == queue_id) {
+        if (nb_rx)
+            stat_no = NO_DATA_BURST_GOT;
+        else
+            stat_no = NO_DATA_BURST_NULL;
+    }
+    if (stat_no < 0xFF) {
+        check_proc_time(stat_no, tdiff);
+    }
+#endif
 
     return nb_rx;
 }
@@ -2098,8 +2097,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         adapter->log_flag  |= (1<<PC802_LOG_EVENT);
     }
 
-    tsize = sizeof(PC802_Descs_t)+1024;
-    DBLOG("size: PC802_Descriptor_t=%lu PC802_EP_Counter_Mirror_t=%lu PC802_Descs_t=%u\n", sizeof(PC802_Descriptor_t), sizeof(PC802_EP_Counter_Mirror_t), tsize);
+    tsize = sizeof(PC802_Descs_t);
     sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
     mz = rte_memzone_reserve_aligned(temp_name, tsize, eth_dev->data->numa_node,
             RTE_MEMZONE_IOVA_CONTIG, 0x10000);
@@ -2143,7 +2141,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         }
         pc802_ctrl_thread_create(&tid, "PC802-Mailbox", NULL, pc802_mailbox_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access_thread, NULL);
-        //pc802_pdump_init( );
+        pc802_pdump_init( );
     }
 
     pc802_download_boot_image(data->port_id, adapter->port_index);
@@ -2211,7 +2209,6 @@ char * picocom_pc802_version(void)
 
 static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
-    //const uintptr_t reserved_mem_addr = 0x00000000e5c00000+0x1400000;
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
     volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
@@ -2249,19 +2246,18 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
-    uint32_t N=0, sum, size;
+    uint32_t N=0, sum;
     uint8_t *buf;
 
     sum = mb_get_ssbl(port_idx, &buf);
     while( N < sum ) {
-        size = RTE_MIN(tsize, sum-N);
-        rte_memcpy(pimg, &buf[N], size);
+        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
-        CLEAN_SIZE(pimg, size);
+        CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += size;
+        N += RTE_MIN(tsize, sum-N);
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
     };
     printf("\n");
@@ -2286,14 +2282,13 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     N = 0;
     sum = mb_get_img(port_idx, &buf);
     while( N < sum ) {
-        size = RTE_MIN(tsize, sum-N);
-        rte_memcpy(pimg, &buf[N], size);
+        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         rte_wmb();
-        CLEAN_SIZE(pimg, size);
+        CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
-        N += size;
+        N += RTE_MIN(tsize, sum-N);
         printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, N);
     };
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
