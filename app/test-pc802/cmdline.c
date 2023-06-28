@@ -610,8 +610,6 @@ struct cmd_exit_test_loop_result {
     cmdline_fixed_string_t loop;
 };
 
-extern int exit_mailbox;
-
 cmdline_parse_token_string_t cmd_exit_test_loop_result_exit =
     TOKEN_STRING_INITIALIZER(struct cmd_exit_test_loop_result, exit, "exit");
 cmdline_parse_token_string_t cmd_exit_test_loop_result_loop =
@@ -625,7 +623,6 @@ static void cmd_exit_test_loop_parsed(void *parsed_result,
     struct cmd_exit_test_loop_result *res = parsed_result;
     res = res;
     testpc802_exit_loop = 1;
-    exit_mailbox = 0;
 }
 
 cmdline_parse_inst_t exit_test_loop = {

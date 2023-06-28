@@ -29,7 +29,7 @@ static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
          begin+=RTE_CACHE_LINE_MIN_SIZE;
     }while(begin<end);
 }
-	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)p,(((uintptr_t)p)+(size)))
+	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
 
 static inline void prefetch_for_load(void *p)
 {
@@ -43,7 +43,7 @@ static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
          begin+=RTE_CACHE_LINE_MIN_SIZE;
     }while(begin<end);
 }
-	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)p,(((uintptr_t)p)+(size)))
+	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
 #else
 	#define CLEAN(p)
     #define CLEAN_RANGE(begin,end)

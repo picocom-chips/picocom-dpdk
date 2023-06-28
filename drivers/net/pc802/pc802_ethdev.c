@@ -74,7 +74,6 @@ static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
 
 static uint16_t num_pc802s = 0;
 static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
-int exit_mailbox = 1;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
@@ -417,7 +416,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         PC802_WRITE_REG(bar->MB_C2H_RDNUM, nb_desc);
     } else {
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
-        rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
+        rxq->repcnt_mirror_addr = &bar->REPCNT[queue_id];
     }
 
     if ((queue_id < PC802_TRAFFIC_MAILBOX) && (PC802_READ_REG(bar->DEVEN))) {
@@ -433,7 +432,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             ep_cnt = PC802_READ_REG(bar->REPCNT[queue_id]);
         } while (0 != ep_cnt);
         do {
-            ep_cnt = *rxq->repcnt_mirror_addr;
+            ep_cnt = PC802_READ_REG(rxq->repcnt_mirror_addr[0]);
         } while (0 != ep_cnt);
         if (0 != PC802_READ_REG(bar->RRCCNT[queue_id])) {
             rc_rst_cnt++;
@@ -548,7 +547,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_id];
-    txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT[queue_id];
+    txq->tepcnt_mirror_addr = &bar->TEPCNT[queue_id];
     txq->nb_tx_desc = nb_desc;
     txq->rc_cnt = 0;
     txq->nb_tx_free = nb_desc;
@@ -628,7 +627,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     volatile PC802_Descriptor_t *rx_ring;
     volatile PC802_Descriptor_t *rxdp;
@@ -655,7 +653,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
     else
     {
-        ep_txed = PC802_READ_REG(bar->REPCNT[queue_id]) - rx_id;
+        ep_txed = PC802_READ_REG(rxq->repcnt_mirror_addr[0]) - rx_id;
     }
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
     while (nb_rx < nb_blks) {
@@ -685,7 +683,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         if (queue_id != PC802_TRAFFIC_MAILBOX){
             //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
             //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
-
             while(0 == rxdp->length) {
                 DBLOG("UL DESC[%1u][%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
                     queue_id, idx, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
@@ -701,7 +698,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
 
-        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+2*1024);
+        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+4*1024);
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
@@ -973,7 +970,7 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
     rxq->port_id = dev->data->port_id;
 
     rxq->rrccnt_reg_addr = &bar->RRCCNT[queue_idx];
-    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_idx];
+    rxq->repcnt_mirror_addr = &bar->REPCNT[queue_idx];
     rxq->rx_ring = adapter->pDescs->ul[queue_idx];
     //rxq->rx_ring_phys_addr = adapter->descs_phy_addr + get_ul_desc_offset(queue_idx, 0);
 
@@ -1089,7 +1086,7 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
     //txq->tx_ring_phys_addr = adapter->descs_phy_addr + get_dl_desc_offset(queue_idx, 0);
     txq->tx_ring = adapter->pDescs->dl[queue_idx];
     txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_idx];
-    txq->tepcnt_mirror_addr =(volatile uint32_t *)&adapter->pDescs->mr.TEPCNT[queue_idx];
+    txq->tepcnt_mirror_addr =(volatile uint32_t *)&bar->TEPCNT[queue_idx];;
 
     //PMD_INIT_LOG(DEBUG, "sw_ring=%p hw_ring=%p dma_addr=0x%"PRIx64,
     //       txq->sw_ring, txq->tx_ring, txq->tx_ring_phys_addr);
@@ -1251,6 +1248,8 @@ pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
         rxd->phy_addr = dma_addr;
         rxd->length = 0;
         rxe[i].mbuf = mbuf;
+        INVALIDATE_SIZE(mbuf->buf_addr, mbuf->buf_len);
+        INVALIDATE(rxd);
     }
 
     return 0;
@@ -1440,7 +1439,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 
     /* Determine if the descriptor ring needs to be cleaned. */
      if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_pkts)) {
-        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
+        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + PC802_READ_REG(txq->tepcnt_mirror_addr[0]);
      }
 
     nb_tx_free = txq->nb_tx_free;
@@ -1461,6 +1460,8 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
         txd->eop = (tx_pkt->next == NULL);
         txd->type = tx_pkt->packet_type;
         txe->mbuf = tx_pkt;
+        CLEAN_SIZE(rte_pktmbuf_mtod(tx_pkt,void *), tx_pkt->data_len);
+        CLEAN(txd);
         tx_id++;
     }
     nb_tx_free -= mb_pkts;
@@ -1508,7 +1509,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
+    ep_txed = PC802_READ_REG(rxq->repcnt_mirror_addr[0]) - rx_id;
     mb_pkts = (ep_txed < nb_pkts) ? ep_txed : nb_pkts;
     while (nb_rx < mb_pkts) {
         idx = rx_id & mask;
@@ -1561,6 +1562,8 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->length = 0;
         rxdp->eop = 1;
         rxdp->type = 1;
+        INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len+2*1024);
+        INVALIDATE(rxdp);
 
         rx_id++;
         nb_hold++;
@@ -1852,7 +1855,7 @@ static const cpu_set_t * get_ctrl_cpuset( void )
         FILE *fp = NULL;
         char buffer[128] = {0};
         int core=0;
-        int min,max;
+        int min=0, max=0;
         char *ret = NULL;
 
         fp = popen("cat /sys/devices/system/cpu/present", "r");
@@ -1872,17 +1875,9 @@ static const cpu_set_t * get_ctrl_cpuset( void )
             for( core=min; core<=max; core++ )
                 CPU_CLR( core, &ctrl_cpuset );
         }
-#if 0
-        //select first core
-        for (core = 0; core < _NUM_SETS(CPU_SETSIZE); core++)
-            if (CPU_ISSET(core, &ctrl_cpuset) != 0LL)
-                break;
+
         CPU_ZERO( &ctrl_cpuset );
-        CPU_SET( core, &ctrl_cpuset );
-#else
-        CPU_ZERO( &ctrl_cpuset );
-        CPU_SET( 1, &ctrl_cpuset );
-#endif
+        CPU_SET( max, &ctrl_cpuset );
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
     }
@@ -2872,7 +2867,7 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
     (void)data;
 
     fd = open(FIFO_PC802_VEC_ACCESS, O_RDONLY, 0);
-    while( exit_mailbox ){
+    while (1) {
         pc802_vec_access_msg_recv(fd, &msg);
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         port_idx = pc802_get_port_index(msg.port_id);
@@ -3342,7 +3337,7 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
 
-    while( exit_mailbox )
+    while( 1 )
     {
         num = 0;
         for ( i=0; i<num_pc802s; i++ )
