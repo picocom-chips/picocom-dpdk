@@ -336,10 +336,8 @@ static int check_single_same(uint32_t *a, uint32_t *b)
             DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
                 k, a[k], k, b[k]);
             err_cnt++;
-            if (16 == err_cnt){
-                assert(0);
+            if (16 == err_cnt)
                 return -1;
-            }
         }
    }
    return res;
@@ -990,6 +988,9 @@ static int case201(void)
         if (ret) break;
         rte_pktmbuf_free(rx_pkts[n]);
     }
+    if (n < N)
+        DBLOG("Wrong pkt %u: mbuf(buf_addr=%p,buf_len=%d)\n", n, rx_pkts[n]->buf_addr, rx_pkts[n]->buf_len);
+
     for (; n < N; n++)
         rte_pktmbuf_free(rx_pkts[n]);
 
@@ -1703,8 +1704,8 @@ int main(int argc, char** argv)
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
 
-    //signal(SIGINT, signal_handler);
-    //signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
     diag = rte_eal_init(argc, argv);
     if (diag < 0)
@@ -1721,7 +1722,7 @@ int main(int argc, char** argv)
     rte_eal_remote_launch(prompt, NULL, rte_get_next_lcore(-1, 1, 0));
 
     while(!main_stop) {
-        usleep(100);
+        usleep(10);
         run_case(test_case_No);
     }
 

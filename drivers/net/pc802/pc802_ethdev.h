@@ -31,16 +31,14 @@ static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
 }
 	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
 
-static inline void prefetch_for_load(void *p)
-{
-	asm volatile("prfm pldl1keep, [%0, #0]" : : "r" (p));
-}
+
 	#define INVALIDATE(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
 static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
 {
+    //printf( "INVALIDATE_RANGE %p(%u) to %p, cache_line_size=%u\n", (void *)begin, (int)begin%8, (void *)end, RTE_CACHE_LINE_MIN_SIZE);
     do{
-         INVALIDATE(begin);
-         begin+=RTE_CACHE_LINE_MIN_SIZE;
+        INVALIDATE(begin);
+        begin+=RTE_CACHE_LINE_MIN_SIZE;
     }while(begin<end);
 }
 	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))

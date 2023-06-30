@@ -412,7 +412,8 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if (PC802_TRAFFIC_MAILBOX == queue_id) {
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(port_id);
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
-        rxq->repcnt_mirror_addr = (volatile uint32_t *)&adapter->pDescs->mr.MB_C2H_EPCNT;
+        rxq->repcnt_mirror_addr = (volatile uint32_t *)&ext->MB_C2H_EPCNT;
+        *rxq->repcnt_mirror_addr = *rxq->rrccnt_reg_addr;
         PC802_WRITE_REG(bar->MB_C2H_RDNUM, nb_desc);
     } else {
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
@@ -432,7 +433,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             ep_cnt = PC802_READ_REG(bar->REPCNT[queue_id]);
         } while (0 != ep_cnt);
         do {
-            ep_cnt = PC802_READ_REG(rxq->repcnt_mirror_addr[0]);
+            ep_cnt = *rxq->repcnt_mirror_addr;
         } while (0 != ep_cnt);
         if (0 != PC802_READ_REG(bar->RRCCNT[queue_id])) {
             rc_rst_cnt++;
@@ -609,6 +610,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
+    INVALIDATE_SIZE(&mblk[1], mblk->pkt_length+4*1024);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
@@ -645,16 +647,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-
-    if ( PC802_TRAFFIC_MAILBOX == queue_id )
-    {
-        ep_txed = *rxq->repcnt_mirror_addr - rx_id;
-        INVALIDATE(rxq->repcnt_mirror_addr);
-    }
-    else
-    {
-        ep_txed = PC802_READ_REG(rxq->repcnt_mirror_addr[0]) - rx_id;
-    }
+    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
     while (nb_rx < nb_blks) {
         idx = rx_id & mask;
@@ -680,12 +673,12 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
             rte_prefetch0(&sw_ring[idx]);
         }
 
-        if (queue_id != PC802_TRAFFIC_MAILBOX){
+        if (PC802_TRAFFIC_MAILBOX != queue_id){
             //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
             //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
             while(0 == rxdp->length) {
-                DBLOG("UL DESC[%1u][%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
-                    queue_id, idx, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+                DBLOG("UL DESC[%1u][%3u-%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
+                    queue_id, rx_id, *rxq->repcnt_mirror_addr, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
                 sleep(1);
             }
         }
@@ -698,11 +691,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         rx_blks[nb_rx++] = rxm;
 
-        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+4*1024);
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
-        rte_mb();
         INVALIDATE(rxdp);
 
         rx_id++;
@@ -755,7 +746,6 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
     struct pc802_tx_entry *sw_ring = txq->sw_ring;
     struct pc802_tx_entry *txe;
@@ -768,7 +758,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint16_t nb_tx;
 
     if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_blks)) {
-        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + PC802_READ_REG(bar->TEPCNT[queue_id]);
+        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
@@ -789,7 +779,6 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
         CLEAN(txd);
-        //rte_wmb();
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
@@ -1439,7 +1428,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
 
     /* Determine if the descriptor ring needs to be cleaned. */
      if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_pkts)) {
-        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + PC802_READ_REG(txq->tepcnt_mirror_addr[0]);
+        txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
      }
 
     nb_tx_free = txq->nb_tx_free;
@@ -1509,7 +1498,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rx_id = rxq->rc_cnt;
     rx_ring = rxq->rx_ring;
     sw_ring = rxq->sw_ring;
-    ep_txed = PC802_READ_REG(rxq->repcnt_mirror_addr[0]) - rx_id;
+    ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     mb_pkts = (ep_txed < nb_pkts) ? ep_txed : nb_pkts;
     while (nb_rx < mb_pkts) {
         idx = rx_id & mask;
@@ -1528,6 +1517,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
                    (unsigned) rxq->queue_id);
             break;
         }
+        INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
 
         /* Prefetch next mbuf while processing current one. */
         rte_prefetch0(sw_ring[idx].mbuf);
@@ -1543,6 +1533,11 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         }
 
         rxm = sw_ring[idx].mbuf;
+        while (!rxdp->length) {
+            DBLOG("UL DESC[%1u][%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
+                rxq->queue_id, idx, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+            sleep(1);
+        }
         pkt_len = (uint16_t)rte_le_to_cpu_16(rxdp->length);
         rxm->data_off = RTE_PKTMBUF_HEADROOM;
         rte_prefetch0((char *)rxm->buf_addr + rxm->data_off);
@@ -1562,9 +1557,8 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->length = 0;
         rxdp->eop = 1;
         rxdp->type = 1;
-        INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len+2*1024);
+        rte_mb();
         INVALIDATE(rxdp);
-
         rx_id++;
         nb_hold++;
     }
@@ -1673,6 +1667,11 @@ void pc802_access_ep_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     uint32_t epcnt;
+
+    if ( DIR_PCIE_DMA_UPLINK == cmd)
+        INVALIDATE_SIZE(adapter->dbg, bytesNum);
+    else if ( DIR_PCIE_DMA_UPLINK == cmd)
+        CLEAN_SIZE(adapter->dbg, bytesNum);
 
     PC802_WRITE_REG(bar->DBGEPADDR, startAddr);
     PC802_WRITE_REG(bar->DBGBYTESNUM, bytesNum);
@@ -2420,12 +2419,12 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
-    uint32_t       *pd, *addr;
+    uint32_t       *pd, *addr=(uint32_t *)pc802_get_debug_mem(port_id);
     uint32_t       data_size;
     uint32_t       buf_full;
 
 __next_pfi_0_vec_read:
-    addr = pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    pd = addr;
     data_size = 0;
     buf_full = 0;
     while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
@@ -2538,6 +2537,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
 __next_pfi_0_vec_dump:
     pd = (uint32_t *)adapter->dbg;
     data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    INVALIDATE_SIZE(pd, data_size);
     PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
     vec_rccnt++;
     PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
@@ -2591,12 +2591,12 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
 
-    uint32_t *pd;
+    uint32_t *pd, *addr = (uint32_t *)pc802_get_debug_mem(port_id);
     uint32_t data_size;
     uint32_t buf_full;
 
 __next_non_pfi_0_vec_read:
-    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    pd = addr;
     data_size = 0;
     buf_full = 0;
     while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
@@ -2628,6 +2628,7 @@ __next_non_pfi_0_vec_read:
     }
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    CLEAN_SIZE(addr, data_size);
     PC802_WRITE_REG(bar->DBGEPADDR, address);
     PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
@@ -2700,10 +2701,13 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
 
     uint32_t left = length;
     uint32_t data_size;
+    uint32_t *pd, *addr = (uint32_t *)pc802_get_debug_mem(port_id);
 
 __next_non_pfi_0_vec_dump:
     PC802_WRITE_REG(bar->DBGEPADDR, address);
     data_size = (left < buf_sz) ? left : buf_sz;
+    pd = addr;
+    INVALIDATE_SIZE(pd, data_size);
     PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     RCCNT++;
@@ -2714,7 +2718,6 @@ __next_non_pfi_0_vec_dump:
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
     if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
         if (is_data_dump) {
