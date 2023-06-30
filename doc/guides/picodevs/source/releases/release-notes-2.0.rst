@@ -138,3 +138,10 @@ PC802 driver 2.5.1
 Bug fixes
 *********
 * NDF-146: DPDK driver breaks secure boot process
+
+PC802 driver 2.5.2
+##################
+
+New features
+************
+* NDF-116: support pc802 printf with time stamp
