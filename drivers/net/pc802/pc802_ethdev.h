@@ -20,6 +20,38 @@
 
 #define PC802_DEBUG_BUF_SIZE    (160 * 1024 * 1024)
 
+#ifdef RTE_ARCH_ARM64
+	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
+static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
+{
+    do{
+         CLEAN(begin);
+         begin+=RTE_CACHE_LINE_MIN_SIZE;
+    }while(begin<end);
+}
+	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+
+
+	#define INVALIDATE(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
+{
+    //printf( "INVALIDATE_RANGE %p(%u) to %p, cache_line_size=%u\n", (void *)begin, (int)begin%8, (void *)end, RTE_CACHE_LINE_MIN_SIZE);
+    do{
+        INVALIDATE(begin);
+        begin+=RTE_CACHE_LINE_MIN_SIZE;
+    }while(begin<end);
+}
+	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+#else
+	#define CLEAN(p)
+    #define CLEAN_RANGE(begin,end)
+    #define CLEAN_SIZE(p,size)
+
+	#define INVALIDATE(p)
+    #define INVALIDATE_RANGE(begin,end)
+    #define INVALIDATE_SIZE(p,size)
+#endif
+
 struct PC802_CacheLine_t{
     uint32_t _a[8];
 } __attribute__((__aligned__(PC802_CACHE_LINE_SZ)));
@@ -265,11 +297,14 @@ typedef struct PC802_BAR_t {
 
 #define NPU_CACHE_LINE_SZ   64
 
-typedef struct stPC802_Descriptor_t{
+typedef union stPC802_Descriptor_t{
+  struct {
     uint64_t phy_addr;  // pointer to start physical address of a buffer in NPU memory
     uint32_t length;    // length of content to be sent in bytes
     uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
     uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
+  };
+  uint8_t cache_line[NPU_CACHE_LINE_SZ];
 } PC802_Descriptor_t;
 
 struct stPC802_EP_Counter_Mirror_t {
