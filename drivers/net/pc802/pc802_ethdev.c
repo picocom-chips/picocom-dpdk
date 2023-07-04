@@ -546,7 +546,6 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
-    INVALIDATE_SIZE(&mblk[1], mblk->pkt_length+4*1024);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
@@ -607,8 +606,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
         //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         while(0 == rxdp->length) {
-            DBLOG("UL DESC[%1u][%3u-%3u]: rxdp=%p(phy_addr=%lx length=%u pkt_type=%d eop=%d) length err!\n",
-                queue_id, rx_id, *rxq->repcnt_mirror_addr, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+            DBLOG("UL DESC[%1u][%3u-%3u]: rxdp=%p(phy_addr=%lu length=%u type=%d eop=%d count=%u rc_tsc=%lu-%lu) length err!\n",
+                queue_id, rx_id, *rxq->repcnt_mirror_addr, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop, rxdp->count, rxdp->rc_tsc, rte_rdtsc());
+            RTE_ASSERT(0);
             sleep(1);
         }
 
@@ -623,7 +623,11 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
+        rxdp->count++;
+        rxdp->rc_tsc = rte_rdtsc();
+        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
         INVALIDATE(rxdp);
+        rte_mb();
 
         rx_id++;
         nb_hold++;
