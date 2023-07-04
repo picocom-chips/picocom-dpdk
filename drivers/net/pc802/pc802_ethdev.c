@@ -2208,13 +2208,13 @@ char * picocom_pc802_version(void)
 #define UIO_ADDR "/sys/class/uio/uio1/maps/map0/addr"
 #define UIO_SIZE "/sys/class/uio/uio1/maps/map0/size"
 
-static void* uio_addr, *access_address;
 
 static int get_cma_mem(void **pa_addr, void **pv_addr)
 {
+  void* uio_addr, *access_address;
   int uio_fd, addr_fd, size_fd;
   int uio_size;
-  char uio_addr_buf[32], uio_size_buf[32];
+  char uio_addr_buf[64], uio_size_buf[64];
 
   uio_fd = open(UIO_DEV, /*O_RDONLY*/O_RDWR);
   addr_fd = open(UIO_ADDR, O_RDONLY);
@@ -2226,13 +2226,15 @@ static int get_cma_mem(void **pa_addr, void **pv_addr)
 
   read(addr_fd, uio_addr_buf, sizeof(uio_addr_buf));
   read(size_fd, uio_size_buf, sizeof(uio_size_buf));
+  close(addr_fd);
+  close(size_fd);
+
   printf("uio_addr_buf = %s uio_size_buf = %s\n", uio_addr_buf, uio_size_buf);
   uio_addr = (void*)strtoul(uio_addr_buf, NULL, 0);
   uio_size = (int)strtol(uio_size_buf, NULL,0);
   printf("uio_addr = %p  uio_size = %d\n", uio_addr, uio_size);
 
-  access_address = mmap(NULL, uio_size,PROT_READ | PROT_WRITE,
-                    MAP_SHARED, uio_fd, 0);
+  access_address = mmap(NULL, uio_size,PROT_READ | PROT_WRITE, MAP_SHARED, uio_fd, 0);
   if ( access_address == (void*) -1) {
       fprintf(stderr, "mmap:%s\n", strerror(errno));
       exit(-1);
@@ -2242,15 +2244,18 @@ static int get_cma_mem(void **pa_addr, void **pv_addr)
          "logicaladdress %p\n", uio_addr, uio_size, access_address);
   *pa_addr = uio_addr;
   *pv_addr = access_address;
-  printf("uio addr \n");
 
   return 0; 
 }
 
-
-static void pc802_Debug(void)
+static void rk3399_memcopy(uint8_t *dst, uint8_t *src, uint32_t len)
 {
-	printf("pc802 dma end\n");
+	uint32_t i = 0;
+
+	for(i = 0; i < len; i++)
+	{
+	   dst[i] = src[i];	
+	}
 }
 
 static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
@@ -2276,30 +2281,18 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
     *BOOTRCCNT = 0;
-    const struct rte_memzone *mz;
-    uint32_t tsize = 64 * 1024;
-    int socket_id = pc802_get_socket_id(port);
-    int i = 0;
 
-#if 0
-    mz = rte_memzone_reserve_aligned("PC802_BOOT", tsize, socket_id,
-            RTE_MEMZONE_IOVA_CONTIG, 64);
-    if (NULL == mz) {
-        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
-        return -ENOMEM;
-    }
-#endif
-     void *pa_addr, *pv_addr;
-     uint32_t addr;
+    uint32_t tsize = 64 * 1024;
+    static void *pa_addr, *pv_addr;
+    uint64_t addr;
 
     get_cma_mem(&pa_addr, &pv_addr);
-    addr = (uint32_t)uio_addr;
-    //addr = (uint32_t *) uio_addr;
+    addr = (uint64_t)pa_addr;
     uint8_t *pimg = (uint8_t *)pv_addr;
-    printf("pimg = %p addr = %x\n", pv_addr, addr);
+    printf("pimg = %p addr = %lx\n", pv_addr, addr);
 
-    bar->BOOTSRCL = addr;
-    //bar->BOOTSRCH = (addr >> 32);
+    bar->BOOTSRCL = (uint32_t)addr;
+    bar->BOOTSRCH = (uint32_t)(addr >> 32);
     bar->BOOTSRCH = (0x0);
     bar->BOOTDST  = 0;
     bar->BOOTSZ = 0;
@@ -2310,17 +2303,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 
     sum = mb_get_ssbl(port_idx, &buf);
     while( N < sum ) {
-	//rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
-        memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
-#if 0
-	for(i = 0; i < 1024; i++)
-	{
-	   printf("%d,", pimg[i]);
-	}
-	printf("\n");
-#endif
-        //rte_wmb();
-        //CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
+        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
@@ -2348,25 +2331,8 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 
     N = 0;
     sum = mb_get_img(port_idx, &buf);
-    printf("sum = %d\n", sum);
     while( N < sum ) {
-	printf("N = %d, RTE_MIN: %d\n", N, RTE_MIN(tsize, sum-N));
-	if(N == 131072)
-	{
-		for(i = 0; i < 12588; i++)
-		{
-			printf("buf:%x,", buf[N+i]);
-			pimg[i] = buf[N+i];
-			printf("pimg:%x,", pimg[i]);
-		}
-		printf("\n");
-	}
-	printf("pimg = %p\n", pimg);
-	pc802_Debug();
-
-        rte_memcpy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
-        //rte_wmb();
-    //    CLEAN_SIZE(pimg, RTE_MIN(tsize, sum-N));
+	rk3399_memcopy(pimg, &buf[N], RTE_MIN(tsize, sum-N));
         (*BOOTRCCNT)++;
         while(*BOOTRCCNT != *BOOTEPCNT)
             usleep(1);
@@ -2375,9 +2341,6 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     };
     *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
-
-   // rte_memzone_free(mz);
-
     printf("Finish pc802 download image !\n");
     return 0;
 }
