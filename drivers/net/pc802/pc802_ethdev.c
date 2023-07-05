@@ -415,7 +415,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
-    rxq->repcnt_mirror_addr = (volatile uint32_t *)&bar->REPCNT[queue_id];
+    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
     rxq->nb_rx_desc = nb_desc;
     rxq->rc_cnt = 0;
     rxq->nb_rx_hold = 0;
@@ -529,7 +529,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_id];
-    txq->tepcnt_mirror_addr = &bar->TEPCNT[queue_id];
+    txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT[queue_id];
     txq->nb_tx_desc = nb_desc;
     txq->rc_cnt = 0;
     txq->nb_tx_free = nb_desc;
@@ -670,7 +670,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxdp->length = 0;
         rxdp->count++;
         rxdp->rc_tsc = rte_rdtsc();
-        INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096));            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
         //INVALIDATE(rxdp);
         rte_mb();
 
@@ -904,7 +904,7 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
     rxq->port_id = dev->data->port_id;
 
     rxq->rrccnt_reg_addr = &bar->RRCCNT[queue_idx];
-    rxq->repcnt_mirror_addr = &bar->REPCNT[queue_idx];
+    rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_idx];
     rxq->rx_ring = adapter->pDescs->ul[queue_idx];
     //rxq->rx_ring_phys_addr = adapter->descs_phy_addr + get_ul_desc_offset(queue_idx, 0);
 
@@ -1020,7 +1020,7 @@ eth_pc802_tx_queue_setup(struct rte_eth_dev *dev,
     //txq->tx_ring_phys_addr = adapter->descs_phy_addr + get_dl_desc_offset(queue_idx, 0);
     txq->tx_ring = adapter->pDescs->dl[queue_idx];
     txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_idx];
-    txq->tepcnt_mirror_addr =(volatile uint32_t *)&bar->TEPCNT[queue_idx];;
+    txq->tepcnt_mirror_addr =(volatile uint32_t *)&adapter->pDescs->mr.TEPCNT[queue_idx];
 
     //PMD_INIT_LOG(DEBUG, "sw_ring=%p hw_ring=%p dma_addr=0x%"PRIx64,
     //       txq->sw_ring, txq->tx_ring, txq->tx_ring_phys_addr);
@@ -1803,7 +1803,7 @@ static const cpu_set_t * get_ctrl_cpuset( void )
         }
 
         CPU_ZERO( &ctrl_cpuset );
-        CPU_SET( max, &ctrl_cpuset );
+        CPU_SET( min, &ctrl_cpuset );
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
     }

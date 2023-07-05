@@ -91,7 +91,7 @@ int pcxx_oam_init(void)
         RTE_ASSERT(0 == pc802_create_tx_queue( g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
         RTE_ASSERT(0 == pc802_create_rx_queue( g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
     }
-    return 0;
+
     pc802_ctrl_thread_create( &tid, "oam", NULL, oam_recv, NULL);
     return 0;
 }

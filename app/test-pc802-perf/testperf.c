@@ -74,14 +74,14 @@ static const struct rte_eth_conf dev_conf = {
         },
     };
 
+uint16_t pc802_port = 0;
+
 static int port_init(uint16_t port)
 {
     struct rte_mempool *mbuf_pool;
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf tx_conf;
     int socket_id;
-    static pcxxInfo_s   ctrl_cb_info = { NULL, NULL };
-    static pcxxInfo_s   data_cb_info = { NULL, NULL };
 
     rte_eth_dev_info_get(port, &dev_info);
     socket_id = dev_info.device->numa_node;
@@ -101,9 +101,23 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    pcxxDataOpen(&data_cb_info, 0, 0);
+    pc802_create_tx_queue( port, PC802_TRAFFIC_DATA_1, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_DATA_1, 256*1024, 256, 128);
 
-    pcxxCtrlOpen(&ctrl_cb_info, 0, 0);
+    pc802_create_tx_queue( port, PC802_TRAFFIC_CTRL_1, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_CTRL_1, 256*1024, 256, 128);
+
+    pc802_create_tx_queue( port, PC802_TRAFFIC_DATA_2, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_DATA_2, 256*1024, 256, 128);
+
+    pc802_create_tx_queue( port, PC802_TRAFFIC_CTRL_2, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_CTRL_2, 256*1024, 256, 128);
+
+    pc802_create_tx_queue( port, PC802_TRAFFIC_5G_URLLC, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_5G_URLLC, 256*1024, 256, 128);
+
+    pc802_create_tx_queue( port, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
+    pc802_create_rx_queue( port, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
 
     rte_eth_dev_start(port);
 
@@ -116,7 +130,7 @@ static int port_init(uint16_t port)
 static uint32_t * alloc_tx_blk(uint16_t qId)
 {
     PC802_Mem_Block_t *mblk;
-    mblk = pc802_alloc_tx_mem_block(0, qId);
+    mblk = pc802_alloc_tx_mem_block(pc802_port, qId);
     if (mblk)
         return (uint32_t *)&mblk[1];
     return NULL;
@@ -138,13 +152,13 @@ static uint16_t tx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
     RTE_ASSERT(nb_blks <= 32);
     for (k = 0; k <nb_blks; k++)
         tx_blks[k] = (PC802_Mem_Block_t *)((char *)blks[k] - sizeof(PC802_Mem_Block_t));
-    return pc802_tx_mblk_burst(0, qId, tx_blks, nb_blks);
+    return pc802_tx_mblk_burst(pc802_port, qId, tx_blks, nb_blks);
 }
 
 static uint16_t rx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
 {
     uint16_t k;
-    nb_blks = pc802_rx_mblk_burst(0, qId, (PC802_Mem_Block_t **)blks, nb_blks);
+    nb_blks = pc802_rx_mblk_burst(pc802_port, qId, (PC802_Mem_Block_t **)blks, nb_blks);
     for (k = 0; k < nb_blks; k++) {
         blks[k] += (sizeof(PC802_Mem_Block_t) / sizeof(uint32_t));
     }
@@ -173,9 +187,15 @@ static void get_blk_attr(uint32_t *blk, uint32_t *length, uint8_t *type, uint8_t
     }
 }
 
+struct test_para{
+    uint32_t  time;
+    uint32_t  ch;
+};
+
 static int pc802_test_pcie_recv( void *arg )
 {
-    int ch=0x46;               //channel mask
+    struct test_para *para = (struct test_para *)arg;
+    int ch = para->ch;               //channel mask
     uint64_t start, end;
     uint64_t pkts=0, pktlens=0, total=0;
     uint64_t pkt[PC802_TRAFFIC_NUM], pktlen[PC802_TRAFFIC_NUM];
@@ -185,10 +205,11 @@ static int pc802_test_pcie_recv( void *arg )
     int t = 0;
     uint32_t *buf[32];
     uint32_t length = 0;
-    int time = (uint64_t)arg;
+    int time = para->time;
     uint8_t type, eop;
 
-	//printf( "\nCore %u acting as pc802 recv core %d second.\n", rte_lcore_id(), time );
+	printf( "\nCore %u acting as pc802 recv core %d second.\n", rte_lcore_id(), time );
+    rte_delay_us(1);
 
     pkts = 0;
     pktlens = 0;
@@ -241,7 +262,8 @@ static int pc802_test_pcie_recv( void *arg )
 int pc802_test_pcie( int len, int time, int ch, int type );
 int pc802_test_pcie( int len, int time, int ch, int type )
 {
-    #define RECV_CORE_ID 2
+    struct test_para para;
+    uint32_t lcore_id = rte_get_next_lcore(-1, 1, 0);
 //  int ch=0x46;               //channel mask
 //  int len=arg0*1024;
 //  int time=60;
@@ -257,16 +279,23 @@ int pc802_test_pcie( int len, int time, int ch, int type )
 
     len = (len==0)?1024:len*1024;
     time = (time==0)?60:time;
-    ch = (ch==0)?0x46:ch;
+    ch = (ch==0)?0x70:ch;
     type = (type==0)?12:type;
 
     printf( "\n\tStart pcie performance test ...\n");
     printf( "\tPackage len:\t%d byte\n", len);
     printf( "\tTest channel:\t%x\n", ch );
     printf( "\tTest duration:\t%d seconds\n", time);
-    printf( "\tTest type:\t%d\n\n", type);
+    printf( "\tTest type:\t%d\n", type);
+    printf( "\tUL core:\t%u\n\n", lcore_id);
 
-    rte_eal_remote_launch( pc802_test_pcie_recv, (void*)((uint64_t)time+5), RECV_CORE_ID );
+    if (RTE_MAX_LCORE != lcore_id)
+    {
+        para.time = time+2;
+        para.ch = ch;
+        rte_eal_remote_launch( pc802_test_pcie_recv, (void*)&para, lcore_id );
+        rte_delay_us(1000);
+    }
 
     start = rte_rdtsc( );
     for ( t=0; t<time; )
@@ -328,7 +357,7 @@ int pc802_test_pcie( int len, int time, int ch, int type )
         }
     }
 
-    rte_eal_wait_lcore( RECV_CORE_ID );
+    rte_eal_mp_wait_lcore( );
     printf("Tx total send pkgs %lu.\n", total);
 
     return total;
@@ -364,11 +393,12 @@ int main(int argc, char** argv)
     if (diag < 0)
         rte_panic("Cannot init EAL\n");
 
-    port_init(0);
+    pc802_port = pc802_get_port_id(0);
+    port_init( pc802_port );
 
     prompt(NULL);
 
-    rte_eal_wait_lcore( 1 );
+    rte_eal_mp_wait_lcore( );
     return 0;
 }
 
