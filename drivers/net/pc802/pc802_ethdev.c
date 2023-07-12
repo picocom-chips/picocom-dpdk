@@ -33,6 +33,8 @@
 #include <rte_memory.h>
 #include <rte_eal.h>
 #include <rte_malloc.h>
+#include <rte_mempool.h>
+#include <rte_mbuf_pool_ops.h>
 #include <rte_dev.h>
 
 #include "pc802_logs.h"
@@ -110,7 +112,7 @@ struct pc802_rx_queue {
     //struct rte_mbuf *pkt_first_seg; /**< First segment of current packet. */
     //struct rte_mbuf *pkt_last_seg;  /**< Last segment of current packet. */
     //uint64_t      offloads;   /**< Offloads of DEV_RX_OFFLOAD_* */
-    PC802_Mem_Pool_t    mpool;
+    struct rte_mempool* mpool;
     uint32_t            rc_cnt;
     //uint32_t            ep_cnt;
     uint16_t            nb_rx_desc; /**< number of RX descriptors. */
@@ -139,6 +141,7 @@ struct pc802_tx_entry {
         PC802_Mem_Block_t *mblk;
    };
 };
+#define MBLK_IOVA(mblk) rte_mempool_virt2iova(mblk)+sizeof(*mblk)
 
 /**
  * Structure associated with each TX queue.
@@ -150,7 +153,7 @@ struct pc802_tx_queue {
     volatile uint32_t      *trccnt_reg_addr; /**< Address of TDT register. */
     volatile uint32_t      *tepcnt_mirror_addr;
     //uint32_t               ep_cnt;
-    PC802_Mem_Pool_t            mpool;
+    struct rte_mempool     *mpool;
     uint32_t               rc_cnt;  /**< Current value of TDT register. */
     uint16_t               nb_tx_desc;    /**< number of TX descriptors. */
     /**< Start freeing TX buffers if there are less free descriptors than
@@ -344,21 +347,14 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *rxep;
-    uint32_t mask = NPU_CACHE_LINE_SZ - 1;
+
     uint32_t k;
     int socket_id = dev->device->numa_node;
     char z_name[RTE_MEMZONE_NAMESIZE];
-    const struct rte_memzone *mz;
     PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
     volatile uint32_t ep_cnt;
-
-    rxq->mpool.block_size = block_size;
-    rxq->mpool.block_num = block_num;
-
-    block_size = (block_size + mask) & (~mask);
-    //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
     if (NULL != rxq->sw_ring) {
@@ -372,41 +368,37 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         return -ENOMEM;
     }
 
-    rxq->mpool.first = NULL;
-    snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d",
+    snprintf(z_name, sizeof(z_name), "PC802Rx_%02d_%02d",
             dev->data->port_id, queue_id);
-    if (NULL != (mz = rte_memzone_lookup(z_name))) {
-        rte_memzone_free(mz);
-    }
-    mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
-    if (mz == NULL) {
-        DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
-            block_size*block_num, port_id, queue_id, block_num);
+    if (NULL != (rxq->mpool = rte_mempool_lookup(z_name)))
+        rte_mempool_free(rxq->mpool);
+
+    rxq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, NPU_CACHE_LINE_SZ, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    if (rxq->mpool == NULL) {
+        DBLOG("ERROR: fail to mempool create size = %u for Port %hu Rx queue %hu block %u\n",
+            block_size, port_id, queue_id, block_num);
         return -ENOMEM;
     }
-    DBLOG("UL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
-        queue_id, mz->iova, mz->addr);
-    for (k = 0; k < block_num; k++) {
-        mblk = (PC802_Mem_Block_t *)((char *)mz->addr + block_size*k);
-        mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
-        mblk->pkt_length = 0;
-        mblk->next = rxq->mpool.first;
-        mblk->first = &rxq->mpool.first;
-        mblk->alloced = 0;
-        rxq->mpool.first = mblk;
-        INVALIDATE_SIZE(&mblk[1], block_size);
-        DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
-            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
-    }
+	if (0 != rte_mempool_set_ops_byname(rxq->mpool, rte_mbuf_best_mempool_ops(), NULL)) {
+		DBLOG("Unable to set pool ops\n");
+		rte_mempool_free(rxq->mpool);
+		return -ENOMEM;
+	}
+#if 1
+	if (rte_mempool_populate_default(rxq->mpool) < 0 ) {
+		DBLOG("Could not populate metabuf pool\n");
+        rte_mempool_free(rxq->mpool);
+		return -ENOMEM;
+	}
+#endif
+    DBLOG("UL mem pool[%1u]: name=%s\n", queue_id, rxq->mpool->name);
 
     rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
     rxep = rxq->sw_ring;
     for (k = 0; k < nb_desc; k++) {
-        rxep->mblk = rxq->mpool.first;
-        rxq->mpool.first = rxep->mblk->next;
-        rxep->mblk->next = NULL;
-        rxep->mblk->alloced = 1;
-        rxdp->phy_addr = rxep->mblk->buf_phy_addr;
+        rte_mempool_get(rxq->mpool, (void **)&mblk);
+        rxep->mblk = mblk;
+        rxdp->phy_addr = MBLK_IOVA(mblk);
         rxdp->length = 0;
         //INVALIDATE(rxdp);
         DBLOG_INFO("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
@@ -467,21 +459,12 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
     struct pc802_tx_entry *txep;
-    uint32_t mask = NPU_CACHE_LINE_SZ - 1;
     uint32_t k;
     int socket_id = dev->device->numa_node;
     char z_name[RTE_MEMZONE_NAMESIZE];
-    const struct rte_memzone *mz;
-    PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
     volatile uint32_t ep_cnt;
-
-    txq->mpool.block_size = block_size;
-    txq->mpool.block_num = block_num;
-
-    block_size = (block_size + mask) & (~mask);
-    //block_size += sizeof(PC802_Mem_Block_t);
 
     /* Allocate software ring. */
     if (NULL != txq->sw_ring) {
@@ -496,30 +479,29 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         return -ENOMEM;
     }
 
-    txq->mpool.first = NULL;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
-    if (NULL != (mz = rte_memzone_lookup(z_name))) {
-        rte_memzone_free(mz);
-    }
-    mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
-    if (mz == NULL) {
+    if (NULL != (txq->mpool = rte_mempool_lookup(z_name)))
+        rte_mempool_free(txq->mpool);
+
+    txq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, NPU_CACHE_LINE_SZ, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    if (txq->mpool == NULL) {
         DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
             block_size*block_num, port_id, queue_id);
         return -ENOMEM;
     }
-    DBLOG("DL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
-        queue_id, mz->iova, mz->addr);
-    for (k = 0; k < block_num; k++) {
-        mblk = (PC802_Mem_Block_t *)((char *)mz->addr+block_size*k);
-        mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
-        mblk->pkt_length = 0;
-        mblk->next = txq->mpool.first;
-        mblk->first = &txq->mpool.first;
-        mblk->alloced = 0;
-        txq->mpool.first = mblk;
-        DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
-            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
-    }
+	if (0 != rte_mempool_set_ops_byname(txq->mpool, rte_mbuf_best_mempool_ops(), NULL)) {
+		DBLOG("Unable to set pool ops\n");
+		rte_mempool_free(txq->mpool);
+		return -ENOMEM;
+	}
+#if 1
+	if (rte_mempool_populate_default(txq->mpool) < 0) {
+		DBLOG("Could not populate queue mem pool\n");
+        rte_mempool_free(txq->mpool);
+		return -ENOMEM;
+	}
+#endif
+    DBLOG("DL mem pool[%1u]: name=%s\n", queue_id, txq->mpool->name);
 
     txq->tx_ring = adapter->pDescs->dl[queue_id];
     txep = txq->sw_ring;
@@ -575,26 +557,14 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
-    PC802_Mem_Block_t *mblk;
-    mblk = txq->mpool.first;
-    if (NULL != mblk) {
-        txq->mpool.first = mblk->next;
-        mblk->next = NULL;
-        mblk->alloced = 1;
-    }
+    PC802_Mem_Block_t *mblk = NULL;
+    rte_mempool_get(txq->mpool, (void **)&mblk);
     return mblk;
 }
 
 void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 {
-    if (NULL == mblk)
-        return;
-    if (mblk->alloced == 0)
-        return;
-    mblk->next = *mblk->first;
-    *mblk->first = mblk;
-    mblk->alloced = 0;
-    return;
+    return rte_mempool_put(rte_mempool_from_obj(mblk), mblk);
 }
 
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
@@ -628,17 +598,11 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         idx = rx_id & mask;
         rxdp = &rx_ring[idx];
 
-        nmb = rxq->mpool.first;
-        if (nmb == NULL) {
-            PMD_RX_LOG(DEBUG, "RX mblk alloc failed port_id=%u "
-                   "queue_id=%u",
-                   (unsigned) rxq->port_id,
-                   (unsigned) rxq->queue_id);
+        if ( 0!= rte_mempool_get(rxq->mpool, (void **)&nmb) ){
+            PMD_RX_LOG(DEBUG, "RX mblk alloc failed port_id=%u queue_id=%u",
+                (unsigned)rxq->port_id, (unsigned)rxq->queue_id);
             break;
         }
-        rxq->mpool.first = nmb->next;
-        nmb->next = NULL;
-        nmb->alloced = 1;
 
         rxm = sw_ring[idx].mblk;
         rte_prefetch0(rxm);
@@ -649,7 +613,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         }
 
         //DBLOG("UL DESC[%1u][%3u]: rxm=%p nmb=%p(buf_phy_addr=%lx pkt_length=%u pkt_type=%1u eop=%1u) rxdp=%p(phy_addr=%lx Length=%u Type=%1u EOP=%1u)\n",
-        //    queue_id, idx, rxm, nmb, nmb->buf_phy_addr, nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
+        //    queue_id, idx, rxm, nmb, MBLK_IOVA(nmb), nmb->pkt_length, nmb->pkt_type, nmb->eop, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
         while(0 == rxdp->length) {
             DBLOG("UL DESC[%1u][%3u-%3u]: rxdp=%p(phy_addr=%lu length=%u type=%d eop=%d count=%u rc_tsc=%lu-%lu) length err!\n",
                 queue_id, rx_id, *rxq->repcnt_mirror_addr, rxdp, rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop, rxdp->count, rxdp->rc_tsc, rte_rdtsc());
@@ -666,7 +630,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rx_blks[nb_rx++] = rxm;
 
         sw_ring[idx].mblk = nmb;
-        rxdp->phy_addr = nmb->buf_phy_addr;
+        rxdp->phy_addr = MBLK_IOVA(nmb);
         rxdp->length = 0;
         rxdp->count++;
         rxdp->rc_tsc = rte_rdtsc();
@@ -725,7 +689,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         }
 
         CLEAN_SIZE(&tx_blk[1], tx_blk->pkt_length);
-        txd->phy_addr = tx_blk->buf_phy_addr;
+        txd->phy_addr = MBLK_IOVA(tx_blk);
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
@@ -733,7 +697,6 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
-        tx_blk->next =  NULL;
         tx_id++;
     }
 
@@ -1646,7 +1609,7 @@ void pc802_show_tx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
     printf("DL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
         port_id, queue_id, rc_counter, txd->phy_addr, txd->length, txd->type, txd->eop);
     printf("DL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
-        &tx_blk[1], tx_blk->buf_phy_addr, tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
+        &tx_blk[1], MBLK_IOVA(tx_blk), tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
     uint8_t *p = (uint8_t *)&tx_blk[1];
     uint32_t L, C;
     for (L = 0; L < 4; L++) {
@@ -1672,7 +1635,7 @@ void pc802_show_rx_info(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
     printf("UL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
         port_id, queue_id, rc_counter, rxd->phy_addr, rxd->length, rxd->type, rxd->eop);
     printf("UL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
-        &rx_blk[1], rx_blk->buf_phy_addr, rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
+        &rx_blk[1], MBLK_IOVA(rx_blk), rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
     uint8_t *p = (uint8_t *)&rx_blk[1];
     uint32_t L, C;
     for (L = 0; L < 4; L++) {
@@ -1698,7 +1661,7 @@ void pc802_show_tx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
     printf("DL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
         port_id, queue_id, rc_counter, txd->phy_addr, txd->length, txd->type, txd->eop);
     printf("DL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
-        &tx_blk[1], tx_blk->buf_phy_addr, tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
+        &tx_blk[1], MBLK_IOVA(tx_blk), tx_blk->pkt_length, tx_blk->pkt_type, tx_blk->eop);
     uint8_t *p = (uint8_t *)&tx_blk[1];
     uint32_t LL = (tx_blk->pkt_length + 15) >> 4;
     uint32_t L, C;
@@ -1725,7 +1688,7 @@ void pc802_show_rx_data(uint16_t port_id, uint16_t queue_id, uint32_t rc_counter
     printf("UL_Desc[%1u][%1u][%3u]: phyAddr=0x%lX Len=%6u Type=%2u EOP=%1u\n",
         port_id, queue_id, rc_counter, rxd->phy_addr, rxd->length, rxd->type, rxd->eop);
     printf("UL_Buf: virtAddr=%p phyAddr=0x%lX, Len=%6u Type=%2u EOP=%1u\n",
-        &rx_blk[1], rx_blk->buf_phy_addr, rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
+        &rx_blk[1], MBLK_IOVA(rx_blk), rx_blk->pkt_length, rx_blk->pkt_type, rx_blk->eop);
     uint8_t *p = (uint8_t *)&rx_blk[1];
     uint32_t LL = (rx_blk->pkt_length + 15) >> 4;
     uint32_t L, C;
@@ -1907,8 +1870,10 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
         sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
         const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
-        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
-        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        if ( NULL != mz_s){
+            DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+            DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        }
         return 0;
     }
 
@@ -2001,7 +1966,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_EVENT)) {
         adapter->log_flag  |= (1<<PC802_LOG_EVENT);
     }
-#if 0
+#ifndef NO_CACHE_COHERENCE
     tsize = sizeof(PC802_Descs_t);
     sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
     mz = rte_memzone_reserve_aligned(temp_name, tsize, eth_dev->data->numa_node,

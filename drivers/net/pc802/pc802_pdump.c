@@ -379,7 +379,7 @@ int pc802_pdump_init(void)
 	pdump_cfg.src_port = 8020;
 	pdump_cfg.dst_port = 6880;
 	pdump_cfg.sleep_us = 100;
-	return rte_mp_action_register(PDUMP_MP, pdump_server);;
+	return rte_mp_action_register(PDUMP_MP, pdump_server);
 }
 
 int pc802_pdump_uninit(void)
