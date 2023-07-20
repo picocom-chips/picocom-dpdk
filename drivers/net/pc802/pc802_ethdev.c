@@ -594,7 +594,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     sw_ring = rxq->sw_ring;
     ep_txed = *rxq->repcnt_mirror_addr - rx_id;
     nb_blks = (ep_txed < nb_blks) ? ep_txed : nb_blks;
-    while (nb_rx < nb_blks) {
+    while ( unlikely(nb_rx < nb_blks) ) {
         idx = rx_id & mask;
         rxdp = &rx_ring[idx];
 
@@ -605,8 +605,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         }
 
         rxm = sw_ring[idx].mblk;
+        rte_prefetch0(rxdp);
         rte_prefetch0(rxm);
-
+#if 0
         if ((idx & 0x3) == 0) {
             rte_prefetch0(&rx_ring[idx]);
             rte_prefetch0(&sw_ring[idx]);
@@ -620,7 +621,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
             RTE_ASSERT(0);
             sleep(1);
         }
-
+#endif
         rxm->pkt_length = rxdp->length;
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
@@ -671,14 +672,15 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint32_t idx;
     uint32_t tx_id = txq->rc_cnt;
     uint16_t nb_tx;
+    uint64_t tsc;
 
     if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_blks)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
-    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks, 0);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
+        tsc = rte_rdtsc();
         tx_blk = *tx_blks++;
         idx = tx_id & mask;
         txe = &sw_ring[idx];
@@ -698,6 +700,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
         tx_id++;
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, &tx_blk, 1, tsc);
     }
 
 
