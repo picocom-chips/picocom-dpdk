@@ -132,16 +132,14 @@ Bug fixes
 * NDF-130: fix freeing ssbl_img twice
 * NDF-131: fix mailbox log not support different FW
 
-PC802 driver 2.5.1
-##################
-
-Bug fixes
-*********
-* NDF-146: DPDK driver breaks secure boot process
-
-PC802 driver 2.5.2
+PC802 driver 2.6
 ##################
 
 New features
 ************
 * NDF-116: support pc802 printf with time stamp
+
+Bug fixes
+*********
+* NDF-146: DPDK driver breaks secure boot process
+* NDF-152: Fix mb_printf crash on multiple dpdk devices
