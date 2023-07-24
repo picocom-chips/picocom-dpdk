@@ -3143,7 +3143,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     if (MB_EMPTY == action ) {
         return 0;
     } else if (MB_PRINTF == action) {
-        handle_mb_printf(port_id, mb, core, 1);
+        handle_mb_printf(port_idx, mb, core, 1);
     } else if (MB_SIM_STOP == action) {
         handle_mb_sim_stop(port_idx, mb, core);
     } else if (MB_VEC_READ == action) {
