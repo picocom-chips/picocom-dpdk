@@ -138,3 +138,4 @@ PC802 driver 2.5.1
 Bug fixes
 *********
 * NDF-146: DPDK driver breaks secure boot process
+* NDF-152: Fix mb_printf crash on multiple dpdk devices
