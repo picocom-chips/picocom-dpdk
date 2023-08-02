@@ -633,8 +633,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = MBLK_IOVA(nmb);
         rxdp->length = 0;
-        rxdp->count++;
-        rxdp->rc_tsc = rte_rdtsc();
         INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
         //INVALIDATE(rxdp);
         rte_mb();
@@ -1291,7 +1289,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
     adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
 
-    pc802_kni_add_port( adapter->port_id );
+    //pc802_kni_add_port( adapter->port_id );
     PMD_INIT_LOG(DEBUG, "<<");
 
     return 0;

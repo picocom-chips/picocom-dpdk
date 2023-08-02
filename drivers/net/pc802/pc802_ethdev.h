@@ -299,17 +299,11 @@ typedef struct PC802_BAR_t {
 
 #define NPU_CACHE_LINE_SZ   64
 
-typedef union stPC802_Descriptor_t{
-  struct {
+typedef struct stPC802_Descriptor_t{
     uint64_t phy_addr;  // pointer to start physical address of a buffer in NPU memory
     uint32_t length;    // length of content to be sent in bytes
     uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
     uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
-    uint64_t ep_tsc;
-    uint64_t rc_tsc;
-    uint32_t count;
-  };
-  uint8_t cache_line[NPU_CACHE_LINE_SZ];
 } PC802_Descriptor_t;
 
 struct stPC802_EP_Counter_Mirror_t {
