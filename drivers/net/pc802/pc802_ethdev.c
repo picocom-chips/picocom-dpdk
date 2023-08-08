@@ -69,6 +69,7 @@ static inline uint32_t pc802_read_reg(volatile uint32_t *addr)
 
 static uint16_t num_pc802s = 0;
 static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
+struct rte_ring *invalid_ring;
 
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
@@ -118,6 +119,7 @@ struct pc802_rx_queue {
     uint16_t            nb_rx_desc; /**< number of RX descriptors. */
     //uint16_t            rx_tail;    /**< current value of RDT register. */
     uint16_t            nb_rx_hold; /**< number of held free RX desc. */
+    uint16_t            nb_rx_invalid; /**< number of held invalid RX buf. */
     uint16_t            rx_free_thresh; /**< max free RX desc to hold. */
     uint16_t            queue_id;   /**< RX queue index. */
     uint16_t            port_id;    /**< Device port identifier. */
@@ -221,6 +223,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t 
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static void * pc802_debug(void *data);
+static void * pc802_invalid_queue_buf(void *);
 
 #define UIO_DEV "/dev/uio1"
 #define UIO_ADDR "/sys/class/uio/uio1/maps/map0/addr"
@@ -373,7 +376,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if (NULL != (rxq->mpool = rte_mempool_lookup(z_name)))
         rte_mempool_free(rxq->mpool);
 
-    rxq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, NPU_CACHE_LINE_SZ, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    rxq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, 0, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (rxq->mpool == NULL) {
         DBLOG("ERROR: fail to mempool create size = %u for Port %hu Rx queue %hu block %u\n",
             block_size, port_id, queue_id, block_num);
@@ -483,7 +486,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if (NULL != (txq->mpool = rte_mempool_lookup(z_name)))
         rte_mempool_free(txq->mpool);
 
-    txq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, NPU_CACHE_LINE_SZ, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    txq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, 0, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (txq->mpool == NULL) {
         DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
             block_size*block_num, port_id, queue_id);
@@ -605,7 +608,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         }
 
         rxm = sw_ring[idx].mblk;
-        rte_prefetch0(rxdp);
+        //rte_prefetch0(rxdp);
         rte_prefetch0(rxm);
 #if 0
         if ((idx & 0x3) == 0) {
@@ -633,9 +636,10 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = MBLK_IOVA(nmb);
         rxdp->length = 0;
-        INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        rte_ring_mp_enqueue(invalid_ring, nmb);
+        //INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
         //INVALIDATE(rxdp);
-        rte_mb();
+        //rte_mb();
 
         rx_id++;
         nb_hold++;
@@ -652,6 +656,25 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
     last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
     return nb_rx;
+}
+
+static uint16_t pc802_invalid_rx_mblk(uint16_t pc802_idx, uint16_t queue_id)
+{
+    struct pc802_rx_queue *rxq = &(pc802_devices[pc802_idx]->rxq[queue_id]);
+    PC802_Mem_Block_t *nmb;
+    struct pc802_rx_entry *sw_ring = rxq->sw_ring;
+    uint32_t mask = rxq->nb_rx_desc - 1;
+    uint32_t idx, count=0;
+
+    while ( rxq->nb_rx_invalid < rxq->nb_rx_hold ){
+        idx = rxq->nb_rx_invalid & mask;
+        nmb = sw_ring[idx].mblk;
+        //memset(&nmb[1], 0, nmb->pkt_length);
+        INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        rxq->nb_rx_invalid++;
+        count++;
+    }
+    return count;
 }
 
 uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
@@ -2005,6 +2028,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if (1 == num_pc802s) {
         pthread_t tid;
         pc802_ctrl_thread_create(&tid, "PC802-Debug", NULL, pc802_debug, NULL);
+        invalid_ring = rte_ring_create( "invalid_ring", 4096, rte_socket_id(), 0 );
+        pc802_ctrl_thread_create(&tid, "PC802-ivd_mblk", NULL, pc802_invalid_queue_buf, NULL);
         pc802_pdump_init( );
     }
 
@@ -2959,6 +2984,35 @@ static void * pc802_debug(__rte_unused void *data)
         }
         else
             idle = 0;
+    }
+    return NULL;
+}
+
+static void *pc802_invalid_queue_buf(__rte_unused void *data)
+{
+    int i, q;
+    int count = 0;
+    static rte_cpuset_t cpuset;
+    PC802_Mem_Block_t *nmbs[32];
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 1000;
+
+    CPU_ZERO(&cpuset);
+#if 0
+    if (rte_lcore_count())
+        CPU_SET(4, &cpuset);
+    else
+        CPU_SET(5, &cpuset);
+#endif
+    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+
+    while (1) {
+        count = rte_ring_dequeue_burst(invalid_ring, (void *)nmbs, 32, NULL);
+        for (i = 0; i < count; i++)
+            INVALIDATE_SIZE(((uint64_t)nmbs[i])+sizeof(PC802_Mem_Block_t), RTE_ALIGN(nmbs[i]->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        if (0 == count)
+            nanosleep(&req, NULL);
     }
     return NULL;
 }
