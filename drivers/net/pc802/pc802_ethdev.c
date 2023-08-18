@@ -723,6 +723,51 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     return nb_rx;
 }
 
+typedef struct
+{
+    uint8_t msgNum;
+    uint8_t opaque;
+    uint16_t rev;
+} L1MsgHdr_t;
+
+typedef enum {
+    FAPI_PARAM_REQUEST,
+    FAPI_PARAM_RESPONSE,
+    FAPI_CONFIG_REQUEST,
+    FAPI_CONFIG_RESPONSE,
+    FAPI_START_REQUEST,
+    FAPI_STOP_REQUEST,
+    FAPI_STOP_INDICATION,
+    FAPI_ERROR_INDICATION,
+    FAPI_DL_TTI_REQUEST = 0x80,
+    FAPI_UL_TTI_REQUEST,
+    FAPI_SLOT_INDICATION,
+    FAPI_UL_DCI_REQUEST,
+    FAPI_TX_DATA_REQUEST,
+    FAPI_RX_DATA_INDICATION,
+    FAPI_CRC_INDICATION,
+    FAPI_UCI_INDICATION,
+    FAPI_SRS_INDICATION,
+    FAPI_PRACH_INDICATION,
+    FAPI_OTAS_MSG = 0x8E,
+    L1FAPIMSGID_E_CNT
+} L1FAPIMsgId_e;
+
+static const char * pc802_get_fapi_msg_id_name(uint32_t msgId)
+{
+    static const char *s0[] = {"PARAM_REQ", "PARAM_RSP", "CONFIG_REQ", "CONFIG_RSP",
+        "START_REQ", "STOP_REQ", "STOP_IND", "ERROR_IND"};
+    static const char *s1[] = {"DL_TTI_REQ", "UL_TTI_REQ", "SLOT_IND", "UL_DCI_REQ",
+        "TX_DATA_REQ", "RX_DATA_IND", "CRC_IND", "UCI_IND", "SRS_IND", "PRACH_IND"};
+    if (msgId <= FAPI_ERROR_INDICATION)
+        return s0[msgId - FAPI_PARAM_REQUEST];
+    if ((FAPI_DL_TTI_REQUEST <= msgId) && (msgId <= FAPI_PRACH_INDICATION))
+        return s1[msgId - FAPI_DL_TTI_REQUEST];
+    if (FAPI_OTAS_MSG == msgId)
+        return "OTAS_MSG";
+    return "UNKNOWN_FAPI_MSG";
+}
+
 uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **tx_blks, uint16_t nb_blks)
 {
@@ -764,6 +809,13 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
         tx_blk->next =  NULL;
+        uint32_t *buf = (uint32_t *)&tx_blk[1];
+        L1MsgHdr_t *msgHdr = (L1MsgHdr_t *)buf;
+        if (   ((PC802_TRAFFIC_CTRL_1 == queue_id) && (0 != msgHdr->opaque))
+            || ((PC802_TRAFFIC_CTRL_2 == queue_id) && (1 != msgHdr->opaque))) {
+            NPU_SYSLOG("Wrong cell id in DL CTRL[%1u]: msgHdr = 0x%08X opaque = %1u msgNum = %1u msgId[0] = 0x%08X = %s\n",
+                queue_id, buf[0], msgHdr->opaque, msgHdr->msgNum, buf[1], pc802_get_fapi_msg_id_name(buf[1]));
+        }
         tx_id++;
     }
 
