@@ -157,7 +157,8 @@ int pc802_kni_add_port(uint16_t port)
 
     if (0 == pc802_num) pc802_kni_init();
 
-    pc802_port[pc802_num++] = port;
+    pc802_port[pc802_num] = port;
+    pc802_num++;
     return 0;
 }
 

@@ -2611,6 +2611,33 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return num;
 }
 
+static inline bool isSpecifier(char c)
+{
+    switch (c)
+    {
+    case 'd':
+    case 'i':
+    case 'u':
+    case 'o':
+    case 'x':
+    case 'X':
+    case 'f':
+    case 'F':
+    case 'e':
+    case 'E':
+    case 'g':
+    case 'G':
+    case 'a':
+    case 'A':
+    case 'c':
+    case 's':
+    case 'p':
+    case 'n':
+        return true;
+    }
+    return false;
+}
+
 static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core)
 {
     uint32_t num_args = PC802_READ_REG(mb->num_args);
@@ -2632,7 +2659,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
             do {
                 assert(j < 15);
                 formatter[j] = *arg0++;
-                if ((formatter[j] != 'l') && isalpha(formatter[j])) {
+                if (isSpecifier(formatter[j])) {
                     formatter[j+1] = 0;
                     break;
                 }
