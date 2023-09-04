@@ -227,6 +227,7 @@ static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
 static FILE * get_image_file(uint16_t port, const char *image_name);
+static int eth_pc802_reset(struct rte_eth_dev *eth_dev);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1351,8 +1352,6 @@ eth_pc802_start(struct rte_eth_dev *dev)
 
     usleep(1000);
     rte_wmb();
-    PC802_WRITE_REG(bar->ULDMAN, 4);
-    DBLOG("Set UL DMA Count = 4\n");
 
     DBLOG("Waiting for PC802 boot(devRdy=5) ...\n");
     do {
@@ -2163,7 +2162,7 @@ static int pc802_download_rsapp(uint16_t port_id)
 
     const struct rte_memzone *mz;
     uint32_t tsize = 64 * 1024;
-    int socket_id = pc802_get_socket_id(port);
+    int socket_id = pc802_get_socket_id(port_id);
     mz = rte_memzone_reserve_aligned("PC802_RSAPP", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 64);
     if (NULL == mz) {
@@ -2171,7 +2170,7 @@ static int pc802_download_rsapp(uint16_t port_id)
         return -ENOMEM;
     }
 
-    FILE *fp = get_image_file(port, "pc802.rsapp");
+    FILE *fp = get_image_file(port_id, "pc802.rsapp");
     if (NULL == fp) {
         DBLOG("Failed to open pc802.rsapp .\n");
         return -1;
@@ -2180,13 +2179,12 @@ static int pc802_download_rsapp(uint16_t port_id)
     bar->BOOTSRCL = (uint32_t)(mz->iova);
     bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
     uint8_t *pimg = (uint8_t *)mz->addr;
-    uint32_t N;
-    N = fread(pimg, 1, tsize, fp);
+    uint32_t N = fread(pimg, 1, tsize, fp);
     rte_wmb();
     (*BOOTRCCNT)++;
     while(*BOOTRCCNT != *BOOTEPCNT)
         usleep(1);
-    DBLOG("Finish downloading pc802.rsapp !\n");
+    DBLOG("Finish downloading pc802.rsapp (%u bytes) !\n", N);
 
     rte_memzone_free(mz);
     fclose(fp);
@@ -2198,7 +2196,6 @@ static int pc802_download_rsapp(uint16_t port_id)
 
 static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 {
-    struct rte_eth_dev_data *data = eth_dev->data;
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     adapter->in_reset = 1;
@@ -2399,7 +2396,7 @@ int pc802_set_ul_dma_count(uint16_t port, uint32_t n)
         n = 1;
     if (n > 4)
         n = 4;
-    bar->ULDMAN = n;
+    bar->MCYR_DIS = n;
     rte_wmb();
     return 0;
 }
@@ -3548,7 +3545,7 @@ static int pc802_rel_handle_regs(const char *cmd __rte_unused,
     ADD_DICT_REG(DEVRDY);
     ADD_DICT_REG(DBAL);
     ADD_DICT_REG(DBAH);
-    ADD_DICT_REG(ULDMAN);
+    //ADD_DICT_REG(ULDMAN);
     ADD_DICT_ARRAY(TDNUM);
 
     ADD_DICT_ARRAY(TRCCNT);
