@@ -127,6 +127,7 @@ struct pc802_rx_queue {
     uint16_t            rx_free_thresh; /**< max free RX desc to hold. */
     uint16_t            queue_id;   /**< RX queue index. */
     uint16_t            port_id;    /**< Device port identifier. */
+    uint8_t             working;
     //uint8_t             pthresh;    /**< Prefetch threshold register. */
     //uint8_t             hthresh;    /**< Host threshold register. */
     //uint8_t             wthresh;    /**< Write-back threshold register. */
@@ -172,6 +173,7 @@ struct pc802_tx_queue {
     uint16_t               nb_tx_free;
     uint16_t               queue_id; /**< TX queue index. */
     uint16_t               port_id;  /**< Device port identifier. */
+    uint8_t                working;
     //uint8_t                pthresh;  /**< Prefetch threshold register. */
     //uint8_t                hthresh;  /**< Host threshold register. */
     //uint8_t                wthresh;  /**< Write-back threshold register. */
@@ -191,6 +193,7 @@ struct pc802_adapter {
     uint16_t port_id;
     uint8_t started;
     uint8_t stopped;
+    uint8_t in_reset;
 
     uint64_t *dbg;
     uint32_t dgb_phy_addrL;
@@ -407,6 +410,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     rxq->rx_free_thresh = nb_desc / 4;
     rxq->queue_id = queue_id;
     rxq->port_id = port_id;
+    rxq->working = 0;
     if (PC802_TRAFFIC_MAILBOX == queue_id) {
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(port_id);
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
@@ -551,6 +555,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->tx_free_thresh = nb_desc / 4;
     txq->queue_id = queue_id;
     txq->port_id = port_id;
+    txq->working = 0;
 
     if (PC802_READ_REG(bar->DEVEN)) {
         PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
@@ -623,7 +628,10 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
+    if (adapter->in_reset)
+        return 0;
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    rxq->working = 1;
     volatile PC802_Descriptor_t *rx_ring;
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *sw_ring;
@@ -719,7 +727,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         check_proc_time(stat_no, tdiff);
     }
 #endif
-
+    rxq->working = 0;
     return nb_rx;
 }
 
@@ -729,7 +737,10 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
+    if (adapter->in_reset)
+        return 0;
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    txq->working = 1;
     struct pc802_tx_entry *sw_ring = txq->sw_ring;
     struct pc802_tx_entry *txe;
     volatile PC802_Descriptor_t *tx_ring = txq->tx_ring;
@@ -782,6 +793,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     }
 #endif
 
+    txq->working = 0;
     return nb_tx;
 }
 
@@ -942,6 +954,7 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
     rxq->rrccnt_reg_addr = &bar->RRCCNT[queue_idx];
     rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_idx];
     rxq->rx_ring = adapter->pDescs->ul[queue_idx];
+    rxq->working = 0;
     //rxq->rx_ring_phys_addr = adapter->descs_phy_addr + get_ul_desc_offset(queue_idx, 0);
 
     //PMD_INIT_LOG(DEBUG, "sw_ring=%p hw_ring=%p dma_addr=0x%"PRIx64,
@@ -1004,6 +1017,7 @@ pc802_reset_tx_queue(struct pc802_tx_queue *txq)
     }
 
     txq->nb_tx_free = nb_desc;
+    txq->working = 0;
     //txq->last_desc_cleaned = (uint16_t)(nb_desc - 1);
     //txq->nb_tx_used = 0;
     //txq->tx_tail = 0;
@@ -1400,6 +1414,12 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     uint16_t mb_pkts;
 
     txq = tx_queue;
+    struct rte_eth_dev *dev = &rte_eth_devices[txq->port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    if (adapter->in_reset)
+        return 0;
+    txq->working = 1;
     sw_ring = txq->sw_ring;
     tx_ring = txq->tx_ring;
     mask = txq->nb_tx_desc - 1;
@@ -1444,6 +1464,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     *txq->trccnt_reg_addr = tx_id;
     txq->stats.pkts += mb_pkts;
     txq->stats.err_pkts += nb_pkts -  mb_pkts;
+    txq->working = 0;
 
     return nb_tx;
 }
@@ -1468,6 +1489,12 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     uint16_t mb_pkts;
 
     rxq = rx_queue;
+    struct rte_eth_dev *dev = &rte_eth_devices[rxq->port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    if (adapter->in_reset)
+        return 0;
+    rxq->working = 1;
     mask = rxq->nb_rx_desc - 1;
 
     nb_rx = 0;
@@ -1542,6 +1569,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rxq->nb_rx_hold = nb_hold;
     rxq->stats.pkts += nb_rx;
     rxq->stats.err_pkts += nb_pkts - nb_rx;
+    rxq->working = 0;
     return nb_rx;
 }
 
