@@ -759,6 +759,40 @@ cmdline_parse_inst_t vec_dump = {
         },
 };
 
+struct cmd_reset_pc802_result {
+    cmdline_fixed_string_t reset;
+    cmdline_fixed_string_t pc802;
+    uint32_t               port_idx;
+};
+
+cmdline_parse_token_string_t cmd_reset_pc802_result_reset =
+    TOKEN_STRING_INITIALIZER(struct cmd_reset_pc802_result, reset, "reset");
+cmdline_parse_token_string_t cmd_reset_pc802_result_pc802 =
+    TOKEN_STRING_INITIALIZER(struct cmd_reset_pc802_result, pc802, "pc802");
+cmdline_parse_token_num_t cmd_reset_pc802_result_port_idx =
+    TOKEN_NUM_INITIALIZER(struct cmd_reset_pc802_result, port_idx, RTE_UINT32);
+
+static void cmd_reset_pc802_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_reset_pc802_result *res = parsed_result;
+    int port_id = pc802_get_port_id(res->port_idx);
+    rte_eth_dev_reset((uint16_t)port_id);
+}
+
+cmdline_parse_inst_t reset_pc802 = {
+    .f = cmd_reset_pc802_parsed,
+    .data = NULL,
+    .help_str = "reset pc802 port_idx",
+    .tokens = {
+        (void *)&cmd_reset_pc802_result_reset,
+        (void *)&cmd_reset_pc802_result_pc802,
+        (void *)&cmd_reset_pc802_result_port_idx,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -775,6 +809,7 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&set_ul_dma_count,
     (cmdline_parse_inst_t *)&vec_read,
     (cmdline_parse_inst_t *)&vec_dump,
+    (cmdline_parse_inst_t *)&reset_pc802,
     NULL,
 };
 
