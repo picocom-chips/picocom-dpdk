@@ -2215,9 +2215,11 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         pass += (active == 0);
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
-    volatile uint32_t *DEVRST = &bar->DEVRST;
-    *DEVRST = 4;
-    while (*DEVRST != 3);
+    volatile uint32_t DEVRST;
+    PC802_WRITE_REG(bar->DEVRST, 4);
+    do {
+        DEVRST = PC802_READ_REG(bar->DEVRST);
+    } while (DEVRST != 3);
     pc802_download_rsapp(adapter->port_id);
     return 0;
 }
