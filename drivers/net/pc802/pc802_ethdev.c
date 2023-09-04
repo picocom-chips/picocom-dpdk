@@ -226,6 +226,7 @@ static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t ad
 static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
+static FILE * get_image_file(uint16_t port, const char *image_name);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -1809,6 +1810,7 @@ static const struct eth_dev_ops eth_pc802_ops = {
     .dev_configure        = eth_pc802_configure,
     .dev_start            = eth_pc802_start,
     .dev_stop             = eth_pc802_stop,
+    .dev_reset            = eth_pc802_reset,
     .promiscuous_enable   = eth_pc802_promiscuous_enable,
     .dev_infos_get        = eth_pc802_infos_get,
     .rx_queue_setup       = eth_pc802_rx_queue_setup,
@@ -2150,6 +2152,76 @@ eth_pc802_dev_uninit(struct rte_eth_dev *eth_dev)
 
     adapter->started = 0;
 
+    return 0;
+}
+
+static int pc802_download_rsapp(uint16_t port_id)
+{
+    PC802_BAR_t *bar = pc802_get_BAR(port_id);
+    volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
+    volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
+
+    const struct rte_memzone *mz;
+    uint32_t tsize = 64 * 1024;
+    int socket_id = pc802_get_socket_id(port);
+    mz = rte_memzone_reserve_aligned("PC802_RSAPP", tsize, socket_id,
+            RTE_MEMZONE_IOVA_CONTIG, 64);
+    if (NULL == mz) {
+        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
+        return -ENOMEM;
+    }
+
+    FILE *fp = get_image_file(port, "pc802.rsapp");
+    if (NULL == fp) {
+        DBLOG("Failed to open pc802.rsapp .\n");
+        return -1;
+    }
+
+    bar->BOOTSRCL = (uint32_t)(mz->iova);
+    bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
+    uint8_t *pimg = (uint8_t *)mz->addr;
+    uint32_t N;
+    N = fread(pimg, 1, tsize, fp);
+    rte_wmb();
+    (*BOOTRCCNT)++;
+    while(*BOOTRCCNT != *BOOTEPCNT)
+        usleep(1);
+    DBLOG("Finish downloading pc802.rsapp !\n");
+
+    rte_memzone_free(mz);
+    fclose(fp);
+
+    DBLOG("Please exit and restart the App !\n");
+    while (bar->DEVRST != 0);
+    return 0;
+}
+
+static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
+{
+    struct rte_eth_dev_data *data = eth_dev->data;
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(eth_dev->data->dev_private);
+    adapter->in_reset = 1;
+    int q;
+    int active;
+    int pass = 0;
+    do {
+        active = 0;
+        for (q = 0; q < PC802_TRAFFIC_NUM; q++) {
+            active += adapter->txq[q].working;
+            active += adapter->rxq[q].working;
+            if (active) {
+                pass = 0;
+                break;
+            }
+        }
+        pass += (active == 0);
+    } while (pass < 3);
+    PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
+    volatile uint32_t *DEVRST = &bar->DEVRST;
+    *DEVRST = 4;
+    while (*DEVRST != 3);
+    pc802_download_rsapp(adapter->port_id);
     return 0;
 }
 
