@@ -9,6 +9,7 @@
 #include <cmdline_parse_string.h>
 #include <cmdline_parse_num.h>
 #include <cmdline.h>
+#include <rte_ethdev.h>
 
 #include <rte_pmd_pc802.h>
 
