@@ -630,7 +630,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    if (adapter->in_reset)
+    if ((adapter->in_reset) && (queue_id < PC802_TRAFFIC_NUM))
         return 0;
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     rxq->working = 1;
