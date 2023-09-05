@@ -2192,7 +2192,7 @@ static int pc802_download_rsapp(uint16_t port_id)
     fclose(fp);
 
     DBLOG("Please exit and restart the App !\n");
-    while (PC802_READ_REG(bar->DEVRST) != 0);
+    //while (PC802_READ_REG(bar->DEVRST) != 0);
     return 0;
 }
 
