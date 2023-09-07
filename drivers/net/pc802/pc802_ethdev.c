@@ -3284,7 +3284,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.port_id = port_id;
         msg.core = core;
         pc802_vec_access_msg_send(fd, &msg);
-        return 2;
+        return 1;
     } else {
         num_args = mb[0].num_args;
         DBLOG("MB[%2u]: action=%u, num_args=%u, args:\n", core, action, num_args);
