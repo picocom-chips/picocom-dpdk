@@ -2306,8 +2306,17 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     pc802_download_boot_image(adapter->port_id, adapter->port_index);
 
     eth_pc802_start(eth_dev);
+    adapter->in_reset = 0;
 
     return 0;
+}
+
+uint8_t pc802_in_reset(uint16_t port_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    return adapter->in_reset;
 }
 
 static int eth_pc802_pci_probe(struct rte_pci_driver *pci_drv __rte_unused,
