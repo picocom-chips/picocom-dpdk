@@ -2228,6 +2228,7 @@ static int pc802_download_rsapp(uint16_t port_id)
 
 static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 {
+    bool pcxxInReset(uint16_t dev_index);
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
@@ -2236,6 +2237,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     int active;
     int pass = 0;
     do {
+        usleep(1);
         active = 0;
         for (q = 0; q < PC802_TRAFFIC_NUM; q++) {
             active += adapter->txq[q].working;
@@ -2246,6 +2248,12 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
             }
         }
         pass += (active == 0);
+    } while (pass < 3);
+    pass = 0;
+    do {
+        usleep(1);
+        if (pcxxInReset(adapter->port_index)) pass++;
+        else pass = 0;
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     volatile uint32_t DEVRST;

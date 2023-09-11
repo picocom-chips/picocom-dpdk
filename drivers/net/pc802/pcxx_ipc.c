@@ -545,6 +545,11 @@ static inline void* __pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_i
     return (void *)(cell->rx_data_buf + offset);
 }
 
+bool pcxxInReset(uint16_t dev_index)
+{
+    return (pcxx_devs[dev_index].in_tx_reset != 0) && (pcxx_devs[dev_index].in_rx_reset != 0);
+}
+
 #ifndef MULTI_PC802
 int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
 {
