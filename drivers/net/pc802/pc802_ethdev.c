@@ -2226,9 +2226,10 @@ static int pc802_download_rsapp(uint16_t port_id)
     return 0;
 }
 
+bool pcxxInReset(uint16_t dev_index);
+
 static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 {
-    bool pcxxInReset(uint16_t dev_index);
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
