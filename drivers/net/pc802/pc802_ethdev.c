@@ -214,6 +214,13 @@ struct pc802_adapter {
 static char DEFAULT_IMAGE_PATH[] = "/lib/firmware/pico";
 static char CUR_PATH[] = ".";
 
+union {
+    uint32_t rccnts[PC802_INDEX_MAX][9];
+    uint8_t  rccnt[PC802_INDEX_MAX][36];
+} pc802_mb_rccnt;
+#define pc802_mailbox_rc_counter        pc802_mb_rccnt.rccnt
+#define pc802_mb_rccnts                 pc802_mb_rccnt.rccnts
+
 int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
@@ -2959,12 +2966,6 @@ typedef struct stMbVecAccess_t {
 #define PC802_VEC_ACCESS_DONE   2
 
 //static uint8_t pc802_vec_blocked[PC802_INDEX_MAX][36];
-union {
-    uint32_t rccnts[PC802_INDEX_MAX][9];
-    uint8_t  rccnt[PC802_INDEX_MAX][36];
-} pc802_mb_rccnt;
-#define pc802_mailbox_rc_counter        pc802_mb_rccnt.rccnt
-#define pc802_mb_rccnts                 pc802_mb_rccnt.rccnts
 
 static uint32_t pc802_vec_access_msg_send(int fd, MbVecAccess_t *msg)
 {
