@@ -779,6 +779,7 @@ static void cmd_reset_pc802_parsed(void *parsed_result,
 {
     struct cmd_reset_pc802_result *res = parsed_result;
     int port_id = pc802_get_port_id(res->port_idx);
+    testpc802_exit_loop = 1;
     rte_eth_dev_reset((uint16_t)port_id);
 }
 

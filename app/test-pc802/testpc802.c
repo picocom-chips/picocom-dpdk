@@ -486,7 +486,12 @@ static int case1(void)
     tx_blks(QID_CTRL[g_cell_index], &a, 1);
 
     uint32_t *b;
-    while (0 == rx_blks(QID_CTRL[g_cell_index], &b, 1));
+    while (0 == rx_blks(QID_CTRL[g_cell_index], &b, 1)) {
+        if(pc802_in_reset(0)) {
+            free_blk(a);
+            return 0;
+        }
+    }
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
@@ -516,7 +521,9 @@ static int case101(void)
     pcxxCtrlSend(a, N, g_pc802_index, g_cell_index);
     PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index)) {
+        if(pc802_in_reset(0)) return 0;
+    };
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
     return re;
@@ -545,9 +552,13 @@ static int case2(void)
     uint16_t s;
     do {
         s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
+        if(pc802_in_reset(0))
+            goto __case2_1;
     } while(0 == s);
     do {
         s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
+        if(pc802_in_reset(0))
+            goto __case2_0;
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -559,10 +570,12 @@ static int case2(void)
     if (check_single_same(a[1], b[1]))
         return -2;
 
+__case2_0:
+    free_blk(b[1]);
+__case2_1:
     free_blk(a[0]);
     free_blk(a[1]);
     free_blk(b[0]);
-    free_blk(b[1]);
     return 0;
 }
 
@@ -593,7 +606,9 @@ static int case102(void)
 
     PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index)) {
+        if(pc802_in_reset(0)) return 0;
+    };
 
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
@@ -630,9 +645,13 @@ static int case3(void)
     uint16_t s;
     do {
         s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
+        if (pc802_in_reset(0))
+            goto __case3_1;
     } while(0 == s);
     do {
         s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
+        if (pc802_in_reset(0))
+            goto __case3_0;
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -644,11 +663,13 @@ static int case3(void)
     if (check_single_same(a[2], b[1]))
         return -2;
 
+__case3_0:
+    free_blk(b[1]);
+__case3_1:
     free_blk(a[0]);
     free_blk(a[1]);
     free_blk(a[2]);
     free_blk(b[0]);
-    free_blk(b[1]);
     return 0;
 }
 
@@ -685,7 +706,9 @@ static int case103(void)
 
     PCXX_CALL(pcxxSendEnd, g_pc802_index, g_cell_index);
 
-    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, g_cell_index));
+    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, g_cell_index)) {
+        if(pc802_in_reset(0)) return 0;
+    };
 
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
@@ -722,9 +745,13 @@ static int case4(uint16_t D)
     uint16_t s;
     do {
         s = rx_blks(QID_DATA[g_cell_index], &b[0], 1);
+        if (pc802_in_reset(0))
+            goto __case4_1;
     } while(0 == s);
     do {
         s = rx_blks(QID_CTRL[g_cell_index], &b[1], 1);
+        if (pc802_in_reset(0))
+            goto __case4_0;
     } while(0 == s);
 
     get_blk_attr(b[0], &length, &type, &eop);
@@ -736,10 +763,12 @@ static int case4(uint16_t D)
     if (check_single_same(a[D], b[1]))
         return -2;
 
+__case4_0:
+    free_blk(b[1]);
+__case4_1:
     for (k = 0; k < D; k++)
         free_blk(a[k]);
     free_blk(b[0]);
-    free_blk(b[1]);
     return 0;
 }
 
@@ -773,7 +802,9 @@ static int case104(uint16_t D)
 
     PCXX_CALL(pcxxSendEnd,g_pc802_index, g_cell_index);
 
-    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index));
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, g_cell_index)) {
+        if(pc802_in_reset(0)) return 0;
+    };
 
     int re = atl_test_result[g_pc802_index][g_cell_index];
     atl_test_result[g_pc802_index][g_cell_index] = 0;
@@ -911,11 +942,14 @@ static int case201(void)
         DBLOG("TX-pkt[%u]: Type = %04X, Data-Len = %u\n", n, *tx_type, tx_length);
 #endif
     }
-    RTE_ASSERT(N == rte_eth_tx_burst(0, 0, tx_pkts, N));
+    if (0 == pc802_in_reset(0))
+        RTE_ASSERT(N == rte_eth_tx_burst(0, 0, tx_pkts, N));
 
     k = 0;
     M = N;
     do {
+        if (pc802_in_reset(0))
+            return 0;
         n = rte_eth_rx_burst(0, 0, &rx_pkts[k], M);
         k += n;
         M -= n;
@@ -1040,7 +1074,12 @@ static int case301(void)
     tx_blks(PC802_TRAFFIC_OAM, &a, 1);
 
     uint32_t *b;
-    while (0 == rx_blks(PC802_TRAFFIC_OAM, &b, 1));
+    while (0 == rx_blks(PC802_TRAFFIC_OAM, &b, 1)){
+        if(pc802_in_reset(0)) {
+            free_blk(a);
+            return 0;
+        }
+    };
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
