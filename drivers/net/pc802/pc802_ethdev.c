@@ -632,6 +632,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         PC802_DEV_PRIVATE(dev->data->dev_private);
     if ((adapter->in_reset) && (queue_id < PC802_TRAFFIC_NUM))
         return 0;
+    if (adapter->in_reset == 1)
+        return 0;
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     rxq->working = 1;
     volatile PC802_Descriptor_t *rx_ring;
@@ -905,7 +907,11 @@ static void
 pc802_reset_rx_queue(struct pc802_rx_queue *rxq)
 {
     //rxq->ep_cnt = 0;
+    rxq->rc_cnt = 0;
     rxq->nb_rx_hold = 0;
+    rxq->stats.pkts = 0;
+    rxq->stats.bytes = 0;
+    rxq->stats.err_pkts = 0;
     //rxq->pkt_first_seg = NULL;
     //rxq->pkt_last_seg = NULL;
 }
@@ -969,6 +975,21 @@ eth_pc802_rx_queue_setup(struct rte_eth_dev *dev,
 }
 
 static void
+pc802_tx_queue_release_mblks(struct pc802_tx_queue *txq)
+{
+    unsigned i;
+
+    if (txq->sw_ring != NULL) {
+        for (i = 0; i != txq->nb_tx_desc; i++) {
+            if (txq->sw_ring[i].mblk != NULL) {
+                pc802_free_mem_block(txq->sw_ring[i].mblk);
+                txq->sw_ring[i].mblk = NULL;
+            }
+        }
+    }
+}
+
+static void
 pc802_tx_queue_release_mbufs(struct pc802_tx_queue *txq)
 {
     unsigned i;
@@ -1019,6 +1040,10 @@ pc802_reset_tx_queue(struct pc802_tx_queue *txq)
     }
 
     txq->nb_tx_free = nb_desc;
+    txq->rc_cnt = 0;
+    txq->stats.pkts = 0;
+    txq->stats.bytes = 0;
+    txq->stats.err_pkts = 0;
     txq->working = 0;
     //txq->last_desc_cleaned = (uint16_t)(nb_desc - 1);
     //txq->nb_tx_used = 0;
@@ -2191,8 +2216,6 @@ static int pc802_download_rsapp(uint16_t port_id)
     rte_memzone_free(mz);
     fclose(fp);
 
-    DBLOG("Please exit and restart the App !\n");
-    //while (PC802_READ_REG(bar->DEVRST) != 0);
     return 0;
 }
 
@@ -2200,7 +2223,8 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 {
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
-    adapter->in_reset = 1;
+    PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
+    adapter->in_reset = 2;
     int q;
     int active;
     int pass = 0;
@@ -2218,11 +2242,63 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     volatile uint32_t DEVRST;
-    PC802_WRITE_REG(bar->DEVRST, 4);
+    PC802_WRITE_REG(bar->DEVRST, 5);
     do {
         DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 3);
+    } while (DEVRST != 4);
     pc802_download_rsapp(adapter->port_id);
+
+    struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
+    struct pc802_rx_queue *rxq = &adapter->rxq[PC802_TRAFFIC_ETHERNET];
+
+    pc802_tx_queue_release_mbufs(txq);
+    pc802_reset_tx_queue(txq);
+    pc802_reset_rx_queue(rxq);
+
+    for (q = PC802_TRAFFIC_DATA_1; q < PC802_TRAFFIC_NUM; q++) {
+        txq = &adapter->txq[q];
+        pc802_tx_queue_release_mblks(txq);
+        pc802_reset_tx_queue(txq);
+        rxq = &adapter->rxq[q];
+        pc802_reset_rx_queue(rxq);
+    }
+
+     do {
+        DEVRST = PC802_READ_REG(bar->DEVRST);
+    } while (DEVRST != 3);
+
+    adapter->in_reset = 1;
+    rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
+    pass = 0;
+    do {
+        if (rxq->working) pass = 0;
+        else pass++;
+        usleep(1);
+    } while (pass < 3);
+    pc802_reset_rx_queue(rxq);
+    memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
+
+    pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
+
+    volatile uint32_t DRVSTATE;
+    do {
+        DRVSTATE = PC802_READ_REG(bar0->DRVSTATE);
+    } while (DRVSTATE != 1);
+
+    PC802_WRITE_REG(bar->DBGRCAL, adapter->dgb_phy_addrL);
+    PC802_WRITE_REG(bar->DBGRCAH, adapter->dgb_phy_addrH);
+    adapter->dbg_rccnt = PC802_READ_REG(bar->DBGRCCNT);
+    PC802_WRITE_REG(bar->SFN_SLOT_0, 0xFFFFFFFF);
+    PC802_WRITE_REG(bar->SFN_SLOT_1, 0xFFFFFFFF);
+    uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
+    uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
+    PC802_WRITE_REG(bar->DBAL, laddr);
+    PC802_WRITE_REG(bar->DBAH, haddr);
+
+    pc802_download_boot_image(adapter->port_id, adapter->port_index);
+
+    eth_pc802_start(eth_dev);
+
     return 0;
 }
 
@@ -3475,7 +3551,10 @@ static void * pc802_trace_thread(__rte_unused void *data)
     for (i = 0; i < PC802_INDEX_MAX; i++) {
         for (j = 0; j < 32; j++) {
             trace_action_type[i][j] = TRACE_ACTION_IDLE;
+            trace_num_args[i][j] = 0;
+            trace_idx[i][j] = 0;
         }
+        trace_enable[i] = 1;
     }
 
     uint32_t active;
