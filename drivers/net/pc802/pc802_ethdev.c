@@ -2285,6 +2285,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     pc802_reset_rx_queue(rxq);
     memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
 
+    pthread_t tid;
     pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
     volatile uint32_t DRVSTATE;
