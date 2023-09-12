@@ -2318,6 +2318,9 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DBAH, haddr);
 
     pc802_download_boot_image(adapter->port_id, adapter->port_index);
+
+    rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
+    PC802_WRITE_REG(bar->MB_C2H_RDNUM, rxq->nb_rx_desc);
     adapter->in_reset = 2;
 
     eth_pc802_start(eth_dev);
