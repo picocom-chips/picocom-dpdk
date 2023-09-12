@@ -202,6 +202,7 @@ static uint16_t tx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
 static uint16_t rx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
 {
     uint16_t k;
+    for (k = 0; k < nb_blks; k++) blks[k] = NULL;
     nb_blks = pc802_rx_mblk_burst(0, qId, (PC802_Mem_Block_t **)blks, nb_blks);
     for (k = 0; k < nb_blks; k++) {
         blks[k] += (sizeof(PC802_Mem_Block_t) / sizeof(uint32_t));
