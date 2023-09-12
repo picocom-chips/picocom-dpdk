@@ -713,8 +713,10 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         nb_hold = 0;
     }
     rxq->nb_rx_hold = nb_hold;
-    if (PC802_TRAFFIC_MAILBOX == queue_id)
+    if (PC802_TRAFFIC_MAILBOX == queue_id) {
+        rxq->working = 0;
         return nb_rx;
+    }
     if( nb_rx )
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
     last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
