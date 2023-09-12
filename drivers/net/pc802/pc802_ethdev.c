@@ -2433,6 +2433,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
         return -1;
     }
 
+    mb_set_ssbl_begin(port_idx);
     PC802_WRITE_REG(bar->BOOTSRCL, (uint32_t)(mz->iova));
     PC802_WRITE_REG(bar->BOOTSRCH, (uint32_t)(mz->iova >> 32));
     DBLOG("BOOTSRC addr = 0x%08X %08X\n", PC802_READ_REG(bar->BOOTSRCH), PC802_READ_REG(bar->BOOTSRCL));

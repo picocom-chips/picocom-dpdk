@@ -489,6 +489,11 @@ int32_t mb_get_img(uint16_t pc802_index, uint8_t **img_buf)
     return 0;
 }
 
+void mb_set_ssbl_begin(uint16_t pc802_index)
+{
+    g_fw_info[pc802_index].ssbl_end = 0;
+}
+
 void mb_set_ssbl_end(uint16_t pc802_index)
 {
     g_fw_info[pc802_index].ssbl_end = 1;

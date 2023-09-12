@@ -13,6 +13,7 @@ int32_t mb_get_ssbl(uint16_t pc802_index, uint8_t **ssbl_buf);
 int32_t mb_get_img(uint16_t pc802_index, uint8_t **img_buf);
 
 const char *mb_get_string(uint16_t pc802_index, uint32_t addr, uint32_t core);
+void mb_set_ssbl_begin(uint16_t pc802_index);
 void mb_set_ssbl_end(uint16_t pc802_index);
 
 #endif
