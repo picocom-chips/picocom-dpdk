@@ -2260,10 +2260,10 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     volatile uint32_t DEVRST;
-    PC802_WRITE_REG(bar->DEVRST, 5);
+    PC802_WRITE_REG(bar->DEVRST, 6);
     do {
         DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 4);
+    } while (DEVRST != 5);
     pc802_download_rsapp(adapter->port_id);
 
     struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
@@ -2281,9 +2281,9 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         pc802_reset_rx_queue(rxq);
     }
 
-     do {
+    do {
         DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 3);
+    } while (DEVRST != 4);
 
     adapter->in_reset = 1;
     rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
@@ -2296,6 +2296,9 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     pc802_reset_rx_queue(rxq);
     memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
 
+    do {
+        DEVRST = PC802_READ_REG(bar->DEVRST);
+    } while (DEVRST != 3);
     pthread_t tid;
     pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
@@ -3195,7 +3198,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
     }
 }
 
-static int pc802_tracer( uint16_t port_index, uint16_t port_id )
+static int pc802_tracer( uint16_t port_index, uint16_t port_id, uint16_t init_flag)
 {
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
     static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
@@ -3206,7 +3209,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     uint32_t trc_data;
     volatile uint32_t epcnt;
 
-    if (NULL == ext[port_index]) {
+    if (init_flag) {
         ext[port_index] = pc802_get_BAR_Ext(port_id);
         for (core = 0; core < 32; core++) {
             rccnt[port_index][core] = PC802_READ_REG(ext[port_index]->TRACE_RCCNT[core]);
@@ -3569,6 +3572,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
     struct timespec req;
     req.tv_sec = 0;
     req.tv_nsec = 250*1000;
+    uint16_t init_flag[PC802_INDEX_MAX];
 
     for (i = 0; i < PC802_INDEX_MAX; i++) {
         for (j = 0; j < 32; j++) {
@@ -3577,6 +3581,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
             trace_idx[i][j] = 0;
         }
         trace_enable[i] = 1;
+        init_flag[i] = 1;
     }
 
     uint32_t active;
@@ -3590,8 +3595,10 @@ static void * pc802_trace_thread(__rte_unused void *data)
             if (trace_enable[i] == 0)
                 continue;
             active++;
-            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
-                num += pc802_tracer(i, pc802_devices[i]->port_id);
+            if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT)) {
+                num += pc802_tracer(i, pc802_devices[i]->port_id, init_flag[i]);
+                init_flag[i] = 0;
+            }
         }
         if ( 0 == num ) {
             pc802_log_flush();
