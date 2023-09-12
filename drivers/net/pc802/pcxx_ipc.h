@@ -202,7 +202,7 @@ int pcxxCtrlDestroy(uint16_t dev_index, uint16_t cell_index );
 int pcxxDataDestroy(uint16_t dev_index, uint16_t cell_index );
 #endif
 
-bool pcxxInReset(uint16_t dev_index);
+bool pcxxCanBeReset(uint16_t dev_index);
 
 #ifdef __cplusplus
 }

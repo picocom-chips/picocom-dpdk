@@ -2226,7 +2226,7 @@ static int pc802_download_rsapp(uint16_t port_id)
     return 0;
 }
 
-bool pcxxInReset(uint16_t dev_index);
+bool pcxxCanBeReset(uint16_t dev_index);
 
 static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 {
@@ -2253,7 +2253,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     pass = 0;
     do {
         usleep(1);
-        if (pcxxInReset(adapter->port_index)) pass++;
+        if (pcxxCanBeReset(adapter->port_index)) pass++;
         else pass = 0;
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;

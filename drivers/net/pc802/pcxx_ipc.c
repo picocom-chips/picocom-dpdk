@@ -67,8 +67,8 @@ struct pcxx_dev_info_st{
     union {
         PC802_CacheLine_t   cache_line;
         uint16_t port_id;
-        uint8_t  in_tx_reset;
-        uint8_t  in_rx_reset;
+        uint8_t  tx_working;
+        uint8_t  rx_working;
     };
     pcxx_cell_info_t cell_info[CELL_NUM_PRE_DEV+1];
 }__rte_cache_aligned;
@@ -142,6 +142,8 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
 
     pcxx_devs[dev_index].port_id = port_id;
+    pcxx_devs[dev_index].tx_working = 0;
+    pcxx_devs[dev_index].rx_working = 0;
 
     return 0;
 }
@@ -186,8 +188,9 @@ static inline int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     int k;
-    if (0 != (pcxx_devs[dev_index].in_tx_reset = pc802_in_reset(pcxx_devs[dev_index].port_id)))
+    if (pc802_in_reset(pcxx_devs[dev_index].port_id))
         return -1;
+    pcxx_devs[dev_index].tx_working = 1;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     cell->ctrl_length = 0;
     cell->ctrl_buf = NULL;
@@ -205,7 +208,7 @@ static inline int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
 static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-    if (pcxx_devs[dev_index].in_tx_reset)
+    if (0 == pcxx_devs[dev_index].tx_working)
         return -1;
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
@@ -225,13 +228,14 @@ static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index], &mblk_ctrl, 1);
         cell->sfn_idx = (cell->sfn_idx + 1) & SFN_IDX_MASK;
     }
+    pcxx_devs[dev_index].tx_working = 0;
     return 0;
 }
 
 static inline int __pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-    if (pcxx_devs[dev_index].in_tx_reset)
+    if (0 == pcxx_devs[dev_index].tx_working)
         return -1;
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -252,7 +256,7 @@ static inline int __pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t 
 static inline int __pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-    if (pcxx_devs[dev_index].in_tx_reset)
+    if (0 == pcxx_devs[dev_index].tx_working)
         return -1;
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -337,8 +341,9 @@ void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
 static inline int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-    if (0 != (pcxx_devs[dev_index].in_rx_reset = pc802_in_reset(pcxx_devs[dev_index].port_id)))
+    if (pc802_in_reset(pcxx_devs[dev_index].port_id))
         return -1;
+    pcxx_devs[dev_index].rx_working = 1;
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     uint16_t num_rx;
@@ -483,13 +488,14 @@ static inline int __pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     if ((0 == dev_index) && (0 == cell_index))
         check_proc_time(NO_FUNC_PROC, tdiff_64);
 #endif
+    pcxx_devs[dev_index].rx_working = 0;
     return 0;
 }
 
 static inline int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
-    if (pcxx_devs[dev_index].in_tx_reset)
+    if (0 == pcxx_devs[dev_index].tx_working)
         return -1;
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -506,7 +512,7 @@ static inline int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset
 static inline int __pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
-    if (pcxx_devs[dev_index].in_tx_reset)
+    if (0 == pcxx_devs[dev_index].tx_working)
         return -1;
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -545,9 +551,9 @@ static inline void* __pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_i
     return (void *)(cell->rx_data_buf + offset);
 }
 
-bool pcxxInReset(uint16_t dev_index)
+bool pcxxCanBeReset(uint16_t dev_index)
 {
-    return (pcxx_devs[dev_index].in_tx_reset != 0) && (pcxx_devs[dev_index].in_rx_reset != 0);
+    return (pcxx_devs[dev_index].tx_working == 0) && (pcxx_devs[dev_index].rx_working == 0);
 }
 
 #ifndef MULTI_PC802
