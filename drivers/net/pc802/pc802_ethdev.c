@@ -2309,8 +2309,8 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
 
     if (adapter->exit_after_reset) {
-        NPU_SYSLOG("NPU App now exited after reseting PC802 index %hu\n", adapter->port_index);
-        exit(0);
+        NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
+        return 0;
     }
 
     do {
