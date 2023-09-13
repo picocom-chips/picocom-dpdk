@@ -2278,11 +2278,6 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (DEVRST != 5);
     pc802_download_rsapp(adapter->port_id);
 
-    if (adapter->exit_after_reset) {
-        NPU_SYSLOG("NPU App now exited after reseting PC802 index %hu\n", adapter->port_index);
-        exit(0);
-    }
-
     struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
     struct pc802_rx_queue *rxq = &adapter->rxq[PC802_TRAFFIC_ETHERNET];
 
@@ -2312,6 +2307,11 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (pass < 3);
     pc802_reset_rx_queue(rxq);
     memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
+
+    if (adapter->exit_after_reset) {
+        NPU_SYSLOG("NPU App now exited after reseting PC802 index %hu\n", adapter->port_index);
+        exit(0);
+    }
 
     do {
         DEVRST = PC802_READ_REG(bar->DEVRST);
