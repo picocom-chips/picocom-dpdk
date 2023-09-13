@@ -1277,7 +1277,7 @@ static int case_n800(void)
         }
         pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
-            DBLOG("Case -800 Passed %u Loops.\n", k+1);
+            DBLOG("Case -800 Passed %u Loops.\n", k);
             testpc802_exit_loop = 0;
             return 0;
         }
@@ -1311,7 +1311,7 @@ static int case_n1000(void)
         }
         pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
-            DBLOG("Case -1000 Passed %u Loops.\n", k+1);
+            DBLOG("Case -1000 Passed %u Loops.\n", k);
             testpc802_exit_loop = 0;
             return 0;
         }
@@ -1346,7 +1346,7 @@ static int case_n802(void)
         }
         pc802_check_dma_timeout(0);
         if (testpc802_exit_loop) {
-            DBLOG("Case -802 Passed %u Loops.\n", k+1);
+            DBLOG("Case -802 Passed %u Loops.\n", k);
             testpc802_exit_loop = 0;
             return 0;
         }
@@ -1421,7 +1421,7 @@ static int case_n4802(void)
                 pc802_check_dma_timeout(dev);
                 if (testpc802_exit_loop)
                 {
-                    DBLOG("PC802 %d cell %d:Case n4802 Passed %u Loops.\n\n", dev, cell, k[dev][cell] + 1);
+                    DBLOG("PC802 %d cell %d:Case n4802 Passed %u Loops.\n\n", dev, cell, k[dev][cell]);
                     testpc802_exit_loop = 0;
                     return 0;
                 }
@@ -1498,7 +1498,7 @@ static int cell_worker( void *arg )
             pc802_check_dma_timeout(dev);
             if (testpc802_exit_loop)
             {
-                DBLOG("PC802 %d cell %d:Case n8802 Passed %u Loops.\n\n", dev, cell, k[dev] + 1);
+                DBLOG("PC802 %d cell %d:Case n8802 Passed %u Loops.\n\n", dev, cell, k[dev]);
                 sleep(1);
                 testpc802_exit_loop = 0;
                 return 0;
@@ -1548,6 +1548,7 @@ static void run_case(int caseNo)
     int diag;
     if (0 == caseNo)
         return;
+    testpc802_exit_loop = 0;
     printf("Begin Test Case %d\n", caseNo);
     switch(caseNo) {
     case 1:
