@@ -140,6 +140,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
 uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **tx_blks, uint16_t nb_blks);
 uint8_t pc802_in_reset(uint16_t port_id);
+uint8_t pc802_config_exit_after_reset(uint16_t port_index, uint8_t exit_flag);
 uint64_t *pc802_get_debug_mem(uint16_t port_id);
 void pc802_access_ep_mem(uint16_t port_id, uint32_t startAddr, uint32_t bytesNum, uint32_t cmd);
 void pc802_show_pcie_counter(uint16_t port_id);

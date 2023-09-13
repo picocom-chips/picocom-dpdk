@@ -763,6 +763,7 @@ cmdline_parse_inst_t vec_dump = {
 struct cmd_reset_pc802_result {
     cmdline_fixed_string_t reset;
     cmdline_fixed_string_t pc802;
+    uint32_t               exit_flag;
     uint32_t               port_idx;
 };
 
@@ -770,6 +771,8 @@ cmdline_parse_token_string_t cmd_reset_pc802_result_reset =
     TOKEN_STRING_INITIALIZER(struct cmd_reset_pc802_result, reset, "reset");
 cmdline_parse_token_string_t cmd_reset_pc802_result_pc802 =
     TOKEN_STRING_INITIALIZER(struct cmd_reset_pc802_result, pc802, "pc802");
+cmdline_parse_token_num_t cmd_reset_pc802_result_exit_flag =
+    TOKEN_NUM_INITIALIZER(struct cmd_reset_pc802_result, exit_flag, RTE_UINT32);
 cmdline_parse_token_num_t cmd_reset_pc802_result_port_idx =
     TOKEN_NUM_INITIALIZER(struct cmd_reset_pc802_result, port_idx, RTE_UINT32);
 
@@ -780,16 +783,18 @@ static void cmd_reset_pc802_parsed(void *parsed_result,
     struct cmd_reset_pc802_result *res = parsed_result;
     int port_id = pc802_get_port_id(res->port_idx);
     testpc802_exit_loop = 1;
+    pc802_config_exit_after_reset((uint16_t)res->port_idx, (uint8_t)res->exit_flag);
     rte_eth_dev_reset((uint16_t)port_id);
 }
 
 cmdline_parse_inst_t reset_pc802 = {
     .f = cmd_reset_pc802_parsed,
     .data = NULL,
-    .help_str = "reset pc802 port_idx",
+    .help_str = "reset pc802 exitOrNot port_idx",
     .tokens = {
         (void *)&cmd_reset_pc802_result_reset,
         (void *)&cmd_reset_pc802_result_pc802,
+        (void *)&cmd_reset_pc802_result_exit_flag,
         (void *)&cmd_reset_pc802_result_port_idx,
         NULL,
         },

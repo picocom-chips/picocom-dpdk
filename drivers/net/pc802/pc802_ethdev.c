@@ -194,6 +194,7 @@ struct pc802_adapter {
     uint8_t started;
     uint8_t stopped;
     uint8_t in_reset;
+    uint8_t exit_after_reset;
 
     uint64_t *dbg;
     uint32_t dgb_phy_addrL;
@@ -2228,6 +2229,17 @@ static int pc802_download_rsapp(uint16_t port_id)
     return 0;
 }
 
+uint8_t pc802_config_exit_after_reset(uint16_t port_index, uint8_t exit_flag)
+{
+    int port_id = pc802_get_port_id(port_index);
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    uint8_t prev_flag = adapter->exit_after_reset;
+    adapter->exit_after_reset = exit_flag;
+    return prev_flag;
+}
+
 bool pcxxCanBeReset(uint16_t dev_index);
 
 static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
@@ -2265,6 +2277,11 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         DEVRST = PC802_READ_REG(bar->DEVRST);
     } while (DEVRST != 5);
     pc802_download_rsapp(adapter->port_id);
+
+    if (adapter->exit_after_reset) {
+        NPU_SYSLOG("NPU App now exited after reseting PC802 index %hu\n", adapter->port_index);
+        exit(0);
+    }
 
     struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
     struct pc802_rx_queue *rxq = &adapter->rxq[PC802_TRAFFIC_ETHERNET];
