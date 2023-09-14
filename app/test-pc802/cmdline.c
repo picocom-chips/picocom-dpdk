@@ -785,7 +785,9 @@ static void cmd_reset_pc802_parsed(void *parsed_result,
     testpc802_exit_loop = 1;
     pc802_config_exit_after_reset((uint16_t)res->port_idx, (uint8_t)res->exit_flag);
     rte_eth_dev_reset((uint16_t)port_id);
-    main_stop = (int)res->exit_flag;
+    if (0 != (main_stop = (int)res->exit_flag)) {
+        cmdline_quit(cl);
+    }
 }
 
 cmdline_parse_inst_t reset_pc802 = {
