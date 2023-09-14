@@ -2302,6 +2302,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     do {
         DEVRST = PC802_READ_REG(bar->DEVRST);
     } while (DEVRST != 4);
+    usleep(2);
 
     adapter->in_reset = 1;
     rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
