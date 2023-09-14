@@ -2046,6 +2046,12 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     bar = (PC802_BAR_t *)adapter->bar0_addr;
 
+    volatile uint32_t devRdy = PC802_READ_REG(bar->DEVRDY);
+    if ((devRdy >= 5) && (devRdy != 0xB0)) {
+        adapter->exit_after_reset = 1;
+        eth_pc802_reset(eth_dev);
+    }
+
     pc802_check_rerun(adapter);
 
     DBLOG("PC802_BAR[0].vaddr = %p\n", pci_dev->mem_resource[0].addr);
