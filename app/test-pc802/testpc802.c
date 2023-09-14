@@ -59,6 +59,7 @@
 
 #define TEST_PC802_DISP_LOOP_NUM    10000
 
+int main_stop = 0;
 int testpc802_data_mode = 0;
 int testpc802_exit_loop = 0;
 
@@ -81,6 +82,10 @@ signal_handler(int signum)
     if (signum == SIGINT || signum == SIGTERM) {
         printf("\n\nSignal %d received, preparing to exit...\n",
                 signum);
+        testpc802_exit_loop = 1;
+        pc802_config_exit_after_reset(0, 1);
+        rte_eth_dev_reset(0);
+        main_stop = 1;
         //force_quit = true;
         signal(signum, SIG_DFL);
         kill(getpid(), signum);
@@ -1647,8 +1652,6 @@ static void run_case(int caseNo)
     }
     test_case_No = 0;
 }
-
-int main_stop = 0;
 
 void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num);
 
