@@ -194,6 +194,7 @@ struct pc802_adapter {
     uint8_t started;
     uint8_t stopped;
     uint8_t in_reset;
+    uint8_t mb_stop;
     uint8_t exit_after_reset;
 
     uint64_t *dbg;
@@ -638,10 +639,13 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    if ((adapter->in_reset) && (queue_id < PC802_TRAFFIC_NUM))
-        return 0;
-    if (adapter->in_reset == 1)
-        return 0;
+    if (queue_id < PC802_TRAFFIC_NUM) {
+        if (adapter->in_reset)
+            return 0;
+    } else {
+        if (adapter->mb_stop)
+            return 0;
+    }
     struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     rxq->working = 1;
     volatile PC802_Descriptor_t *rx_ring;
@@ -2050,6 +2054,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     if ((devRdy >= 5) && (devRdy != 0xB0)) {
         adapter->exit_after_reset = 1;
         eth_pc802_reset(eth_dev);
+        adapter->in_reset = 0;
     }
 
     pc802_check_rerun(adapter);
@@ -2253,7 +2258,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
-    adapter->in_reset = 2;
+    adapter->in_reset = 1;
     int q;
     int active;
     int pass = 0;
@@ -2304,7 +2309,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (DEVRST != 4);
     usleep(2);
 
-    adapter->in_reset = 1;
+    adapter->mb_stop = 1;
     rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
     pass = 0;
     do {
@@ -2317,6 +2322,8 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 
     if (adapter->exit_after_reset) {
         NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
+        adapter->mb_stop = 0;
+        adapter->exit_after_reset = 0;
         return 0;
     }
 
@@ -2345,7 +2352,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 
     rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
     PC802_WRITE_REG(bar->MB_C2H_RDNUM, rxq->nb_rx_desc);
-    adapter->in_reset = 2;
+    adapter->mb_stop = 0;
 
     eth_pc802_start(eth_dev);
     adapter->in_reset = 0;
