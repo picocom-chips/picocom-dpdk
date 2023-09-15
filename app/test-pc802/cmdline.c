@@ -14,6 +14,7 @@
 #include <rte_pmd_pc802.h>
 
 extern int main_stop;
+extern int testpc802_exit_loop;
 extern void pc802_kni_print_stats(void);
 
 struct cmd_quit_result {
@@ -25,6 +26,7 @@ static void cmd_quit_parsed(__attribute__((unused)) void *parsed_result,
                 __attribute__((unused)) void *data)
 {
     main_stop = 1;
+    testpc802_exit_loop = 1;
     cmdline_quit(cl);
 }
 
@@ -616,7 +618,6 @@ cmdline_parse_token_string_t cmd_exit_test_loop_result_exit =
 cmdline_parse_token_string_t cmd_exit_test_loop_result_loop =
     TOKEN_STRING_INITIALIZER(struct cmd_exit_test_loop_result, loop, "loop");
 
-extern int testpc802_exit_loop;
 static void cmd_exit_test_loop_parsed(void *parsed_result,
                 __attribute__((unused)) struct cmdline *cl,
                 __attribute__((unused)) void *data)

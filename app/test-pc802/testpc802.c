@@ -76,16 +76,16 @@ typedef union {
     };
 } DataBuf_t;
 
-static void
-signal_handler(int signum)
+static void prompt_quit(void);
+
+static void signal_handler(int signum)
 {
     if (signum == SIGINT || signum == SIGTERM) {
         printf("\n\nSignal %d received, preparing to exit...\n",
                 signum);
         testpc802_exit_loop = 1;
-        pc802_config_exit_after_reset(0, 1);
-        rte_eth_dev_reset(0);
         main_stop = 1;
+        prompt_quit();
         //force_quit = true;
         signal(signum, SIG_DFL);
         kill(getpid(), signum);
@@ -1159,6 +1159,7 @@ static int case302(void)
 }
 
 extern cmdline_parse_ctx_t main_ctx[];
+static struct cmdline *this_cl;
 static int prompt(void* arg)
 {
     struct cmdline *cl;
@@ -1168,10 +1169,17 @@ static int prompt(void* arg)
     if (cl == NULL) {
         return -1;
     }
+    this_cl = cl;;
     cmdline_interact(cl);
     cmdline_stdin_exit(cl);
 
     return 0;
+}
+
+static void prompt_quit(void)
+{
+    cmdline_quit(this_cl);
+    this_cl = NULL;
 }
 
 int test_case_No;
