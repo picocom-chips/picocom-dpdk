@@ -2175,6 +2175,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     }
 
     pc802_download_boot_image(data->port_id, adapter->port_index);
+    adapter->mb_stop = 0;
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
         adapter->log_flag  |= (1<<PC802_LOG_VEC);
@@ -2322,7 +2323,6 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
 
     if (adapter->exit_after_reset) {
         NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
-        adapter->mb_stop = 0;
         adapter->exit_after_reset = 0;
         return 0;
     }
