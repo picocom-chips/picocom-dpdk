@@ -638,43 +638,6 @@ cmdline_parse_inst_t exit_test_loop = {
         },
 };
 
-struct cmd_set_ul_dma_count_result {
-    cmdline_fixed_string_t set;
-    cmdline_fixed_string_t ul;
-    cmdline_fixed_string_t dma;
-    uint32_t               cnt;
-};
-
-cmdline_parse_token_string_t cmd_set_ul_dma_count_result_set =
-    TOKEN_STRING_INITIALIZER(struct cmd_set_ul_dma_count_result, set, "set");
-cmdline_parse_token_string_t cmd_set_ul_dma_count_result_ul =
-    TOKEN_STRING_INITIALIZER(struct cmd_set_ul_dma_count_result, ul, "ul");
-cmdline_parse_token_string_t cmd_set_ul_dma_count_result_dma =
-    TOKEN_STRING_INITIALIZER(struct cmd_set_ul_dma_count_result, dma, "dma");
-cmdline_parse_token_num_t cmd_set_ul_dma_count_result_cnt =
-    TOKEN_NUM_INITIALIZER(struct cmd_set_ul_dma_count_result, cnt, RTE_UINT32);
-
-static void cmd_set_ul_dma_count_parsed(void *parsed_result,
-                __attribute__((unused)) struct cmdline *cl,
-                __attribute__((unused)) void *data)
-{
-    struct cmd_set_ul_dma_count_result *res = parsed_result;
-    pc802_set_ul_dma_count(0, res->cnt);
-}
-
-cmdline_parse_inst_t set_ul_dma_count = {
-    .f = cmd_set_ul_dma_count_parsed,
-    .data = NULL,
-    .help_str = "set ul dma <counter>",
-    .tokens = {
-        (void *)&cmd_set_ul_dma_count_result_set,
-        (void *)&cmd_set_ul_dma_count_result_ul,
-        (void *)&cmd_set_ul_dma_count_result_dma,
-        (void *)&cmd_set_ul_dma_count_result_cnt,
-        NULL,
-        },
-};
-
 struct cmd_vec_read_result {
     cmdline_fixed_string_t vec;
     cmdline_fixed_string_t read;
@@ -817,7 +780,6 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&test_memdump,
     (cmdline_parse_inst_t *)&set_test_data_mode,
     (cmdline_parse_inst_t *)&exit_test_loop,
-    (cmdline_parse_inst_t *)&set_ul_dma_count,
     (cmdline_parse_inst_t *)&vec_read,
     (cmdline_parse_inst_t *)&vec_dump,
     (cmdline_parse_inst_t *)&reset_pc802,

@@ -2545,18 +2545,6 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     return 0;
 }
 
-int pc802_set_ul_dma_count(uint16_t port, uint32_t n)
-{
-    PC802_BAR_t *bar = pc802_get_BAR(port);
-    if (0 == n)
-        n = 1;
-    if (n > 4)
-        n = 4;
-    bar->MCYR_DIS = n;
-    rte_wmb();
-    return 0;
-}
-
 int pc802_check_dma_timeout(uint16_t port)
 {
     static uint32_t timeout_counter[16];
