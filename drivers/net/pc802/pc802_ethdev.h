@@ -34,8 +34,8 @@ typedef struct PC802_BAR_t {
             uint32_t DEVRDY;
             uint32_t DBAL;
             uint32_t DBAH;
-            uint32_t MCYR_DIS;
-            uint32_t DEVRST;
+            uint32_t DEV_RC_REQ;
+            uint32_t DEV_EP_RSP_IND;
         };
     };
     union {
@@ -313,6 +313,17 @@ static inline int isPowerOf2(uint32_t n)
 {
     return n && !(n & (n - 1));
 }
+
+typedef enum PC802_ReqRspInd_e{
+    PC802_REQ_NONE = 0,
+    PC802_RSP_IND_NONE = PC802_REQ_NONE,
+    PC802_RESET_REQ,
+    PC802_RESET_RSP = PC802_RESET_REQ,
+    PC802_MAILBOX_FLUSHED_IND,
+    PC802_RSAPP_RUNNING_IND,
+    PC802_BOOT_ECPRI_0_IND,
+    PC802_BOOT_OTHER_CORES_IND
+} PC802_ReqRspInd_e;
 
 typedef union TraceEpCnt_u {
     uint32_t _d[8];

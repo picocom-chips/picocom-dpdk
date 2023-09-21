@@ -2287,11 +2287,12 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         else pass = 0;
     } while (pass < 3);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
-    volatile uint32_t DEVRST;
-    PC802_WRITE_REG(bar->DEVRST, 6);
+    volatile uint32_t DEV_EP_RSP_IND;
+    PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_RESET_REQ);
     do {
-        DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 5);
+        DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
+    } while (DEV_EP_RSP_IND != PC802_RESET_RSP);
+    PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_REQ_NONE);
     pc802_download_rsapp(adapter->port_id);
 
     struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
@@ -2310,8 +2311,8 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     }
 
     do {
-        DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 4);
+        DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
+    } while (DEV_EP_RSP_IND != PC802_MAILBOX_FLUSHED_IND);
     usleep(2);
 
     adapter->mb_stop = 1;
@@ -2332,8 +2333,8 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     }
 
     do {
-        DEVRST = PC802_READ_REG(bar->DEVRST);
-    } while (DEVRST != 3);
+        DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
+    } while (DEV_EP_RSP_IND != PC802_RSAPP_RUNNING_IND);
     pthread_t tid;
     pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
