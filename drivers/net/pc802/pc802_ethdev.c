@@ -194,6 +194,7 @@ struct pc802_adapter {
     uint8_t started;
     uint8_t stopped;
     uint8_t in_reset;
+    uint8_t mb_thread_exist;
     uint8_t mb_stop;
     uint8_t exit_after_reset;
 
@@ -2040,6 +2041,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     data->mac_addrs = &adapter->eth_addr;
 
     adapter->port_id = data->port_id;
+    adapter->port_index = num_pc802s;
     adapter->eth_addr.addr_bytes[0] = 0x8C;
     adapter->eth_addr.addr_bytes[1] = 0x1F;
     adapter->eth_addr.addr_bytes[2] = 0x64;
@@ -2073,7 +2075,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
-    adapter->port_index = num_pc802s;
 
 #if 0
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
@@ -2174,6 +2175,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
             pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         }
         pc802_ctrl_thread_create(&tid, "PC802-Mailbox", NULL, pc802_mailbox_thread, NULL);
+        adapter->mb_thread_exist = 1;
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access_thread, NULL);
         pc802_pdump_init( );
     }
@@ -2216,20 +2218,20 @@ static int pc802_download_rsapp(uint16_t port_id)
     mz = rte_memzone_reserve_aligned("PC802_RSAPP", tsize, socket_id,
             RTE_MEMZONE_IOVA_CONTIG, 64);
     if (NULL == mz) {
-        DBLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
+        NPU_SYSLOG("ERROR: fail to mem zone reserve size = %u\n", tsize);
         return -ENOMEM;
     }
 
     FILE *fp = get_image_file(port_id, "pc802.rsapp");
     if (NULL == fp) {
-        DBLOG("Failed to open pc802.rsapp .\n");
+        NPU_SYSLOG("Failed to open pc802.rsapp .\n");
         return -1;
     }
 
     rccnt = PC802_READ_REG(bar->BOOTRCCNT);
     PC802_WRITE_REG(bar->BOOTSRCL, (uint32_t)(mz->iova));
     PC802_WRITE_REG(bar->BOOTSRCH, (uint32_t)(mz->iova >> 32));
-    DBLOG("BOOTSRC addr = 0x%08X %08X\n", PC802_READ_REG(bar->BOOTSRCH), PC802_READ_REG(bar->BOOTSRCL));
+    NPU_SYSLOG("BOOTSRC addr = 0x%08X %08X\n", PC802_READ_REG(bar->BOOTSRCH), PC802_READ_REG(bar->BOOTSRCL));
     uint8_t *pimg = (uint8_t *)mz->addr;
     uint32_t N = fread(pimg, 1, tsize, fp);
     rte_wmb();
@@ -2237,7 +2239,7 @@ static int pc802_download_rsapp(uint16_t port_id)
     PC802_WRITE_REG(bar->BOOTRCCNT, rccnt);
     while(rccnt != PC802_READ_REG(bar->BOOTEPCNT))
         usleep(1);
-    DBLOG("Finish downloading pc802.rsapp (%u bytes) !\n", N);
+    NPU_SYSLOG("Finish downloading pc802.rsapp (%u bytes) !\n", N);
 
     rte_memzone_free(mz);
     fclose(fp);
@@ -2264,6 +2266,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         PC802_DEV_PRIVATE(eth_dev->data->dev_private);
     PC802_BAR_t *bar0 = (PC802_BAR_t *)adapter->bar0_addr;
     adapter->in_reset = 1;
+    NPU_SYSLOG("Begin eth_pc802_reset() : PC802 Index = %u\n", adapter->port_index);
     int q;
     int active;
     int pass = 0;
@@ -2280,19 +2283,34 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         }
         pass += (active == 0);
     } while (pass < 3);
+    NPU_SYSLOG("All normal Tx/Rx queues are stopped in PC802 index %u\n", adapter->port_index);
     pass = 0;
     do {
         usleep(1);
         if (pcxxCanBeReset(adapter->port_index)) pass++;
         else pass = 0;
     } while (pass < 3);
+    NPU_SYSLOG("All normal Tx/Rx ATLL Channels are stopped in PC802 index %u\n", adapter->port_index);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     volatile uint32_t DEV_EP_RSP_IND;
-    PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_RESET_REQ);
+    uint32_t reset_cmd;
+    if (adapter->mb_thread_exist) {
+        reset_cmd = PC802_RESET_WITH_MB_REQ;
+        NPU_SYSLOG("Send PC802_RESET_WITH_MB_REQ (%1u) to PC802 index %u.\n",
+            PC802_RESET_WITH_MB_REQ, adapter->port_index);
+    } else {
+        reset_cmd = PC802_RESET_WITHOUT_MB_REQ;
+        NPU_SYSLOG("Send PC802_RESET_WITHOUT_MB_REQ (%1u) to PC802 index %u.\n",
+            PC802_RESET_WITHOUT_MB_REQ, adapter->port_index);
+    }
+    PC802_WRITE_REG(bar->DEV_RC_REQ, reset_cmd);
     do {
         DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
-    } while (DEV_EP_RSP_IND != PC802_RESET_RSP);
+    } while (DEV_EP_RSP_IND != reset_cmd);
+    NPU_SYSLOG("Received PC802 Reset Response %u from PC802 index %u.\n",
+        DEV_EP_RSP_IND, adapter->port_index);
     PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_REQ_NONE);
+    NPU_SYSLOG("Send PC802_REQ_NONE to PC802 index %u.\n", adapter->port_index);
     pc802_download_rsapp(adapter->port_id);
 
     struct pc802_tx_queue *txq = &adapter->txq[PC802_TRAFFIC_ETHERNET];
@@ -2310,10 +2328,13 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         pc802_reset_rx_queue(rxq);
     }
 
+    NPU_SYSLOG("Finish resetting all Tx/Rx queues on PC802 index %u", adapter->port_index);
+
     do {
         DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
     } while (DEV_EP_RSP_IND != PC802_MAILBOX_FLUSHED_IND);
     usleep(2);
+    NPU_SYSLOG("Mailbox on PC802 index %u Flushed !\n", adapter->port_index);
 
     adapter->mb_stop = 1;
     rxq = &adapter->rxq[PC802_TRAFFIC_MAILBOX];
@@ -2324,7 +2345,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
         usleep(1);
     } while (pass < 3);
     pc802_reset_rx_queue(rxq);
-    //memset(&pc802_mb_rccnt, 0, sizeof(pc802_mb_rccnt));
+    NPU_SYSLOG("Mailbox queue on NPU side for PC802 index %u is Reset !\n", adapter->port_index);
 
     if (adapter->exit_after_reset) {
         NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
@@ -2335,6 +2356,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     do {
         DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
     } while (DEV_EP_RSP_IND != PC802_RSAPP_RUNNING_IND);
+    NPU_SYSLOG("RSAPP on PC802 index %u is Running.\n", adapter->port_index);
     pthread_t tid;
     pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
@@ -2342,6 +2364,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     do {
         DRVSTATE = PC802_READ_REG(bar0->DRVSTATE);
     } while (DRVSTATE != 1);
+    NPU_SYSLOG("PC802 index %u DRVSTATE = 1.\n", adapter->port_index);
 
     PC802_WRITE_REG(bar->DBGRCAL, adapter->dgb_phy_addrL);
     PC802_WRITE_REG(bar->DBGRCAH, adapter->dgb_phy_addrH);
