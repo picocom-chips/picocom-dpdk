@@ -20,7 +20,6 @@ DPDK_21 {
 	pc802_show_rx_data;
 	pc802_kni_print_stats;
 	pc802_check_dma_timeout;
-	pc802_set_ul_dma_count;
 	pc802_vec_read;
 	pc802_vec_dump;
 	pc802_get_sfn_slot;
