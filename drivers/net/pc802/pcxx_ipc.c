@@ -208,6 +208,10 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->data_num[cell->sfn_idx]) {
+        if (NULL == cell->ctrl_buf) {
+            NPU_SYSLOG("ERROR: Dev %u Cell %u send DL data (SN = %u) but no control msg !\n",
+                dev_index, cell_index, cell->dl_sn);
+        }
         mblk_data = (PC802_Mem_Block_t *)(cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx] - 1] - sizeof(PC802_Mem_Block_t));
         mblk_data->pkt_length = cell->data_length;
         mblk_data->pkt_type = 0;
