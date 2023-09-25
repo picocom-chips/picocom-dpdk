@@ -58,6 +58,7 @@ struct pc802_mem_block {
     uint32_t pkt_length;
     uint8_t  pkt_type;
     uint8_t  eop;
+    uint8_t  sn;
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
 
