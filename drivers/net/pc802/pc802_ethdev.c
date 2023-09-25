@@ -2008,6 +2008,7 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_INIT(picocom_pc802_init_log)
 {
     printf( "%s on NPU side built AT %s ON %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
+    NPU_SYSLOG("Picocom PC802 DPDK for SC-2526 @ 20230925 20:28\n");
     pc802_init_log();
 }
 
