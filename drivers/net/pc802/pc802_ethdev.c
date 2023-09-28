@@ -3080,11 +3080,8 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
         }
     }
     *ps = 0;
-    if (arg_idx != num_args) {
-        PC802_LOG(port_idx, core, RTE_LOG_INFO,
-            "WARNING -- core %u (arg_idx = %u num_args = %u): format = %s\n",
-            core, arg_idx, num_args, arg0_bak);
-        PC802_LOG(port_idx, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
+    if (arg_idx > num_args) {
+        NPU_SYSLOG("WARNING -- core %u (arg_idx=%u num_args=%u): format=%s str=%s", core, arg_idx, num_args, arg0_bak, str);
         return;
     }
     PC802_LOG(port_idx, core, RTE_LOG_INFO, "%s", str );
