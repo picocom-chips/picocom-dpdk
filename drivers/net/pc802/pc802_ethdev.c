@@ -3033,6 +3033,33 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return N;
 }
 
+static inline bool isSpecifier(char c)
+{
+    switch (c)
+    {
+    case 'd':
+    case 'i':
+    case 'u':
+    case 'o':
+    case 'x':
+    case 'X':
+    case 'f':
+    case 'F':
+    case 'e':
+    case 'E':
+    case 'g':
+    case 'G':
+    case 'a':
+    case 'A':
+    case 'c':
+    case 's':
+    case 'p':
+    case 'n':
+        return true;
+    }
+    return false;
+}
+
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
 {
     uint32_t num_args = mb->num_args;
@@ -3058,7 +3085,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
             do {
                 assert(j < 15);
                 formatter[j] = *arg0++;
-                if (isalpha(formatter[j])) {
+                if (isSpecifier(formatter[j])) {
                     formatter[j+1] = 0;
                     break;
                 }
@@ -3080,11 +3107,8 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
         }
     }
     *ps = 0;
-    if (arg_idx != num_args) {
-        PC802_LOG(port_idx, core, RTE_LOG_INFO,
-            "WARNING -- core %u (arg_idx = %u num_args = %u): format = %s\n",
-            core, arg_idx, num_args, arg0_bak);
-        PC802_LOG(port_idx, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
+    if (arg_idx > num_args) {
+        NPU_SYSLOG("WARNING -- core %u (arg_idx=%u num_args=%u): format=%s str=%s", core, arg_idx, num_args, arg0_bak, str);
         return;
     }
     PC802_LOG(port_idx, core, RTE_LOG_INFO, "%s", str );
