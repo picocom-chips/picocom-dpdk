@@ -2349,24 +2349,22 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_MAILBOX_FLUSHED_IND);
     NPU_SYSLOG("NPU write bar->DEV_RC_REQ = PC802_MAILBOX_FLUSHED_IND !\n");
 
-    if (adapter->exit_after_reset) {
-        usleep(1);
-        PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_REQ_NONE);
-        NPU_SYSLOG("NPU write bar->DEV_REQ = PC802_REQ_NONE(0) !\n");
-        NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
-        adapter->exit_after_reset = 0;
-        return 0;
-    }
-
     do {
         DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
     } while (DEV_EP_RSP_IND != PC802_RSAPP_RUNNING_IND);
     NPU_SYSLOG("RSAPP on PC802 index %u is Running.\n", adapter->port_index);
-    pthread_t tid;
-    pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
     PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_REQ_NONE);
     NPU_SYSLOG("NPU write bar->DEV_REQ = PC802_REQ_NONE(0) !\n");
+
+    if (adapter->exit_after_reset) {
+        usleep(1);
+        NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
+        adapter->exit_after_reset = 0;
+        return 0;
+    }
+    pthread_t tid;
+    pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
 
     volatile uint32_t DRVSTATE;
     do {
