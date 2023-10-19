@@ -2331,9 +2331,9 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     NPU_SYSLOG("Finish resetting all Tx/Rx queues on PC802 index %u", adapter->port_index);
 
     do {
+        usleep(1);
         DEV_EP_RSP_IND = PC802_READ_REG(bar->DEV_EP_RSP_IND);
     } while (DEV_EP_RSP_IND != PC802_MAILBOX_FLUSHED_IND);
-    usleep(2);
     NPU_SYSLOG("Mailbox on PC802 index %u Flushed !\n", adapter->port_index);
 
     adapter->mb_stop = 1;
@@ -2346,6 +2346,9 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (pass < 3);
     pc802_reset_rx_queue(rxq);
     NPU_SYSLOG("Mailbox queue on NPU side for PC802 index %u is Reset !\n", adapter->port_index);
+
+    PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_MAILBOX_FLUSHED_IND);
+    NPU_SYSLOG("NPU write bar->DEV_RC_REQ = PC802_MAILBOX_FLUSHED_IND !\n");
 
     if (adapter->exit_after_reset) {
         NPU_SYSLOG("NPU App can now be exited after reseting PC802 index %hu\n", adapter->port_index);
