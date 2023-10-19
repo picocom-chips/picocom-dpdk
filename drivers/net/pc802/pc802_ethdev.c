@@ -2480,7 +2480,7 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     do {
         usleep(1);
         devRdy = PC802_READ_REG(bar->DEVRDY);
-    } while (devRdy<1);
+    } while (devRdy != 1);
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download ssbl(port=%hu) ...\n",
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
