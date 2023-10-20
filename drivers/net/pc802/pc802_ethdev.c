@@ -2354,6 +2354,7 @@ static int eth_pc802_reset(struct rte_eth_dev *eth_dev)
     } while (DEV_EP_RSP_IND != PC802_RSAPP_RUNNING_IND);
     NPU_SYSLOG("RSAPP on PC802 index %u is Running.\n", adapter->port_index);
 
+    usleep(1); //to assure all cores other than PFI 0 enter NMI
     PC802_WRITE_REG(bar->DEV_RC_REQ, PC802_REQ_NONE);
     NPU_SYSLOG("NPU write bar->DEV_REQ = PC802_REQ_NONE(0) !\n");
 
