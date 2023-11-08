@@ -172,6 +172,7 @@ struct pc802_tx_queue {
     uint16_t               nb_tx_free;
     uint16_t               queue_id; /**< TX queue index. */
     uint16_t               port_id;  /**< Device port identifier. */
+    uint8_t                sn;
     //uint8_t                pthresh;  /**< Prefetch threshold register. */
     //uint8_t                hthresh;  /**< Host threshold register. */
     //uint8_t                wthresh;  /**< Write-back threshold register. */
@@ -551,6 +552,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->tx_free_thresh = nb_desc / 4;
     txq->queue_id = queue_id;
     txq->port_id = port_id;
+    txq->sn = 0;
 
     if (PC802_READ_REG(bar->DEVEN)) {
         PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
@@ -760,6 +762,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
+        txd->sn = tx_blk->sn;
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
@@ -2152,6 +2155,7 @@ RTE_PMD_REGISTER_KMOD_DEP(net_pc802, "* igb_uio | uio_pci_generic | vfio-pci");
 RTE_INIT(picocom_pc802_init_log)
 {
     printf( "%s lib built at %s on %s\n", picocom_pc802_version(), __TIME__, __DATE__ );
+    NPU_SYSLOG("Picocom PC802 DPDK: add DL msg SN @ 20231124 18:08\n");
     pc802_init_log();
 }
 
