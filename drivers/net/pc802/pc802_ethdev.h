@@ -271,6 +271,7 @@ typedef struct stPC802_Descriptor_t{
     uint32_t length;    // length of content to be sent in bytes
     uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
     uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
+    uint8_t  sn;
 } PC802_Descriptor_t;
 
 struct stPC802_EP_Counter_Mirror_t {
