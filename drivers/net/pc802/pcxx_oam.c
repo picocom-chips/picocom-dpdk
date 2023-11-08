@@ -20,6 +20,7 @@ typedef enum {
     OamMsgType_Num
 } OamMsgType_e;
 
+#define MODULE_MAX 4
 
 #define OAM_START_FLAG      0xd1c2b3a4
 #define OAM_END_FLAG        0xa4b3c2d1
@@ -59,7 +60,8 @@ typedef struct {
 typedef struct{
     uint16_t   dev_count;
     uint16_t   devs[PC802_INDEX_MAX];
-    msg_info_t msg_list[PCXX_MSG_TYPE_MAX];
+    msg_info_t msg_list[MODULE_MAX][PCXX_MSG_TYPE_MAX];
+    pcxx_oam_recv_cb_fn rx_cb;
 }oam_info_t;
 
 static oam_info_t g_oam_info;
@@ -128,7 +130,7 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     len += sizeof(oam_msg_head_t);
 
     for ( i=0; i<msg_num; i++ ) {
-        RTE_ASSERT(0 == (sub_msg[i]->msg_size&3));
+        //RTE_ASSERT(0 == (sub_msg[i]->msg_size&3));
         if ( SUB_MSG_TSIZE(sub_msg[i]->msg_size) > OAM_QUEUE_BLOCK_SIZE - len) {
             DBLOG( "Not enough space(%u) for sub msg(%d:%ld)\n", OAM_QUEUE_BLOCK_SIZE - len,
                    sub_msg[i]->msg_id, SUB_MSG_TSIZE(sub_msg[i]->msg_size));
@@ -155,41 +157,86 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     return 0;
 }
 
+int pcxx_oam_send_original_msg(uint16_t dev_index, const uint8_t *buf, uint32_t len)
+{
+    PC802_Mem_Block_t *mblk = NULL;
+
+    if (dev_index >= g_oam_info.dev_count) {
+        DBLOG("Invalid dev_index=%d!\n", dev_index);
+        return -1;
+    }
+    if (len > OAM_QUEUE_BLOCK_SIZE) {
+        DBLOG("buf len(=%u) cannot be greater than %u!\n", len, OAM_QUEUE_BLOCK_SIZE);
+        return -1;
+    }
+
+    pthread_mutex_lock(&lock);
+    mblk = pc802_alloc_tx_mem_block(g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM);
+    if (NULL == mblk) {
+        pthread_mutex_unlock(&lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&lock);
+
+    rte_memcpy(&mblk[1], buf, len);
+    mblk->pkt_length = len;
+    mblk->pkt_type = 2;
+    mblk->eop = 1;
+
+    pthread_mutex_lock(&lock);
+    if (pc802_tx_mblk_burst(g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, &mblk, 1) < 1) {
+        DBLOG("pc802_tx_mblk_burst(dev=%d,len=%d) err!\n", dev_index, len);
+        pthread_mutex_unlock(&lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&lock);
+    return 0;
+}
+
+int pcxx_oam_recv_register(pcxx_oam_recv_cb_fn cb_fun)
+{
+    g_oam_info.rx_cb = cb_fun;
+    return 0;
+}
+
 int pcxx_oam_register(uint32_t msg_type, pcxx_oam_cb_fn cb_fun, void *arg)
 {
-    RTE_ASSERT( (cb_fun != NULL)&&(msg_type<PCXX_MSG_TYPE_MAX) );
+    uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
+    RTE_ASSERT((cb_fun != NULL) && (module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
-    g_oam_info.msg_list[msg_type].msg_type = msg_type;
-    g_oam_info.msg_list[msg_type].cb_arg = arg;
-    g_oam_info.msg_list[msg_type].cb_fun = cb_fun;
+    g_oam_info.msg_list[module][msg_type].msg_type = msg_type;
+    g_oam_info.msg_list[module][msg_type].cb_arg = arg;
+    g_oam_info.msg_list[module][msg_type].cb_fun = cb_fun;
     pthread_mutex_unlock(&lock);
     return 0;
 }
 
 int pcxx_oam_unregister(uint32_t msg_type)
 {
-    RTE_ASSERT( msg_type<PCXX_MSG_TYPE_MAX );
+    uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
+    RTE_ASSERT((module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
-    g_oam_info.msg_list[msg_type].cb_arg = NULL;
-    g_oam_info.msg_list[msg_type].cb_fun = NULL;
-    g_oam_info.msg_list[msg_type].msg_type = 0;
+    g_oam_info.msg_list[module][msg_type].cb_arg = NULL;
+    g_oam_info.msg_list[module][msg_type].cb_fun = NULL;
+    g_oam_info.msg_list[module][msg_type].msg_type = 0;
     pthread_mutex_unlock(&lock);
     return 0;
 }
 
 int pcxx_oam_sub_msg_register(uint32_t msg_type, uint16_t sub_msg_id, pcxx_oam_cb_fn cb_fun, void *arg)
 {
+    uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
     uint16_t sub_index = 0;
     sub_info_t *sub_list;
 
-    RTE_ASSERT((cb_fun != NULL) && (msg_type < PCXX_MSG_TYPE_MAX));
+    RTE_ASSERT((cb_fun != NULL) && (module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
 
     pthread_mutex_lock(&lock);
-    sub_list = g_oam_info.msg_list[msg_type].sub_list;
-    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[msg_type].sub_list); sub_index++)
+    sub_list = g_oam_info.msg_list[module][type].sub_list;
+    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[module][type].sub_list); sub_index++)
         if ((0 == sub_list[sub_index].msg_id) && (NULL == sub_list[sub_index].cb_fun))
             break;
-    if (sub_index == RTE_DIM(g_oam_info.msg_list[msg_type].sub_list)) {
+    if (sub_index == RTE_DIM(g_oam_info.msg_list[module][type].sub_list)) {
         pthread_mutex_unlock(&lock);
         DBLOG("no vacancy!\n");
         return -1;
@@ -204,16 +251,17 @@ int pcxx_oam_sub_msg_register(uint32_t msg_type, uint16_t sub_msg_id, pcxx_oam_c
 
 int pcxx_oam_sub_msg_unregister( uint32_t msg_type, uint16_t sub_msg_id )
 {
+    uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
     uint16_t sub_index = 0;
     sub_info_t *sub_list;
 
-    RTE_ASSERT( msg_type<PCXX_MSG_TYPE_MAX );
+    RTE_ASSERT((module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
-    sub_list = g_oam_info.msg_list[msg_type].sub_list;
-    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[msg_type].sub_list); sub_index++)
+    sub_list = g_oam_info.msg_list[module][type].sub_list;
+    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[module][type].sub_list); sub_index++)
         if (sub_msg_id == sub_list[sub_index].msg_id)
             break;
-    if (sub_index < RTE_DIM(g_oam_info.msg_list[msg_type].sub_list)) {
+    if (sub_index < RTE_DIM(g_oam_info.msg_list[module][type].sub_list)) {
         sub_list[sub_index].msg_id = 0;
         sub_list[sub_index].cb_arg = NULL;
         sub_list[sub_index].cb_fun = NULL;
@@ -225,7 +273,7 @@ int pcxx_oam_sub_msg_unregister( uint32_t msg_type, uint16_t sub_msg_id )
 static sub_info_t *get_sub_index(sub_info_t sub_list[], uint16_t msg_id)
 {
     uint16_t sub_index = 0;
-    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[0].sub_list); sub_index++)
+    for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[0][0].sub_list); sub_index++)
         if ((msg_id == sub_list[sub_index].msg_id) && (NULL != sub_list[sub_index].cb_fun))
             return &sub_list[sub_index];
     return NULL;
@@ -239,18 +287,21 @@ static uint32_t process_oam_msg(uint16_t dev_index, const oam_message_t *msg, ui
     uint32_t i = 0;
     msg_info_t *msg_info = NULL;
     sub_info_t *sub_info = NULL;
+    uint16_t module, type;
 
     if (OAM_START_FLAG != msg->head.start_flag || len < sizeof(oam_message_t)){
         DBLOG("Invalid msg(start_flag=%u,len=%u)!\n", msg->head.start_flag, len );
         return -EINVAL;;
     }
-    if (msg->head.msg_type >= PCXX_MSG_TYPE_MAX) {
-         DBLOG("Invalid msg_type=%u!\n", msg->head.msg_type );
+    module = PCXX_OAM_GET_MODULE(msg->head.msg_type);
+    type   = PCXX_OAM_GET_TYPE(msg->head.msg_type);
+    if ((module >= MODULE_MAX) || (type >= PCXX_MSG_TYPE_MAX)) {
+        DBLOG("Invalid module=%u or type=%u!\n", module, type);
         return -EINVAL;;
     }
 
     pthread_mutex_lock(&lock);
-    msg_info = &g_oam_info.msg_list[msg->head.msg_type];
+    msg_info = &g_oam_info.msg_list[module][type];
     len -= sizeof(oam_msg_head_t);
     cur = msg->sub_msg;
     for (i = 0; (i < msg->head.sub_msg_num) && (len > sizeof(pcxx_oam_sub_msg_t)); i++) {
@@ -301,7 +352,9 @@ static void *oam_recv( __rte_unused void *arg)
             case OamMsgType_Memdump:
                 break;
             default:
-                process_oam_msg(dev_index, (oam_message_t *)&mblk[1], mblk->pkt_length);
+                if (g_oam_info.rx_cb)
+                    g_oam_info.rx_cb(dev_index, (uint8_t *)&mblk[1], mblk->pkt_length);   
+                process_oam_msg(dev_index, (oam_message_t *)&mblk[1], mblk->pkt_length);         
                 break;
             }
             pc802_free_mem_block(mblk);
