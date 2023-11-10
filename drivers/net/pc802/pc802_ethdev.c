@@ -2400,18 +2400,18 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+        NPU_SYSLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
         return -1;
     }
 
     char file_name[PATH_MAX];
     if ( NULL == get_vector_file_name(port_id, file_id, file_name) ) {
-        DBLOG("ERROR: Vector %d file not found.\n", file_id);
+        NPU_SYSLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
+    NPU_SYSLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2437,7 +2437,7 @@ __next_pfi_0_vec_read:
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
-            DBLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
+            NPU_SYSLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
             return -4;
         }
         // already done
@@ -2449,7 +2449,7 @@ __next_pfi_0_vec_read:
     }
 
     if ((0 == buf_full) && (vec_cnt < end)) {
-        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
+        NPU_SYSLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2475,7 +2475,7 @@ __next_pfi_0_vec_read:
 
     fclose(fh_vector);
 
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    NPU_SYSLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
 
@@ -2495,7 +2495,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
-       DBLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
+       NPU_SYSLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
        return -1;
     }
 
@@ -2509,12 +2509,12 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     if (is_core_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
+        NPU_SYSLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else {
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
-        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        NPU_SYSLOG("PC802 %d dumping to file %s\n", port_id, file_name);
         fh_vector  = fopen(file_name, "w");
         fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     }
@@ -2559,7 +2559,7 @@ __next_pfi_0_vec_dump:
     fclose(fh_vector);
 
     // Print a success message
-    DBLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
+    NPU_SYSLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
         length, address, file_name);
 
     return 0;
@@ -2569,18 +2569,18 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+        NPU_SYSLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
         return -1;
     }
 
     char file_name[PATH_MAX];
     if ( NULL == get_vector_file_name( port_id, file_id, file_name) ) {
-        DBLOG("ERROR: Vector %d file not found.\n", file_id);
+        NPU_SYSLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
+    NPU_SYSLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2607,7 +2607,7 @@ __next_non_pfi_0_vec_read:
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
-            DBLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
+            NPU_SYSLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
             return -4;
         }
         // already done
@@ -2619,7 +2619,7 @@ __next_non_pfi_0_vec_read:
     }
 
     if ((0 == buf_full) && (vec_cnt < end)) {
-        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
+        NPU_SYSLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2642,7 +2642,7 @@ __next_non_pfi_0_vec_read:
     }
 
     fclose(fh_vector);
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    NPU_SYSLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
 
@@ -2653,7 +2653,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
-       DBLOG("ERROR: dump address and length must be word aligned!\n");
+       NPU_SYSLOG("ERROR: dump address and length must be word aligned!\n");
        return -1;
     }
 
@@ -2668,13 +2668,13 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
     if (is_core_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
+        NPU_SYSLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else if (is_data_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u_%u.bin", file_path, pc802_index, file_id);
-        DBLOG("Generating PC802 %d data dump file %s with flag = %u\n", pc802_index, file_name, flag);
+        NPU_SYSLOG("Generating PC802 %d data dump file %s with flag = %u\n", pc802_index, file_name, flag);
         if (flag) {
             fh_vector = fopen(file_name, "wb");
         } else {
@@ -2686,7 +2686,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
         // Parse the file
-        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        NPU_SYSLOG("PC802 %d vec dump file %s\n", port_id, file_name);
         fh_vector = fopen(file_name, "w");
         fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     }
@@ -2714,7 +2714,7 @@ __next_non_pfi_0_vec_dump:
     if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
         if (is_data_dump) {
-            DBLOG("data_dump(%u, 0x%08X, %u, %u);\n",
+            NPU_SYSLOG("data_dump(%u, 0x%08X, %u, %u);\n",
                 file_id, address, data_size, flag);
         }
     } else {
@@ -2732,7 +2732,7 @@ __next_non_pfi_0_vec_dump:
     fclose(fh_vector);
 
     // Print a success message
-    DBLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
+    NPU_SYSLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
         length, address, file_name);
 
     return 0;
@@ -2867,20 +2867,23 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
         }
         if (0 == msg.core) {
             pc802_write_mailbox_reg(ext, 0, msg.rccnt, 2);
+            NPU_SYSLOG("Bigin vec_access: PFI 0 command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
+                command, msg.file_id, msg.offset, msg.address, msg.length);
             if (MB_VEC_READ == command) {
                 re = handle_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
+            NPU_SYSLOG("End   vec_access: PFI 0 command = %2u file_id = %u result = %u\n", command, msg.file_id, re);
         } else {
-            DBLOG("Bigin vec_access: core = %2u command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
+            NPU_SYSLOG("Bigin vec_access: core = %2u command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
                 msg.core, command, msg.file_id, msg.offset, msg.address, msg.length);
             if (MB_VEC_READ == command) {
                 re = handle_non_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_non_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
-            DBLOG("End   vec_access: core = %2u command = %2u file_id = %u\n", msg.core, command, msg.file_id);
+            NPU_SYSLOG("End   vec_access: core = %2u command = %2u file_id = %u result = %u\n", msg.core, command, msg.file_id, result);
         }
         result = (0 == re);
         pc802_write_mailbox_reg(ext, msg.core, msg.rccnt, result);
