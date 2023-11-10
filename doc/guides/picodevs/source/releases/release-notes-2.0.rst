@@ -143,3 +143,17 @@ Bug fixes
 *********
 * NDF-146: DPDK driver breaks secure boot process
 * NDF-152: Fix mb_printf crash on multiple dpdk devices
+
+PC802 driver 2.7
+##################
+
+New features
+************
+
+Enhancement
+***********
+* NDF-178: get mailbox RC counter from mailbox message
+
+Bug fixes
+*********
+
