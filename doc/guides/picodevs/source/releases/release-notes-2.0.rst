@@ -152,3 +152,11 @@ New features
 * NDF-108: Modify mailbox para check and align log format
 * NDF-177: No need align PC802 OAM message filed to 4 bytes boundary
 * NDF-192: Refactor the oam example using go
+
+Enhancement
+***********
+* NDF-178: get mailbox RC counter from mailbox message
+
+Bug fixes
+*********
+
