@@ -45,6 +45,7 @@ struct pcxx_cell_info_st{
     char     *ctrl_buf;
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
+    uint8_t  dl_sn;
     SimULSlotMsg_t slot_msg;
 
     char     *data_buf[NUM_SFN_IDX][NUM_DATA_BUF];
@@ -145,6 +146,7 @@ __Init_Timing_Stats_Finished:
 
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
+    cell_info->dl_sn = 0;
 
     pcxx_devs[dev_index].port_id = port_id;
 
@@ -248,10 +250,15 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->data_num[cell->sfn_idx]) {
+        if (NULL == cell->ctrl_buf) {
+            NPU_SYSLOG("ERROR: Dev %1u Cell %1u send DL data (SN = %u) but no associated control msg !\n",
+                dev_index, cell_index, cell->dl_sn);
+        }
         mblk_data = (PC802_Mem_Block_t *)(cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx] - 1] - sizeof(PC802_Mem_Block_t));
         mblk_data->pkt_length = cell->data_length;
         mblk_data->pkt_type = 0;
         mblk_data->eop = 1;
+        mblk_data->sn = cell->dl_sn;
         pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_DATA[cell_index], &mblk_data, 1);            //todo:??only one
     }
     if (NULL != cell->ctrl_buf) {
@@ -259,6 +266,8 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         mblk_ctrl->pkt_length = cell->ctrl_length;
         mblk_ctrl->pkt_type = 1 + (0 == cell->data_offset);
         mblk_ctrl->eop = 1;
+        mblk_ctrl->sn = cell->dl_sn;
+        cell->dl_sn += (cell->data_offset > 0);
         pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index], &mblk_ctrl, 1);
         cell->sfn_idx = (cell->sfn_idx + 1) & SFN_IDX_MASK;
     }
@@ -585,6 +594,7 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
         mblk->pkt_length = cell->data_length;
         mblk->pkt_type = 0;
         mblk->eop = 0;
+        mblk->sn = cell->dl_sn;
         pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_DATA[cell_index], &mblk, 1);
     }
     cell->data_offset += bufLen;
