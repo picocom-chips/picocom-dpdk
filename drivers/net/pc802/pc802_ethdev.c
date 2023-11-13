@@ -2886,7 +2886,8 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
             } else if (MB_VEC_DUMP == command) {
                 re = handle_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
-            NPU_SYSLOG("End   vec_access: PFI 0 command = %2u file_id = %u result = %u\n", command, msg.file_id, re);
+            result = (0 == re);
+            NPU_SYSLOG("End   vec_access: PFI 0 command = %2u file_id = %u result = %u\n", command, msg.file_id, result);
         } else {
             NPU_SYSLOG("Bigin vec_access: core = %2u command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
                 msg.core, command, msg.file_id, msg.offset, msg.address, msg.length);
@@ -2895,9 +2896,9 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
             } else if (MB_VEC_DUMP == command) {
                 re = handle_non_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
+            result = (0 == re);
             NPU_SYSLOG("End   vec_access: core = %2u command = %2u file_id = %u result = %u\n", msg.core, command, msg.file_id, result);
         }
-        result = (0 == re);
         pc802_write_mailbox_reg(ext, msg.core, msg.rccnt, result);
     }
 
