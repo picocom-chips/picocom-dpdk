@@ -145,6 +145,10 @@ int pcxx_oam_send_msg( uint16_t dev_index, uint32_t msg_type, const pcxx_oam_sub
     mblk->pkt_type = 2;
     mblk->eop = 1;
     //printf_buf("Send msg", (uint8_t *)buf, len);
+    if (0 == mblk->pkt_length) {
+        NPU_SYSLOG("ERROR: NPU send 0 size DL OAM msg on port %1u\n", g_oam_info.devs[dev_index]);
+        RTE_ASSERT(0 != mblk->pkt_length);
+    }
     pthread_mutex_lock(&lock);
     if ( pc802_tx_mblk_burst( g_oam_info.devs[dev_index], PC802_TRAFFIC_OAM, &mblk, 1) < 1 ) {
         DBLOG( "pc802_tx_mblk_burst(dev=%d,len=%d) err!\n", dev_index, mblk->pkt_length );
