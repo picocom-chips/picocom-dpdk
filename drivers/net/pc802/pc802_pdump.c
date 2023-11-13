@@ -122,18 +122,17 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
         pkg = (struct pdump_pkg *)m->buf_addr;
 
         // fill ether package
-        if (pkg->blk->pkt_length > (rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS))
-            pkt_len = rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS;
-        else
-            pkt_len = (uint16_t)pkg->blk->pkt_length;
+        pkt_len = RTE_MIN(pkg->blk->pkt_length, (rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS));
         rte_memcpy(&udp_hdr[1], &pkg->blk[1], pkt_len);
 
         pkt_len += sizeof(struct rte_udp_hdr);
         udp_hdr->src_port = rte_cpu_to_be_16(pdump_cfg.src_port + pkg->rxtx_flag);
         udp_hdr->dst_port = rte_cpu_to_be_16(pdump_cfg.dst_port + pkg->queue_id);
-        udp_hdr->dgram_len = rte_cpu_to_be_16(pkt_len);
+		udp_hdr->dgram_len = (uint16_t)(pkg->blk->pkt_length+sizeof(struct rte_udp_hdr));
+        udp_hdr->dgram_len = rte_cpu_to_be_16(udp_hdr->dgram_len);
 
         pkt_len += IP_HDR_SIZE;
+        ip_hdr->type_of_service = (pkg->blk->pkt_type<<2)|pkg->blk->eop;
         ((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp =
             rte_cpu_to_be_32((pkg->tsc - start_tsc) * 1000000/tsc_hz);
 		if( pkg->tsc1 )
@@ -379,7 +378,7 @@ int pc802_pdump_init(void)
 	pdump_cfg.src_port = 8020;
 	pdump_cfg.dst_port = 6880;
 	pdump_cfg.sleep_us = 100;
-	return rte_mp_action_register(PDUMP_MP, pdump_server);;
+	return rte_mp_action_register(PDUMP_MP, pdump_server);
 }
 
 int pc802_pdump_uninit(void)
