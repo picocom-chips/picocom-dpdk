@@ -750,6 +750,11 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks, 0);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
+        if (0 == tx_blk->pkt_length) {
+            NPU_SYSLOG("WARN: NPU send 0 size DL msg: port %1u queue %1u SN %u\n",
+                port_id, queue_id, tx_blk->sn);
+            continue;
+        }
         idx = tx_id & mask;
         txe = &sw_ring[idx];
         txd = &tx_ring[idx];
@@ -1418,6 +1423,10 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     /* TX loop */
     for (nb_tx = 0; nb_tx < mb_pkts; nb_tx++) {
         tx_pkt = *tx_pkts++;
+        if (0 == tx_pkt->data_len) {
+            NPU_SYSLOG("WARN: NPU send 0 size DL eth pkt on port %1u\n", txq->port_id);
+            continue;
+        }
         idx = tx_id & mask;
         txe = &sw_ring[idx];
 
