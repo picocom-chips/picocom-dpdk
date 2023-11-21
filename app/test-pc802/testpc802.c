@@ -1690,6 +1690,43 @@ void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
         pc802_mem, byte_num);
 }
 
+int case_dl_discard(void);
+
+int case_dl_discard(void)
+{
+    PC802_Mem_Block_t *mblk_ctrl;
+    PC802_Mem_Block_t *mblk_data;
+    static uint8_t sn = 0;
+    uint32_t L = 0;
+
+    while (1) {
+        while (NULL == (mblk_ctrl = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_CTRL_1)));
+        while (NULL == (mblk_data = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_DATA_1)));
+
+        mblk_ctrl->pkt_type = 1;
+        mblk_ctrl->pkt_length = 4096;
+        mblk_ctrl->eop = 1;
+        mblk_ctrl->sn = sn;
+
+        mblk_data->pkt_type = 0;
+        mblk_data->pkt_length = 16384;
+        mblk_data->eop = 1;
+        mblk_data->sn = sn;
+        sn++;
+        L++;
+
+        pc802_tx_mblk_burst(0, PC802_TRAFFIC_CTRL_1, &mblk_ctrl, 1);
+        pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
+
+        if (testpc802_exit_loop) {
+            DBLOG("Case DL Discard Passed %u Loops.\n", L);
+            testpc802_exit_loop = 0;
+            return 0;
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     int diag;
