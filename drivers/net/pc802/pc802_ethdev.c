@@ -52,8 +52,6 @@
 
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
-#define PCIE_NO_CACHE_COHERENCE
-
 #ifdef PCIE_NO_CACHE_COHERENCE
 	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
     static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
@@ -1877,9 +1875,6 @@ static const cpu_set_t * get_ctrl_cpuset( void )
             for( core=min; core<=max; core++ )
                 CPU_CLR( core, &ctrl_cpuset );
         }
-
-        CPU_ZERO( &ctrl_cpuset );
-        CPU_SET( min, &ctrl_cpuset );
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
     }
