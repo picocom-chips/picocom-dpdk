@@ -759,6 +759,42 @@ cmdline_parse_inst_t vec_dump = {
         },
 };
 
+struct cmd_test_dl_discard_result {
+    cmdline_fixed_string_t test;
+    cmdline_fixed_string_t dl;
+    cmdline_fixed_string_t discard;
+};
+
+cmdline_parse_token_string_t cmd_test_dl_discard_result_test =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_dl_discard_result, test, "test");
+cmdline_parse_token_string_t cmd_test_dl_discard_result_dl =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_dl_discard_result, dl, "dl");
+cmdline_parse_token_string_t cmd_test_dl_discard_result_discard =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_dl_discard_result, discard, "discard");
+
+int case_dl_discard(void);
+
+static void cmd_test_dl_discard_parsed(void *parsed_result,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_vec_dump_result *res = parsed_result;
+    (void)res;
+    case_dl_discard();
+}
+
+cmdline_parse_inst_t test_dl_discard = {
+    .f = cmd_test_dl_discard_parsed,
+    .data = NULL,
+    .help_str = "test dl discard",
+    .tokens = {
+        (void *)&cmd_test_dl_discard_result_test,
+        (void *)&cmd_test_dl_discard_result_dl,
+        (void *)&cmd_test_dl_discard_result_discard,
+        NULL
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&run_test_case,
@@ -775,6 +811,7 @@ cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&set_ul_dma_count,
     (cmdline_parse_inst_t *)&vec_read,
     (cmdline_parse_inst_t *)&vec_dump,
-    NULL,
+    (cmdline_parse_inst_t *)&test_dl_discard,
+    NULL
 };
 
