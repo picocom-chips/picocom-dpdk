@@ -1708,7 +1708,7 @@ int case_dl_discard(void)
         mblk_ctrl->eop = 1;
         mblk_ctrl->sn = sn;
 
-        mblk_data->pkt_type = 0;
+        mblk_data->pkt_type = 1;
         mblk_data->pkt_length = 16384;
         mblk_data->eop = 1;
         mblk_data->sn = sn;
