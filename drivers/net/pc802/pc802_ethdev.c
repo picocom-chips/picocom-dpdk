@@ -52,7 +52,6 @@
 
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
-#define PCIE_NO_CACHE_COHERENCE
 #ifdef PCIE_NO_CACHE_COHERENCE
 	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
     static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
@@ -185,7 +184,6 @@ struct pc802_tx_entry {
         PC802_Mem_Block_t *mblk;
    };
 };
-#define MBLK_IOVA(mblk) rte_mempool_virt2iova(mblk)+sizeof(*mblk)
 
 /**
  * Structure associated with each TX queue.
@@ -454,6 +452,57 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     rxq->mpool.first = NULL;
+#ifndef PCIE_NO_CACHE_COHERENCE
+    int socket_id = dev->device->numa_node;
+    char z_name[RTE_MEMZONE_NAMESIZE];
+    const struct rte_memzone *mz;
+    snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d",
+            dev->data->port_id, queue_id);
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
+    mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    if (mz == NULL) {
+        for (k = 0; k < block_num; k++) {
+            snprintf(z_name, sizeof(z_name), "PC802Rx_%02d_%02d_%4d",
+                dev->data->port_id, queue_id, k);
+            if (NULL != (mz = rte_memzone_lookup(z_name))) {
+                rte_memzone_free(mz);
+            }
+            mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+            if (mz == NULL) {
+                DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
+                    block_size, port_id, queue_id, k);
+                return -ENOMEM;
+            }
+            mblk = (PC802_Mem_Block_t *)mz->addr;
+            mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = rxq->mpool.first;
+            mblk->first = &rxq->mpool.first;
+            mblk->alloced = 0;
+            rxq->mpool.first = mblk;
+            DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+                queue_id, k, mz->iova, mz->addr);
+            DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    } else {
+        DBLOG("UL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, mz->iova, mz->addr);
+        for (k = 0; k < block_num; k++) {
+            mblk = (PC802_Mem_Block_t *)((char *)mz->addr + block_size*k);
+            mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = rxq->mpool.first;
+            mblk->first = &rxq->mpool.first;
+            mblk->alloced = 0;
+            rxq->mpool.first = mblk;
+            DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    }
+#else
     uint64_t iova;
     void *addr;
 
@@ -475,6 +524,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
             queue_id, k, mblk->buf_phy_addr, &mblk[1]);
     }
+#endif
 
     rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
     rxep = rxq->sw_ring;
@@ -577,6 +627,55 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->mpool.first = NULL;
+#ifndef PCIE_NO_CACHE_COHERENCE
+    int socket_id = dev->device->numa_node;
+    const struct rte_memzone *mz;
+    snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
+    if (NULL != (mz = rte_memzone_lookup(z_name))) {
+        rte_memzone_free(mz);
+    }
+    mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    if (mz == NULL) {
+        for (k = 0; k < block_num; k++) {
+            snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d_%4d",
+                dev->data->port_id, queue_id, k);
+            if (NULL != (mz = rte_memzone_lookup(z_name))) {
+                rte_memzone_free(mz);
+            }
+            mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+            if (mz == NULL) {
+                DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Tx queue %hu block %u\n",
+                    block_size, port_id, queue_id, k);
+                return -ENOMEM;
+            }
+            mblk = (PC802_Mem_Block_t *)mz->addr;
+            mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = txq->mpool.first;
+            mblk->first = &txq->mpool.first;
+            mblk->alloced = 0;
+            txq->mpool.first = mblk;
+            DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+                queue_id, k, mz->iova, mz->addr);
+            DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    } else {
+        DBLOG("DL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, mz->iova, mz->addr);
+        for (k = 0; k < block_num; k++) {
+            mblk = (PC802_Mem_Block_t *)((char *)mz->addr+block_size*k);
+            mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = txq->mpool.first;
+            mblk->first = &txq->mpool.first;
+            mblk->alloced = 0;
+            txq->mpool.first = mblk;
+            DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    }
+#else
     uint64_t iova;
     void *addr;
 
@@ -598,6 +697,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
             queue_id, k, mblk->buf_phy_addr, &mblk[1]);
     }
+#endif
 
     txq->tx_ring = adapter->pDescs->dl[queue_id];
     txep = txq->sw_ring;
@@ -1602,13 +1702,13 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->eop = 1;
         rxdp->type = 1;
         INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
+        rte_wmb();
         rx_id++;
         nb_hold++;
     }
 
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
-        rte_wmb();
         rte_io_wmb();
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
         nb_hold = 0;

@@ -12,7 +12,7 @@ drivers = [
         'bnx2x',
         'bnxt',
         'bonding',
-        'cnxk',
+#       'cnxk',
         'cxgbe',
         'dpaa',
         'dpaa2',
