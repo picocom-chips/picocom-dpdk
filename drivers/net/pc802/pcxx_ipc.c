@@ -20,8 +20,8 @@ static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1}
 #define DATA_QUEUE_BLOCK_SIZE   (80*1024)
 #define CTRL_QUEUE_BLOCK_SIZE   (32*1024)
 
-#define NUM_DATA_BUF    2
-#define NUM_SFN_IDX     16
+#define NUM_DATA_BUF    16
+#define NUM_SFN_IDX     4
 #define SFN_IDX_MASK    (NUM_SFN_IDX - 1)
 
 typedef struct SimULSlotMsg_st{

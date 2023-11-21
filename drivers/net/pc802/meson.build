@@ -12,7 +12,12 @@ version += '('+commit+')'
 message('version: @0@'.format(version))
 dpdk_conf.set('PC802_UDRIVER_VERSION', '"'+version+'"')
 cflags += '-DRTE_ENABLE_ASSERT'
+message('enable_multi_pc802 option: @0@'.format(get_option('enable_multi_pc802')))
 dpdk_conf.set('MULTI_PC802', get_option('enable_multi_pc802'))
+message('DDIO option: @0@'.format(get_option('ddio')))
+if not get_option('ddio')
+        dpdk_conf.set('PCIE_NO_CACHE_COHERENCE',1)
+endif
 dpdk_conf.set('ENABLE_CHECK_PC802_UL_TIMING', get_option('enable_check_pc802_ul_timing'))
 dpdk_conf.set('ENABLE_CHECK_PC802_DL_TIMING', get_option('enable_check_pc802_dl_timing'))
 
