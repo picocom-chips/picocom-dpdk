@@ -1703,6 +1703,7 @@ int case_dl_discard(void)
     static uint8_t sn = 0;
     uint32_t L = 0;
     uint32_t N = 0;
+    uint16_t tx_num;
 
     while (1) {
         while (NULL == (mblk_ctrl = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_CTRL_1)));
@@ -1721,16 +1722,25 @@ int case_dl_discard(void)
         L++;
         N++;
 
-        pc802_tx_mblk_burst(0, PC802_TRAFFIC_CTRL_1, &mblk_ctrl, 1);
-        pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
+        tx_num = pc802_tx_mblk_burst(0, PC802_TRAFFIC_CTRL_1, &mblk_ctrl, 1);
+        if (0 == tx_num) {
+            pc802_free_mem_block(mblk_ctrl);
+            NPU_SYSLOG("Fail to send DL Ctrl SN = %3u and Free it !\n", mblk_ctrl->sn);
+        }
+
+        tx_num = pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
+        if (0 == tx_num) {
+            pc802_free_mem_block(mblk_data);
+            NPU_SYSLOG("Fail to send DL Data SN = %3u and Free it !\n", mblk_data->sn);
+        }
 
         if (N == 10000) {
             N = 0;
-            DBLOG("Case DL Discard Passed %u Loops.\n", L);
+            NPU_SYSLOG("Case DL Discard Passed %u Loops.\n", L);
         }
 
         if (testpc802_exit_loop) {
-            DBLOG("Case DL Discard Passed %u Loops.\n", L);
+            NPU_SYSLOG("Case DL Discard Passed %u Loops.\n", L);
             testpc802_exit_loop = 0;
             return 0;
         }
