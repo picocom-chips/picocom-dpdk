@@ -1700,7 +1700,8 @@ int case_dl_discard(void)
 {
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
-    static uint8_t sn = 0;
+    static uint8_t sn_ctrl = 0;
+    static uint8_t sn_data = 0;
     uint32_t L = 0;
     uint32_t N = 0;
     uint16_t tx_num;
@@ -1712,13 +1713,12 @@ int case_dl_discard(void)
         mblk_ctrl->pkt_type = 1;
         mblk_ctrl->pkt_length = 4096;
         mblk_ctrl->eop = 1;
-        mblk_ctrl->sn = sn;
+        mblk_ctrl->sn = sn_ctrl;
 
         mblk_data->pkt_type = 1;
         mblk_data->pkt_length = 16384;
         mblk_data->eop = 1;
-        mblk_data->sn = sn;
-        sn++;
+        mblk_data->sn = sn_data;
         L++;
         N++;
 
@@ -1726,12 +1726,16 @@ int case_dl_discard(void)
         if (0 == tx_num) {
             pc802_free_mem_block(mblk_ctrl);
             //NPU_SYSLOG("Fail to send DL Ctrl SN = %3u and Free it !\n", mblk_ctrl->sn);
+        } else {
+            sn_ctrl++;
         }
 
         tx_num = pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
         if (0 == tx_num) {
             pc802_free_mem_block(mblk_data);
             //NPU_SYSLOG("Fail to send DL Data SN = %3u and Free it !\n", mblk_data->sn);
+        } else {
+            sn_data++;
         }
 
         if (N == 10000) {
