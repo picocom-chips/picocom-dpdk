@@ -1725,13 +1725,13 @@ int case_dl_discard(void)
         tx_num = pc802_tx_mblk_burst(0, PC802_TRAFFIC_CTRL_1, &mblk_ctrl, 1);
         if (0 == tx_num) {
             pc802_free_mem_block(mblk_ctrl);
-            NPU_SYSLOG("Fail to send DL Ctrl SN = %3u and Free it !\n", mblk_ctrl->sn);
+            //NPU_SYSLOG("Fail to send DL Ctrl SN = %3u and Free it !\n", mblk_ctrl->sn);
         }
 
         tx_num = pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
         if (0 == tx_num) {
             pc802_free_mem_block(mblk_data);
-            NPU_SYSLOG("Fail to send DL Data SN = %3u and Free it !\n", mblk_data->sn);
+            //NPU_SYSLOG("Fail to send DL Data SN = %3u and Free it !\n", mblk_data->sn);
         }
 
         if (N == 10000) {
