@@ -51,6 +51,8 @@
 
 #define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
 
+#define PC802_BAR_EXT_OFFSET  (4 * 1024)
+
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
     __asm__ volatile ("" : : : "memory");
@@ -183,7 +185,11 @@ struct pc802_tx_queue {
 };
 
 struct pc802_adapter {
-    uint8_t *bar0_addr;
+    union {
+        uint8_t *bar0_addr;
+        PC802_BAR_t *bar0;
+    };
+    PC802_BAR_Ext_t *bar0_ext;
     PC802_Descs_t *pDescs;
     uint64_t descs_phy_addr;
     struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
@@ -1993,6 +1999,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     bar = (PC802_BAR_t *)adapter->bar0_addr;
+    adapter->bar0_ext = (PC802_BAR_Ext_t *)(adapter->bar0_addr + PC802_BAR_EXT_OFFSET);
 
     pc802_check_rerun(adapter);
 
@@ -2354,8 +2361,6 @@ int pc802_check_dma_timeout(uint16_t port)
         printf("%s", buf);
     return 0;
 }
-
-#define PC802_BAR_EXT_OFFSET  (4 * 1024)
 
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
 {
