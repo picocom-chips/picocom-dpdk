@@ -116,6 +116,8 @@ uint16_t g_cell_index = 0;
 
 #define OAM_QUEUE_BLOCK_SIZE   (8*1024)
 
+int case_dl_discard(void);
+
 static int port_init( uint16_t pc802_index )
 {
     struct rte_mempool *mbuf_pool;
@@ -1586,7 +1588,11 @@ static void run_case(int caseNo)
     case -8802:
         diag = case_n8802();
         //disp_test_result(-8802, diag);
-        break;    default:
+        break;
+    case -1903:
+        diag = case_dl_discard();
+        break;
+    default:
         DBLOG("Wrong case number, it should be 1/2/3/4/5/101/102/103/104/105/-1/-2\n");
     }
     test_case_No = 0;
@@ -1690,14 +1696,13 @@ void test_pc802_mem_dump(uint32_t          pc802_mem, uint32_t byte_num)
         pc802_mem, byte_num);
 }
 
-int case_dl_discard(void);
-
 int case_dl_discard(void)
 {
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     static uint8_t sn = 0;
     uint32_t L = 0;
+    uint32_t N = 0;
 
     while (1) {
         while (NULL == (mblk_ctrl = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_CTRL_1)));
@@ -1714,9 +1719,15 @@ int case_dl_discard(void)
         mblk_data->sn = sn;
         sn++;
         L++;
+        N++;
 
         pc802_tx_mblk_burst(0, PC802_TRAFFIC_CTRL_1, &mblk_ctrl, 1);
         pc802_tx_mblk_burst(0, PC802_TRAFFIC_DATA_1, &mblk_data, 1);
+
+        if (N == 10000) {
+            N = 0;
+            DBLOG("Case DL Discard Passed %u Loops.\n", L);
+        }
 
         if (testpc802_exit_loop) {
             DBLOG("Case DL Discard Passed %u Loops.\n", L);
