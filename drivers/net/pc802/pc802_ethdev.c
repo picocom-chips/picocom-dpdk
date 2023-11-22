@@ -88,6 +88,7 @@ typedef struct PC802_Mem_Pool_t {
     PC802_Mem_Block_t *first;
     uint32_t block_size;
     uint32_t block_num;
+    uint32_t avail;
 } PC802_Mem_Pool_t;
 
 struct pmd_queue_stats {
@@ -371,6 +372,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
             DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
@@ -387,6 +389,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
             DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -497,6 +500,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->mpool.first = NULL;
+    txq->mpool.avail = 0;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
     if (NULL != (mz = rte_memzone_lookup(z_name))) {
         rte_memzone_free(mz);
@@ -520,8 +524,10 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
+            txq->mpool.avail++;
             DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
                 queue_id, k, mz->iova, mz->addr);
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -536,8 +542,10 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
+            txq->mpool.avail++;
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
                 queue_id, k, mblk->buf_phy_addr, &mblk[1]);
         }
@@ -603,6 +611,7 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
         txq->mpool.first = mblk->next;
         mblk->next = NULL;
         mblk->alloced = 1;
+        txq->mpool.avail--;
     }
     return mblk;
 }
@@ -616,6 +625,8 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
+    PC802_Mem_Pool_t *mpool = (PC802_Mem_Pool_t *)mblk->first;
+    mpool->avail++;
     return;
 }
 
