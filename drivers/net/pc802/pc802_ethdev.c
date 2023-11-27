@@ -3009,7 +3009,11 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
         trace_enable[port_idx] |= tdata;
+        return;
     }
+
+    NPU_SYSLOG("ERROR: wrong trace action type[%1u][%2u] = %u, tdata = 0x%08X",
+        port_idx, core, trace_action_type[port_idx][core], tdata);
 }
 
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
@@ -3022,6 +3026,8 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     uint32_t idx;
     uint32_t trc_data;
     volatile uint32_t epcnt;
+    uint32_t cnt;
+    static uint32_t prev_epcnt[PC802_INDEX_MAX][32] = {0};
 
     if (NULL == ext[port_index]) {
         ext[port_index] = pc802_get_BAR_Ext(port_id);
@@ -3035,6 +3041,17 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
             continue;
         num = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
+        if (epcnt < prev_epcnt[port_index][core]) {
+            NPU_SYSLOG("ERROR: Wrong Trace EPCNT[%2u] = %u < previous EPCNT = %u\n",
+                core, epcnt, prev_epcnt[port_index][core]);
+        }
+        prev_epcnt[port_index][core] = epcnt;
+
+        cnt = epcnt - rccnt[port_index][core];
+        if (cnt > 16) {
+            NPU_SYSLOG("ERROR: Too much trace logs! core %2u epcnt %u rccnt %u\n",
+                core, epcnt, rccnt[port_index][core]);
+        }
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
@@ -3218,6 +3235,11 @@ static void pc802_mailbox_common(struct pc802_adapter *adapter, mailbox_counter_
     uint32_t core_in_cluster = core & 15;
     uint8_t rccnt = mb_cnts->rd[mb_cnts->rg][core_in_cluster];
     uint8_t epcnt = mb_cnts->rd[1 - mb_cnts->rg][core_in_cluster];
+    uint8_t num = epcnt - rccnt;
+    if (num > 16) {
+        NPU_SYSLOG("ERROR: too much mailbox requests ! Core %2u rg %1u epcnt %3u rccnt %3u\n",
+            core, mb_cnts->rg, epcnt, rccnt);
+    }
     while (rccnt != epcnt) {
         handle_mailbox(adapter, &mb[rccnt & 15], core, rccnt);
         rccnt++;
