@@ -1946,7 +1946,7 @@ static int pc802_check_rerun(struct pc802_adapter *adapter)
 
 static int pc802_init_c2h_mailbox(struct pc802_adapter *adapter)
 {
-    return pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 64, 32);
+    return pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 136, 128);
 }
 
 static int
