@@ -2937,6 +2937,7 @@ static uint32_t trace_num_args[PC802_INDEX_MAX];
 static uint32_t trace_idx[PC802_INDEX_MAX];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
 static uint32_t trace_sleep_ns[PC802_INDEX_MAX];
+static volatile uint32_t *trace_mirrored_epcnt[PC802_INDEX_MAX];
 
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
@@ -3029,7 +3030,11 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 
     {
         num = 0;
-        epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[0].v);
+        if (0 == trace_mirrored_epcnt[port_index][0]) {
+            epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[0].v);
+        } else {
+            epcnt = trace_mirrored_epcnt[port_index][0];
+        }
 
         cnt = epcnt - rccnt[port_index];
         if (cnt > PC802_TRACE_FIFO_SIZE) {
@@ -3351,6 +3356,8 @@ static void * pc802_trace_thread(__rte_unused void *data)
         trace_num_args[i] = 0;
         trace_idx[i] = 0;
         trace_sleep_ns[i] = 250 * 1000; //250 us
+        trace_mirrored_epcnt[i] = &pc802_devices[i]->pDescs->mr.TRACE_EPCNT;
+        trace_mirrored_epcnt[i][0] = 0;
     }
 
     while( 1 )
