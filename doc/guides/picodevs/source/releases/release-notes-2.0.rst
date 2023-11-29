@@ -154,6 +154,7 @@ New features
 Enhancement
 ***********
 * NDF-178: get mailbox RC counter from mailbox message
+* NDF-188: PCIe mini trace only for PFI 0
 
 Bug fixes
 *********
