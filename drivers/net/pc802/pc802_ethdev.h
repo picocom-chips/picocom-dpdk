@@ -322,7 +322,7 @@ typedef union TraceEpCnt_u {
     };
 } TraceEpCnt_u;
 
-#define PC802_TRACE_FIFO_SIZE   16
+#define PC802_TRACE_FIFO_SIZE   (16 * 32)
 
 typedef struct {
     uint32_t d[PC802_TRACE_FIFO_SIZE];
@@ -365,7 +365,7 @@ struct PC802_BAR_Ext_t {
     };
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
-    TraceData_t TRACE_DATA[32];
+    TraceData_t TRACE_DATA[1];
     union {
         uint32_t _dump[16];
         Mailbox_RC_t DUMP_RC[32];
