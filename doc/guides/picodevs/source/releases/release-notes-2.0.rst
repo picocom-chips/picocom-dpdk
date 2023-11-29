@@ -155,6 +155,7 @@ Enhancement
 ***********
 * NDF-178: get mailbox RC counter from mailbox message
 * NDF-188: PCIe mini trace only for PFI 0
+* NDF-189: Optimize PC802 PCIe memory usage
 
 Bug fixes
 *********
