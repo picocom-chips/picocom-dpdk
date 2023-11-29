@@ -2931,129 +2931,118 @@ enum TraceAction_e {
     TRACE_ACTION_IDLE = 0xFFFFFFFF
 };
 
-static enum TraceAction_e trace_action_type[PC802_INDEX_MAX][32];
-static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
-static uint32_t trace_num_args[PC802_INDEX_MAX][32];
-static uint32_t trace_idx[PC802_INDEX_MAX][32];
+static enum TraceAction_e trace_action_type[PC802_INDEX_MAX];
+static uint32_t trace_datas[PC802_INDEX_MAX][32 * 16];
+static uint32_t trace_num_args[PC802_INDEX_MAX];
+static uint32_t trace_idx[PC802_INDEX_MAX];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
 
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
-static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata)
+static void handle_trace_printf(uint16_t port_idx, uint32_t tdata)
 {
     uint32_t k;
-    if (0 == trace_num_args[port_idx][core]) {
-        trace_idx[port_idx][core] = 0;
-        trace_num_args[port_idx][core] = tdata;
+    if (0 == trace_num_args[port_idx] ) {
+        trace_idx[port_idx]  = 0;
+        trace_num_args[port_idx]  = tdata;
         return;
     }
 
-    trace_datas[port_idx][core][trace_idx[port_idx][core]] = tdata;
-    trace_idx[port_idx][core]++;
-    if (trace_idx[port_idx][core] == trace_num_args[port_idx][core]) {
+    trace_datas[port_idx][trace_idx[port_idx]] = tdata;
+    trace_idx[port_idx]++;
+    if (trace_idx[port_idx] == trace_num_args[port_idx]) {
         magic_mailbox_t mb;
-        mb.num_args = trace_num_args[port_idx][core];
+        mb.num_args = trace_num_args[port_idx];
         for (k = 0; k < mb.num_args; k++)
-            mb.arguments[k] = trace_datas[port_idx][core][k];
-        handle_mb_printf(port_idx, &mb, core, 0);
-        trace_num_args[port_idx][core] = 0;
-        trace_idx[port_idx][core] = 0;
-        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+            mb.arguments[k] = trace_datas[port_idx][k];
+        handle_mb_printf(port_idx, &mb, 0, 0);
+        trace_num_args[port_idx] = 0;
+        trace_idx[port_idx] = 0;
+        trace_action_type[port_idx] = TRACE_ACTION_IDLE;
     }
 }
 
-static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t rccnt, uint32_t tdata)
+static inline void handle_trace_data(uint16_t port_idx, uint32_t rccnt, uint32_t tdata)
 {
     //PC802_LOG( port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
-    if (TRACE_ACTION_IDLE == trace_action_type[port_idx][core]) {
-        trace_action_type[port_idx][core] = tdata;
+    if (TRACE_ACTION_IDLE == trace_action_type[port_idx]) {
+        trace_action_type[port_idx] = tdata;
         if (TRACE_ACTION_END == tdata) {
-            PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "My PCIe mini trace END !\n");
-            trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+            PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "My PCIe mini trace END !\n");
+            trace_action_type[port_idx] = TRACE_ACTION_IDLE;
         }
         if (TRACE_ACTION_SSBL_END == tdata) {
-            assert(core == 0);
-            PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
-            trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+            PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
+            trace_action_type[port_idx] = TRACE_ACTION_IDLE;
             mb_set_ssbl_end(port_idx);
         }
         return;
     }
 
-    if (TRACE_ACTION_GENERIC == trace_action_type[port_idx][core]) {
-        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
-        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+    if (TRACE_ACTION_GENERIC == trace_action_type[port_idx]) {
+        PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "event[%.5u]: 0x%.8X(0x%.5X, %.4d)\n", rccnt, tdata, tdata>>14, tdata&0x3FFF );
+        trace_action_type[port_idx]  = TRACE_ACTION_IDLE;
         return;
     }
 
-    if (TRACE_ACTION_PRINTF == trace_action_type[port_idx][core]) {
-        handle_trace_printf(port_idx, core, tdata);
+    if (TRACE_ACTION_PRINTF == trace_action_type[port_idx] ) {
+        handle_trace_printf(port_idx, tdata);
         return;
     }
 
-    if (TRACE_ACTION_SSBL_LOAD == trace_action_type[port_idx][core]) {
-        assert(core == 0);
+    if (TRACE_ACTION_SSBL_LOAD == trace_action_type[port_idx] ) {
         ssbl__cim_end[port_idx] = tdata;
-        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL__cim_end[%u] = 0x%08X\n", port_idx, tdata);
-        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+        PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "SSBL__cim_end[%u] = 0x%08X\n", port_idx, tdata);
+        trace_action_type[port_idx]  = TRACE_ACTION_IDLE;
         return;
     }
 
-    if (TRACE_ACTION_BOOT_BITMAP == trace_action_type[port_idx][core]) {
-        PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
-        trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
+    if (TRACE_ACTION_BOOT_BITMAP == trace_action_type[port_idx] ) {
+        PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
+        trace_action_type[port_idx]  = TRACE_ACTION_IDLE;
         return;
     }
 
-    NPU_SYSLOG("ERROR: wrong trace action type[%1u][%2u] = %u, tdata = 0x%08X",
-        port_idx, core, trace_action_type[port_idx][core], tdata);
+    NPU_SYSLOG("ERROR: wrong trace action type[%1u] = %u, tdata = 0x%08X",
+        port_idx, trace_action_type[port_idx] , tdata);
 }
 
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 {
-    static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
+    static uint32_t rccnt[PC802_INDEX_MAX] = {0};
     static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
     int num;
     int N = 0;
-    uint32_t core;
     uint32_t idx;
     uint32_t trc_data;
     volatile uint32_t epcnt;
     uint32_t cnt;
-    static uint32_t prev_epcnt[PC802_INDEX_MAX][32] = {0};
 
     if (NULL == ext[port_index]) {
         ext[port_index] = pc802_get_BAR_Ext(port_id);
-        for (core = 0; core < 32; core++) {
-            rccnt[port_index][core] = PC802_READ_REG(ext[port_index]->TRACE_RCCNT[core]);
-        }
+        rccnt[port_index] = PC802_READ_REG(ext[port_index]->TRACE_RCCNT[0]);
     }
 
-    for (core = 0; core < 32; core++) {
+    {
         num = 0;
-        epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
-        if (epcnt < prev_epcnt[port_index][core]) {
-            NPU_SYSLOG("ERROR: Wrong Trace EPCNT[%2u] = %u < previous EPCNT = %u\n",
-                core, epcnt, prev_epcnt[port_index][core]);
-        }
-        prev_epcnt[port_index][core] = epcnt;
+        epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[0].v);
 
-        cnt = epcnt - rccnt[port_index][core];
-        if (cnt > 16) {
-            NPU_SYSLOG("ERROR: Too much trace logs! core %2u epcnt %u rccnt %u\n",
-                core, epcnt, rccnt[port_index][core]);
+        cnt = epcnt - rccnt[port_index];
+        if (cnt > PC802_TRACE_FIFO_SIZE) {
+            NPU_SYSLOG("ERROR: Too much trace logs! core 0 epcnt %u rccnt %u\n",
+                epcnt, rccnt[port_index]);
         }
-        while (rccnt[port_index][core] != epcnt) {
-            idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
-            trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
-            handle_trace_data(port_index, core, rccnt[port_index][core], trc_data);
-            rccnt[port_index][core]++;
+        while (rccnt[port_index] != epcnt) {
+            idx = rccnt[port_index] & (PC802_TRACE_FIFO_SIZE - 1);
+            trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[0].d[idx]);
+            handle_trace_data(port_index, rccnt[port_index], trc_data);
+            rccnt[port_index]++;
             num++;
         }
         if ( num>0 )
         {
             rte_wmb();
-            PC802_WRITE_REG(ext[port_index]->TRACE_RCCNT[core], rccnt[port_index][core]);
+            PC802_WRITE_REG(ext[port_index]->TRACE_RCCNT[0], rccnt[port_index]);
             N += num;
         }
     }
@@ -3332,9 +3321,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
     req.tv_nsec = 250*1000;
 
     for (i = 0; i < PC802_INDEX_MAX; i++) {
-        for (j = 0; j < 32; j++) {
-            trace_action_type[i][j] = TRACE_ACTION_IDLE;
-        }
+        trace_action_type[i] = TRACE_ACTION_IDLE;
     }
 
     while( 1 )
