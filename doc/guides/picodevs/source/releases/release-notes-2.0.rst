@@ -156,6 +156,7 @@ New features
 Enhancement
 ***********
 * NDF-178: get mailbox RC counter from mailbox message
+* NDF-189: Optimize PC802 PCIe memory usage
 
 Bug fixes
 *********
