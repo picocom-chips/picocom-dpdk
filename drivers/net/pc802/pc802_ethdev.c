@@ -3348,6 +3348,8 @@ static void * pc802_trace_thread(__rte_unused void *data)
 
     for (i = 0; i < PC802_INDEX_MAX; i++) {
         trace_action_type[i] = TRACE_ACTION_IDLE;
+        trace_num_args[i] = 0;
+        trace_idx[i] = 0;
     }
 
     while( 1 )
