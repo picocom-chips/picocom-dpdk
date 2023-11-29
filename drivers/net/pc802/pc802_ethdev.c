@@ -2936,6 +2936,7 @@ static uint32_t trace_datas[PC802_INDEX_MAX][32 * 16];
 static uint32_t trace_num_args[PC802_INDEX_MAX];
 static uint32_t trace_idx[PC802_INDEX_MAX];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
+static uint32_t trace_sleep_ns[PC802_INDEX_MAX];
 
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
@@ -2977,6 +2978,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t rccnt, uint32_t
             PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
             trace_action_type[port_idx] = TRACE_ACTION_IDLE;
             mb_set_ssbl_end(port_idx);
+            trace_sleep_ns[port_idx] = 4 * 1000 * 1000; // 4ms
         }
         return;
     }
@@ -3340,25 +3342,26 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
 static void * pc802_trace_thread(__rte_unused void *data)
 {
     int i = 0;
-    int j = 0;
     int num = 0;
     struct timespec req;
     req.tv_sec = 0;
-    req.tv_nsec = 250*1000;
 
     for (i = 0; i < PC802_INDEX_MAX; i++) {
         trace_action_type[i] = TRACE_ACTION_IDLE;
         trace_num_args[i] = 0;
         trace_idx[i] = 0;
+        trace_sleep_ns[i] = 250 * 1000; //250 us
     }
 
     while( 1 )
     {
         num = 0;
+        req.tv_nsec = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
+            req.tv_nsec += trace_sleep_ns[i];
         }
         if ( 0 == num ) {
             pc802_log_flush();
