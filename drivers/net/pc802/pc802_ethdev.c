@@ -2945,17 +2945,19 @@ static void handle_trace_printf(uint16_t port_idx, uint32_t tdata)
     if (0 == trace_num_args[port_idx] ) {
         trace_idx[port_idx]  = 0;
         trace_num_args[port_idx]  = tdata;
+        assert(tdata < 24);
         return;
     }
 
     trace_datas[port_idx][trace_idx[port_idx]] = tdata;
     trace_idx[port_idx]++;
     if (trace_idx[port_idx] == trace_num_args[port_idx]) {
-        magic_mailbox_t mb;
-        mb.num_args = trace_num_args[port_idx];
-        for (k = 0; k < mb.num_args; k++)
-            mb.arguments[k] = trace_datas[port_idx][k];
-        handle_mb_printf(port_idx, &mb, 0, 0);
+        uint32_t printf_data[sizeof(magic_mailbox_t) / sizeof(uint32_t) + 16];
+        magic_mailbox_t *mb = (magic_mailbox_t *)printf_data;
+        mb->num_args = trace_num_args[port_idx];
+        for (k = 0; k < mb->num_args; k++)
+            mb->arguments[k] = trace_datas[port_idx][k];
+        handle_mb_printf(port_idx, mb, 0, 0);
         trace_num_args[port_idx] = 0;
         trace_idx[port_idx] = 0;
         trace_action_type[port_idx] = TRACE_ACTION_IDLE;
