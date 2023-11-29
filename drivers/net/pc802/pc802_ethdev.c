@@ -2979,7 +2979,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t rccnt, uint32_t
             PC802_LOG(port_idx, 0, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
             trace_action_type[port_idx] = TRACE_ACTION_IDLE;
             mb_set_ssbl_end(port_idx);
-            trace_sleep_ns[port_idx] = 4 * 1000 * 1000; // 4ms
+            trace_sleep_ns[port_idx] = 20 * 1000 * 1000; // 20ms
         }
         return;
     }
@@ -3348,6 +3348,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
         }
         if ( 0 == num ) {
             pc802_log_flush();
+            req.tv_nsec /= num_pc802s;
             nanosleep(&req, NULL);
         }
     }
