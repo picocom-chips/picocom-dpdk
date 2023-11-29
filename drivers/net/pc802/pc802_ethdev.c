@@ -2936,11 +2936,6 @@ static uint32_t trace_datas[PC802_INDEX_MAX][32][16];
 static uint32_t trace_num_args[PC802_INDEX_MAX][32];
 static uint32_t trace_idx[PC802_INDEX_MAX][32];
 static uint32_t ssbl__cim_end[PC802_INDEX_MAX];
-#ifdef MULTI_PC802
-static uint32_t trace_enable[PC802_INDEX_MAX] = {1, 1, 1, 1};
-#else
-static uint32_t trace_enable[PC802_INDEX_MAX] = {1};
-#endif
 
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
@@ -2975,7 +2970,6 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         if (TRACE_ACTION_END == tdata) {
             PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "My PCIe mini trace END !\n");
             trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-            trace_enable[port_idx] &= ~(1 << core);
         }
         if (TRACE_ACTION_SSBL_END == tdata) {
             assert(core == 0);
@@ -3008,7 +3002,6 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
     if (TRACE_ACTION_BOOT_BITMAP == trace_action_type[port_idx][core]) {
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-        trace_enable[port_idx] |= tdata;
         return;
     }
 
@@ -3037,8 +3030,6 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     }
 
     for (core = 0; core < 32; core++) {
-        if (0 == (trace_enable[port_index] & (1 << core)))
-            continue;
         num = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
         if (epcnt < prev_epcnt[port_index][core]) {
@@ -3370,17 +3361,11 @@ static void * pc802_trace_thread(__rte_unused void *data)
         }
     }
 
-    uint32_t active;
-
     while( 1 )
     {
         num = 0;
-        active = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
-            if (trace_enable[i] == 0)
-                continue;
-            active++;
             if (pc802_devices[i]->log_flag&(1<<PC802_LOG_EVENT))
                 num += pc802_tracer(i, pc802_devices[i]->port_id);
         }
@@ -3388,8 +3373,6 @@ static void * pc802_trace_thread(__rte_unused void *data)
             pc802_log_flush();
             nanosleep(&req, NULL);
         }
-        if (active == 0)
-            break;
     }
     DBLOG("PC802 PCIe Mini Trace thread will be stopped !\n");
     return NULL;
