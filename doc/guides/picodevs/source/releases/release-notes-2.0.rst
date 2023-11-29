@@ -149,6 +149,7 @@ PC802 driver 2.7
 
 New features
 ************
+* NDF-175: Support PC802 discard DL message
 
 Enhancement
 ***********
