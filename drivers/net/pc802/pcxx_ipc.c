@@ -17,7 +17,9 @@ static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1}
 static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1};
 #endif
 
-#define DATA_QUEUE_BLOCK_SIZE   (80*1024)
+#define DATA_DL_QUEUE_BLOCK_SIZE   (160*1024)
+#define DATA_UL_QUEUE_BLOCK_SIZE   (100*1024)
+
 #define CTRL_QUEUE_BLOCK_SIZE   (0x8100)
 
 #define NUM_DATA_BUF    64
@@ -189,8 +191,8 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_DL_QUEUE_BLOCK_SIZE, 256, 128));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_UL_QUEUE_BLOCK_SIZE, 256, 128));
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
     cell_info->pcxx_data_dl_handle = info->writeHandle;
@@ -567,7 +569,7 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
-    if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_QUEUE_BLOCK_SIZE)
+    if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
     mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_DATA[cell_index]);
     if (NULL == mblk)
@@ -589,7 +591,7 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     bufLen = ((bufLen + 3) >> 2) << 2;
-    if ((sizeof(PC802_Mem_Block_t) + offset + bufLen) > DATA_QUEUE_BLOCK_SIZE)
+    if ((sizeof(PC802_Mem_Block_t) + offset + bufLen) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
     if (cell->pcxx_data_dl_handle) {
 #ifdef MULTI_PC802
@@ -630,7 +632,7 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t c
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->rx_data_buf)
         return NULL;
-    if ((sizeof(PC802_Mem_Block_t) + offset + len) > DATA_QUEUE_BLOCK_SIZE)
+    if ((sizeof(PC802_Mem_Block_t) + offset + len) > DATA_UL_QUEUE_BLOCK_SIZE)
         return NULL;
     return (void *)(cell->rx_data_buf + offset);
 }
