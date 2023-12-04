@@ -77,21 +77,29 @@ example:
 Eanble KNI function
 -------------------
 
-PC802_UDriver supports PC802 ethernet traffic forward to virtual KNI port.
+PC802_UDriver supports PC802 ethernet traffic forward to virtual TAP|KNI port.
 
-When this feature is enabled, will create a KNI Linux virtual network interface for PC802.
+When this feature is enabled, will create a TAP|KNI Linux virtual network interface for PC802.
 
-Packets sent to the KNI Linux interface will be received by the PC802_UDriver, and PC802_UDriver may forward packets to PC802 eCPRI interface, and forward between two.
+Packets sent to the TAP|KNI Linux interface will be received by the PC802_UDriver, and PC802_UDriver may forward packets to PC802 eCPRI interface, and forward between two.
 
-Using this function requires KNI kernel module be inserted.
+The tup interface supported by default.
 
-You can enable by adding "--vdev=net_kni0" to the EAL argument.
+The kni interface needs insert the KNI module to kernel.
+
+You can enable by adding "--vdev=net_tap0" or "--vdev=net_kni0" to the EAL argument.
 
 example:
 
 .. code-block:: console
 
-    #build with kmods
+    #run with kni
+    meson build
+    ninja -C build install
+    #Boot up dpdk-testpc802 forward PC802 ethernet traffic to tap0 virtual port:
+    dpdk-testpc802 --vdev=net_tap0
+
+    #run with kni
     meson -Denable_kmods=true build
     ninja -C build install
     #insert rte_kni.ko
@@ -104,14 +112,14 @@ Observe Linux interfaces:
 
 .. code-block:: console
 
-    ifconfig kni0
-    kni0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 2034
-            inet 192.168.1.1  netmask 255.255.255.0  broadcast 192.168.1.255
-            inet6 fe80::14d9:d3ff:fe2b:d796  prefixlen 64  scopeid 0x20<link>
-            ether 16:d9:d3:2b:d7:96  txqueuelen 1000  (Ethernet)
-            RX packets 119  bytes 9938 (9.9 KB)
-            RX errors 0  dropped 0  overruns 0  frame 0
-            TX packets 119  bytes 9938 (9.9 KB)
+    ifconfig dtap0
+    dtap0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+            inet 192.168.26.2  netmask 255.255.255.0  broadcast 192.168.26.255
+            inet6 fe80::b88d:56ff:fee1:6d39  prefixlen 64  scopeid 0x20<link>
+            ether ba:8d:56:e1:6d:39  txqueuelen 1000  (Ethernet)
+            RX packets 5754  bytes 1756781 (1.7 MB)
+            RX errors 0  dropped 1840  overruns 0  frame 0
+            TX packets 1360  bytes 1896729 (1.8 MB)
             TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 
 

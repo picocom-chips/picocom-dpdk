@@ -171,7 +171,7 @@ int pc802_kni_init(void)
             },
     };
     int ret;
-    uint16_t port;
+    uint16_t port, mtu;
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf tx_conf;
     int socket_id;
@@ -179,12 +179,17 @@ int pc802_kni_init(void)
     RTE_ETH_FOREACH_DEV(port)
     {
         DBLOG("ETH DEV %d: %s\n", port, rte_eth_devices[port].device->name);
-        if (NULL == strstr(rte_eth_devices[port].device->name, "kni")) continue;
+        if (NULL != strstr(rte_eth_devices[port].device->name, "kni"))
+            mtu = 1514+RTE_PKTMBUF_HEADROOM;
+        else if (NULL != strstr(rte_eth_devices[port].device->name, "tap"))
+            mtu = RTE_MBUF_DEFAULT_BUF_SIZE;
+        else
+            continue;
 
         rte_eth_dev_info_get(port, &dev_info);
         socket_id = dev_info.device->numa_node;
 
-        kni_pool = rte_pktmbuf_pool_create("pc802_kni", 2048, 128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+        kni_pool = rte_pktmbuf_pool_create("pc802_kni", 2048, 128, 0, mtu, socket_id);
         if (kni_pool == NULL) {
             DBLOG("Cannot create mbuf pool.\n");
             return -EINVAL;
