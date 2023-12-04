@@ -179,7 +179,9 @@ int pc802_kni_init(void)
     RTE_ETH_FOREACH_DEV(port)
     {
         DBLOG("ETH DEV %d: %s\n", port, rte_eth_devices[port].device->name);
-        if (NULL == strstr(rte_eth_devices[port].device->name, "kni")) continue;
+        if ((NULL == strstr(rte_eth_devices[port].device->name, "kni")) &&
+            (NULL == strstr(rte_eth_devices[port].device->name, "tap")))
+            continue;
 
         rte_eth_dev_info_get(port, &dev_info);
         socket_id = dev_info.device->numa_node;
