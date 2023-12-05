@@ -121,7 +121,9 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -361,7 +363,16 @@ func eCpriGetRspProc(subMsgBody []byte) {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Printf("ecpr base config:\n%s\n", string(valueStr))
+		fmt.Printf("rsp info:\n%s\n", string(valueStr))
+	}
+}
+
+func eCpriSetRspProc(subMsgBody []byte) {
+	val := binary.LittleEndian.Uint16(subMsgBody)
+	if val == 0 {
+		fmt.Printf("set rsp ok\n")
+	} else {
+		fmt.Printf("set rsp err %d tlv\n", val)
 	}
 }
 
@@ -370,7 +381,7 @@ func oamSubMsgProc(msgId uint16, msgBody []byte) {
 	case C.ECPRI_OAM_GET_RESP:
 		eCpriGetRspProc(msgBody)
 	case C.ECPRI_OAM_SET_RESP:
-
+		eCpriSetRspProc(msgBody)
 	case C.ECPRI_OAM_TEST_NTFY:
 
 	default:
@@ -379,8 +390,6 @@ func oamSubMsgProc(msgId uint16, msgBody []byte) {
 }
 
 func rspMsgProc(buf []byte) {
-	fmt.Printf("Recv pc802 %d msg: %s\n", cmdCfg.dev, hex.EncodeToString(buf))
-
 	head := (*msgHead)(unsafe.Pointer(&buf[0]))
 	if head.startFlag != C.OAM_START_FLAG {
 		fmt.Printf("head start flag %x error!\n", head.startFlag)
@@ -424,6 +433,96 @@ func makeGetReq(tag uint16, index []uint32) []byte {
 	binary.Write(&buf, binary.LittleEndian, uint32(C.OAM_START_FLAG))
 
 	return buf.Bytes()
+}
+
+func makeSetReq(tag uint16, index []uint32, file string) ([]byte, error) {
+	head := msgHead{
+		startFlag: uint32(C.OAM_START_FLAG),
+		msgType:   uint32(cmdCfg.msgType),
+		seqId:     0,
+		subMsgNum: 1,
+	}
+	buf := bytes.Buffer{}
+	binary.Write(&buf, binary.LittleEndian, head)
+
+	valueBuf := bytes.Buffer{}
+	binary.Write(&valueBuf, binary.LittleEndian, index)
+
+	jsonFile, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	jsonBytes, err := ioutil.ReadAll(jsonFile)
+	defer jsonFile.Close()
+
+	switch tag {
+	case C.ECPRI_OAM_BASE_CFG:
+		var jsonConf ecpri_base_config
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_ETHERNET_CFG:
+		var jsonConf eth_config
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_PTP_CFG:
+		var jsonConf ptp_config
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_RU_CFG:
+		var jsonConf ru_base_config
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_UP_COMP_CFG:
+		var jsonConf ru_compression
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_TRANSMISSION_WINDOWS_CFG:
+		var jsonConf ru_trans_win
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	case C.ECPRI_OAM_CELL_CFG:
+		var jsonConf cell_config
+		err = json.Unmarshal(jsonBytes, &jsonConf)
+		if err != nil {
+			return nil, err
+		}
+		binary.Write(&valueBuf, binary.LittleEndian, jsonConf)
+	default:
+		fmt.Printf("unknow tag %x\n", tag)
+		return nil, errors.New("unknow tag")
+	}
+
+	body, _ := tlvEncode(tag, valueBuf.Bytes())
+
+	subMsg := C.pcxx_oam_sub_msg_t{
+		msg_id:   C.ECPRI_OAM_SET_REQ,
+		msg_size: C.uint16_t(len(body) + 2),
+	}
+
+	binary.Write(&buf, binary.LittleEndian, subMsg)
+	binary.Write(&buf, binary.LittleEndian, uint16(1)) //Number of TLVs
+	binary.Write(&buf, binary.LittleEndian, body)
+	binary.Write(&buf, binary.LittleEndian, uint32(C.OAM_START_FLAG))
+
+	return buf.Bytes(), nil
 }
 
 func getTag(table string, tag string) (uint16, uint16) {
@@ -520,22 +619,35 @@ func getCmd(table string, tag string, index string, input string) error {
 }
 
 func setCmd(table string, tag string, index string, config string) error {
-	fmt.Printf("get %s %s %v %s:\n", table, tag, index, config)
+	fmt.Printf("set %s %s %v %s:\n", table, tag, index, config)
 
-	var tagValue uint16
+	tagValue, indexNum := getTag(table, tag)
+	idx := make([]uint32, indexNum)
 
-	if table == "base" {
-		tagValue = 0x1000
-		if tag == "config" {
-			tagValue += 0
-		}
+	idxArray := strings.Split(index, ".")
+	for i := 0; (i < int(indexNum)) && (i < len(idxArray)); i++ {
+		ui64, _ := strconv.ParseUint(idxArray[i], 10, 32)
+		idx[i] = uint32(ui64)
 	}
 
-	var idx []uint32
+	reqMsg, err := makeSetReq(tagValue, idx, config)
+	if err != nil {
+		fmt.Printf("make set err: %s\n", err)
+		return nil
+	}
 
-	makeGetReq(tagValue, idx)
+	fmt.Printf("set req buf: %s\n", hex.EncodeToString(reqMsg))
 
-	//todo: wait rsp
+	//send and wait rsp
+	rspBuf := make([]byte, 1024)
+	rsplen := C.send_oam_req(C.uint16_t(cmdCfg.dev), (*C.uchar)(&reqMsg[0]), C.uint32_t(len(reqMsg)), (*C.uchar)(&rspBuf[0]))
+	if rsplen <= 0 {
+		fmt.Printf("oam req err %d:\n", rsplen)
+		return nil
+	}
+	rspBuf = rspBuf[:rsplen]
+	fmt.Printf("set rsp buf: %s\n", hex.EncodeToString(rspBuf))
+	rspMsgProc(rspBuf)
 
 	return nil
 }
