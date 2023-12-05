@@ -45,6 +45,7 @@ static int32_t send_oam_req(uint16_t dev_index, uint8_t *tx_buf, uint32_t tx_len
 	g_seq_id = rand();
 	((oam_msg_head_t*)tx_buf)->seq_id = g_seq_id;
 
+	sem_init(&g_sem, 0, 0);
 	if (0 == pcxx_oam_send_original_msg(dev_index, tx_buf, tx_len)) {
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += 1;
@@ -69,7 +70,7 @@ int oam_recv_cb(uint16_t dev, const uint8_t* buf, uint32_t len)
 {
     printf( "Dev %d recv oam msg %d\n", dev, len );
 
-	if ( ((oam_msg_head_t*)buf)->seq_id == g_seq_id )
+	//if ( ((oam_msg_head_t*)buf)->seq_id == g_seq_id )
 	{
 		memcpy(g_rx_buf, buf, len);
 		g_rx_len = len;
@@ -217,6 +218,15 @@ type ru_trans_win struct {
 	T1a_max_up    uint32
 }
 
+type cell_config struct {
+	Ru_id         uint32  `json:"ru id"`
+	Tx_ant_mask   antMask `json:"ru TX ant mask"`
+	Rx_ant_mask   antMask `json:"ru RX ant mask"`
+	Bandsector_id uint8   `json:"bandsector id"`
+	Reserve0      uint8   `json:"reserve0"`
+	Reserve1      uint32  `json:"reserve1"`
+}
+
 type msgHead struct {
 	startFlag uint32
 	msgType   uint32
@@ -305,12 +315,45 @@ func eCpriGetRspProc(subMsgBody []byte) {
 	case C.ECPRI_OAM_ETHERNET_CFG:
 		valueStruct := (*eth_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_ETHERNET_INFO:
+		valueStruct := (*C.ecpri_ethernet_status_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
+	case C.ECPRI_OAM_ETHERNET_STATS:
+		valueStruct := (*C.ecpri_ethernet_stats_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
 	case C.ECPRI_OAM_PTP_CFG:
 		valueStruct := (*ptp_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_PTP_STATS:
+		valueStruct := (*C.ecpri_ptp_stats_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
 	case C.ECPRI_OAM_RU_CFG:
 		valueStruct := (*ru_base_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_UP_COMP_CFG:
+		valueStruct := (*ru_compression)(unsafe.Pointer(&value[indexNum]))
+		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_TRANSMISSION_WINDOWS_CFG:
+		valueStruct := (*ru_trans_win)(unsafe.Pointer(&value[indexNum]))
+		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_ONE_WAY_DELAY_MEASUREMENT_STATS:
+		valueStruct := (*C.ecpri_one_way_delay_stats_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
+	case C.ECPRI_OAM_CELL_CFG:
+		valueStruct := (*cell_config)(unsafe.Pointer(&value[indexNum]))
+		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_CELL_STATS:
+		valueStruct := (*C.ecpri_cell_stats_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
+	case C.ECPRI_OAM_CELL_RESERVED_STATS:
+		valueStruct := (*C.ecpri_cell_reserved_stats_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
 	default:
 		fmt.Printf("unknow tag %x\n", tag)
 		return
@@ -387,14 +430,63 @@ func getTag(table string, tag string) (uint16, uint16) {
 	var tagValue, indexNum uint16
 
 	if table == "base" {
-		tagValue = 0x1000
+		tagValue = C.ECPRI_OAM_BASE_CFG
 		indexNum = 0
 		if tag == "config" {
 			tagValue += 0
 		} else if tag == "info" {
 			tagValue += 1
 		}
+	} else if table == "eth" {
+		tagValue = C.ECPRI_OAM_ETHERNET_CFG
+		indexNum = 1
+		if tag == "config" {
+			tagValue += 0
+		} else if tag == "status" {
+			tagValue += 1
+		} else if tag == "stats" {
+			tagValue += 2
+		}
+	} else if table == "ptp" {
+		tagValue = C.ECPRI_OAM_PTP_CFG
+		indexNum = 0
+		if tag == "config" {
+			tagValue += 0
+		} else if tag == "stats" {
+			tagValue += 1
+		}
+	} else if table == "rucommon" {
+		tagValue = C.ECPRI_OAM_RU_CFG
+		indexNum = 1
+		if tag == "config" {
+			tagValue += 0
+		}
+	} else if table == "rucomp" {
+		tagValue = C.ECPRI_OAM_UP_COMP_CFG
+		indexNum = 1
+		if tag == "config" {
+			tagValue += 0
+		}
+	} else if table == "ruwin" {
+		tagValue = C.ECPRI_OAM_TRANSMISSION_WINDOWS_CFG
+		indexNum = 1
+		if tag == "config" {
+			tagValue += 0
+		} else if tag == "stats" {
+			tagValue += 1
+		}
+	} else if table == "cell" {
+		tagValue = C.ECPRI_OAM_CELL_CFG
+		indexNum = 1
+		if tag == "config" {
+			tagValue += 0
+		} else if tag == "stats" {
+			tagValue += 1
+		} else if tag == "vendor" {
+			tagValue += 2
+		}
 	}
+
 	return tagValue, indexNum
 }
 

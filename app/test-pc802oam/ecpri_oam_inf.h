@@ -111,6 +111,8 @@ typedef struct ecpri_ethernet_status_t{
 }ecpri_ethernet_status_t;
 
 typedef struct ecpri_ethernet_stats_t{
+    uint32_t id;
+
     uint32_t rx_ecpri_total;
     uint32_t rx_ecpri_err;
     uint32_t rx_ecpri_drop;
@@ -190,8 +192,6 @@ typedef struct ecpri_transmission_config_t{
 }ecpri_transmission_config_t;
 
 typedef struct ecpri_one_way_delay_stats_t{
-    uint32_t ru_id;
-
     uint32_t tx_request;
     uint32_t tx_follow_up;
     uint32_t rx_response;
@@ -215,8 +215,6 @@ typedef struct ecpri_cell_config_t{
 }ecpri_cell_config_t;
 
 typedef struct ecpri_cell_stats_t{
-    uint32_t cell_idx;
-
     uint32_t ul_total;
     uint32_t ul_total_cp;
     uint32_t ul_drop;
@@ -228,8 +226,6 @@ typedef struct ecpri_cell_stats_t{
 }ecpri_cell_stats_t;
 
 typedef struct ecpri_cell_reserved_stats_t{
-    uint32_t cell_idx;
-
     uint32_t ul_total;
     uint32_t ul_total_cp;
     uint32_t ul_drop;
