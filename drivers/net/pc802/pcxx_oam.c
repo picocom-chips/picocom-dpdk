@@ -20,18 +20,6 @@ typedef enum {
     OamMsgType_Num
 } OamMsgType_e;
 
-#define OAM_START_FLAG      0xd1c2b3a4
-#define OAM_END_FLAG        0xa4b3c2d1
-#define OAM_QUEUE_BLOCK_SIZE   (8*1024)
-#define SUB_MSG_TSIZE(msg_size) (msg_size+sizeof(pcxx_oam_sub_msg_t))
-
-typedef struct{
-    uint32_t start_flag;         //0xd1c2b3a4
-    uint32_t msg_type;
-    uint32_t seq_id;
-    uint32_t sub_msg_num;		 //Message burst
-}oam_msg_head_t;
-
 typedef struct{
     oam_msg_head_t head;
     pcxx_oam_sub_msg_t sub_msg[0];
