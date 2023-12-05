@@ -43,6 +43,8 @@ DPDK_21 {
 	pcxx_oam_unregister;
 	pcxx_oam_sub_msg_register;
 	pcxx_oam_sub_msg_unregister;
+	pcxx_oam_recv_register;
+	pcxx_oam_send_original_msg;
 	pcxx_oam_send_msg;
 
 	local: *;
