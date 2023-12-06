@@ -364,7 +364,7 @@ struct PC802_BAR_Ext_t {
             uint32_t VEC_BUFADDRH;
         };
     };
-    uint32_t TRACE_RCCNT[32];
+    uint32_t TRACE_RCCNT[8];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[1];
     union {
