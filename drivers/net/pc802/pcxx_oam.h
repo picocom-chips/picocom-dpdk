@@ -20,6 +20,13 @@ typedef struct {
 } pcxx_oam_sub_msg_t;
 
 typedef enum{
+    PCXX_OAM_PLATFORM = 0x00,
+    PCXX_OAM_NR,
+    PCXX_OAM_LTE,
+    PCXX_MODULE_MAX = 4,
+}pcxx_oam_module_e;
+
+typedef enum{
     PCXX_OAM_MSG      = 0x00,
     PCXX_P19_MSG      = 0x01,
     PCXX_DEBUG_MSG    = 0x02,
