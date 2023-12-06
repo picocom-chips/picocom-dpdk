@@ -87,8 +87,6 @@ typedef struct ecpri_base_info_t{
 }ecpri_base_info_t;
 
 typedef struct ecpri_ethernet_config_t{
-    uint32_t id;
-
     uint8_t type;
     uint8_t nic_enable;
     uint8_t du_mac[ETH_MAC_ADDR_LEN];
@@ -98,8 +96,6 @@ typedef struct ecpri_ethernet_config_t{
 }ecpri_ethernet_config_t;
 
 typedef struct ecpri_ethernet_status_t{
-    uint32_t id;
-
     uint8_t sfp_status;//todo
     uint8_t sfp_type;//todo
     char sfp_vendor[30];//todo
@@ -111,8 +107,6 @@ typedef struct ecpri_ethernet_status_t{
 }ecpri_ethernet_status_t;
 
 typedef struct ecpri_ethernet_stats_t{
-    uint32_t id;
-
     uint32_t rx_ecpri_total;
     uint32_t rx_ecpri_err;
     uint32_t rx_ecpri_drop;

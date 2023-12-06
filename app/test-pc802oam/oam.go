@@ -84,15 +84,16 @@ static int oam_init()
 {
     int port_id = 0;
     int pc802_index = 0;
-	char *argc[3];
+	char *argc[4];
 
     printf("PC802 OAM tester built AT %s ON %s\n", __TIME__, __DATE__);
 
 	argc[0] = "go_oam";
 	argc[1] = "-n4";
 	argc[2] = "--proc-type=secondary";
+	argc[3] = "-l0";
 
-    if (rte_eal_init(3, argc) < 0)
+    if (rte_eal_init(4, argc) < 0)
         rte_panic("Cannot init EAL\n");
 
     pcxx_oam_init();
@@ -116,7 +117,6 @@ static int oam_init()
 import "C"
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
@@ -128,6 +128,8 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"github.com/c-bata/go-prompt"
 )
 
 type macAddr struct {
@@ -169,7 +171,6 @@ type ecpri_base_config struct {
 }
 
 type eth_config struct {
-	id         uint32
 	Eth_type   uint8   `json:"ethernet type(0:25G 1:10G)"`
 	Nic_enable uint8   `json:"NIC enable(0:disable 1:enable)"`
 	Mac        macAddr `json:"MAC address"`
@@ -290,7 +291,7 @@ func tlvDecode(b []byte) (uint16, []byte, error) {
 
 func getIndexNum(tag uint16) uint16 {
 	table := tag & 0xff00
-	if table <= C.ECPRI_OAM_PTP_CFG&0xFF00 {
+	if (table == C.ECPRI_OAM_PTP_CFG&0xFF00) || (table == C.ECPRI_OAM_PTP_CFG&0xFF00) {
 		return 0
 	} else {
 		return 1
@@ -314,6 +315,10 @@ func eCpriGetRspProc(subMsgBody []byte) {
 	case C.ECPRI_OAM_BASE_CFG:
 		valueStruct := (*ecpri_base_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
+	case C.ECPRI_OAM_BASE_INFO:
+		valueStruct := (*C.ecpri_base_info_t)(unsafe.Pointer(&value[indexNum]))
+		fmt.Printf("%+v\n", valueStruct)
+		return
 	case C.ECPRI_OAM_ETHERNET_CFG:
 		valueStruct := (*eth_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
@@ -613,7 +618,9 @@ func getCmd(table string, tag string, index string, input string) error {
 		return nil
 	}
 
-	rspMsgProc(rspBuf[:rsplen])
+	rspBuf = rspBuf[:rsplen]
+	fmt.Printf("get rsp buf: %s\n", hex.EncodeToString(rspBuf))
+	rspMsgProc(rspBuf)
 
 	return nil
 }
@@ -669,20 +676,48 @@ func getPrompt(cfg globalConfig) string {
 	return fmt.Sprintf("pc802_%d/%s>", cfg.dev, module)
 }
 
+func completer(d prompt.Document) []prompt.Suggest {
+	s := []prompt.Suggest{
+		{Text: "get", Description: "get table tag [index]"},
+		{Text: "set", Description: "set table tag [index] config"},
+		{Text: "pc802", Description: "pc802 n : switch pc802 device"},
+		{Text: "phy", Description: "switch to phy"},
+		{Text: "ecpri", Description: "switch to ecpri"},
+		{Text: "p19", Description: "switch to p19"},
+		{Text: "debug", Description: "switch to debug"},
+		{Text: "quit", Description: "quit"},
+	}
+
+	t := []prompt.Suggest{
+		{Text: "get", Description: "get table tag [index]"},
+		{Text: "set", Description: "set table tag [index] config"},
+		{Text: "base"},
+		{Text: "eth"},
+		{Text: "ptp"},
+		{Text: "cell"},
+		{Text: "rucommon"},
+		{Text: "rucomp"},
+		{Text: "ruwin"},
+		{Text: "config"},
+		{Text: "status"},
+		{Text: "stats"},
+		{Text: "vendor"},
+	}
+
+	if strings.Contains(d.TextBeforeCursor(), "get") || strings.Contains(d.TextBeforeCursor(), "set") {
+		return prompt.FilterHasPrefix(t, d.GetWordBeforeCursor(), true)
+	}
+
+	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
+}
+
 func main() {
 	C.oam_init()
 
 	cmdCfg.module = C.ECPRI_OAM_GET_REQ
 
-	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(getPrompt(cmdCfg))
-		// Read the keyboad input.
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Print(err)
-		}
-		input = strings.TrimSpace(input)
+		input := prompt.Input(getPrompt(cmdCfg), completer)
 		cmdArr := strings.Fields(input)
 		if len(cmdArr) < 1 {
 			continue
@@ -710,7 +745,7 @@ func main() {
 			} else {
 				index = cmdArr[3]
 			}
-			if err = getCmd(cmdArr[1], cmdArr[2], index, ""); err != nil {
+			if err := getCmd(cmdArr[1], cmdArr[2], index, ""); err != nil {
 				fmt.Print(err)
 			}
 		} else if cmdArr[0] == "set" {
@@ -725,7 +760,7 @@ func main() {
 				index = cmdArr[3]
 				config = cmdArr[4]
 			}
-			if err = setCmd(cmdArr[1], cmdArr[2], index, config); err != nil {
+			if err := setCmd(cmdArr[1], cmdArr[2], index, config); err != nil {
 				fmt.Print(err)
 			}
 		} else if cmdArr[0] == "quit" {
