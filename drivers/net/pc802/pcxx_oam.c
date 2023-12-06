@@ -20,8 +20,6 @@ typedef enum {
     OamMsgType_Num
 } OamMsgType_e;
 
-#define MODULE_MAX 4
-
 #define OAM_START_FLAG      0xd1c2b3a4
 #define OAM_END_FLAG        0xa4b3c2d1
 #define OAM_QUEUE_BLOCK_SIZE   (8*1024)
@@ -60,7 +58,7 @@ typedef struct {
 typedef struct{
     uint16_t   dev_count;
     uint16_t   devs[PC802_INDEX_MAX];
-    msg_info_t msg_list[MODULE_MAX][PCXX_MSG_TYPE_MAX];
+    msg_info_t msg_list[PCXX_MODULE_MAX][PCXX_MSG_TYPE_MAX];
     pcxx_oam_recv_cb_fn rx_cb;
 }oam_info_t;
 
@@ -202,7 +200,7 @@ int pcxx_oam_recv_register(pcxx_oam_recv_cb_fn cb_fun)
 int pcxx_oam_register(uint32_t msg_type, pcxx_oam_cb_fn cb_fun, void *arg)
 {
     uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
-    RTE_ASSERT((cb_fun != NULL) && (module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
+    RTE_ASSERT((cb_fun != NULL) && (module < PCXX_MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
     g_oam_info.msg_list[module][msg_type].msg_type = msg_type;
     g_oam_info.msg_list[module][msg_type].cb_arg = arg;
@@ -214,7 +212,7 @@ int pcxx_oam_register(uint32_t msg_type, pcxx_oam_cb_fn cb_fun, void *arg)
 int pcxx_oam_unregister(uint32_t msg_type)
 {
     uint16_t module = PCXX_OAM_GET_MODULE(msg_type), type = PCXX_OAM_GET_TYPE(msg_type);
-    RTE_ASSERT((module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
+    RTE_ASSERT((module < PCXX_MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
     g_oam_info.msg_list[module][msg_type].cb_arg = NULL;
     g_oam_info.msg_list[module][msg_type].cb_fun = NULL;
@@ -229,7 +227,7 @@ int pcxx_oam_sub_msg_register(uint32_t msg_type, uint16_t sub_msg_id, pcxx_oam_c
     uint16_t sub_index = 0;
     sub_info_t *sub_list;
 
-    RTE_ASSERT((cb_fun != NULL) && (module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
+    RTE_ASSERT((cb_fun != NULL) && (module < PCXX_MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
 
     pthread_mutex_lock(&lock);
     sub_list = g_oam_info.msg_list[module][type].sub_list;
@@ -255,7 +253,7 @@ int pcxx_oam_sub_msg_unregister( uint32_t msg_type, uint16_t sub_msg_id )
     uint16_t sub_index = 0;
     sub_info_t *sub_list;
 
-    RTE_ASSERT((module < MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
+    RTE_ASSERT((module < PCXX_MODULE_MAX) && (type < PCXX_MSG_TYPE_MAX));
     pthread_mutex_lock(&lock);
     sub_list = g_oam_info.msg_list[module][type].sub_list;
     for (sub_index = 0; sub_index < RTE_DIM(g_oam_info.msg_list[module][type].sub_list); sub_index++)
@@ -295,7 +293,7 @@ static uint32_t process_oam_msg(uint16_t dev_index, const oam_message_t *msg, ui
     }
     module = PCXX_OAM_GET_MODULE(msg->head.msg_type);
     type   = PCXX_OAM_GET_TYPE(msg->head.msg_type);
-    if ((module >= MODULE_MAX) || (type >= PCXX_MSG_TYPE_MAX)) {
+    if ((module >= PCXX_MODULE_MAX) || (type >= PCXX_MSG_TYPE_MAX)) {
         DBLOG("Invalid module=%u or type=%u!\n", module, type);
         return -EINVAL;;
     }
