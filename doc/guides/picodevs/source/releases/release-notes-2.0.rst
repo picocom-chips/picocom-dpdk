@@ -150,3 +150,5 @@ PC802 driver 2.7
 New features
 ************
 * NDF-108: Modify mailbox para check and align log format
+* NDF-177: No need align PC802 OAM message filed to 4 bytes boundary
+* NDF-192: Refactor the oam example using go
