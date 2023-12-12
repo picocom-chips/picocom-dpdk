@@ -621,18 +621,18 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
 }
 
 #ifndef MULTI_PC802
-int pcxxDataReSend(uint8_t *buf, uint32_t bufLen, uint32_t *offset, ...)
+int pcxxDataReSend(const char *buf, uint32_t bufLen, uint32_t *offset, ...)
 {
     uint16_t dev_index = 0, cell_index = 0;
 #else
-int pcxxDataReSend(uint8_t *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index )
+int pcxxDataReSend(const char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     bufLen = ((bufLen + 3) >> 2) << 2;
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufLen) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
-    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx]] = buf;
     *offset = cell->data_offset;
     if (cell->pcxx_data_dl_handle) {
