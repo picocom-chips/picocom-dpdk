@@ -22,8 +22,8 @@ static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1}
 
 #define CTRL_QUEUE_BLOCK_SIZE   (0x8100)
 
-#define NUM_DATA_BUF    64
-#define NUM_SFN_IDX     4
+#define NUM_DATA_BUF    16
+#define NUM_SFN_IDX     64
 #define SFN_IDX_MASK    (NUM_SFN_IDX - 1)
 
 typedef struct SimULSlotMsg_st{
@@ -191,7 +191,7 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_DL_QUEUE_BLOCK_SIZE, 256, 128));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_DL_QUEUE_BLOCK_SIZE, 1040, 1024));
     RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_UL_QUEUE_BLOCK_SIZE, 256, 128));
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
@@ -601,6 +601,50 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
 #endif
             return -2;
     }
+    if (cell->data_num[cell->sfn_idx]){
+        mblk = (PC802_Mem_Block_t *)(cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx] - 1] - sizeof(PC802_Mem_Block_t));
+        mblk->pkt_length = cell->data_length;
+        mblk->pkt_type = 0;
+        mblk->eop = 0;
+        mblk->sn = cell->dl_sn;
+        if (0 == mblk->pkt_length) {
+            NPU_SYSLOG("ERROR: NPU send 0 size DL data msg with EOP=0 : port %1u queue %1u SN %u\n",
+                pcxx_devs[dev_index].port_id, QID_DATA[cell_index], mblk->sn);
+            RTE_ASSERT(0 != mblk->pkt_length);
+        }
+        pc802_tx_mblk_burst(pcxx_devs[dev_index].port_id, QID_DATA[cell_index], &mblk, 1);
+    }
+    cell->data_offset += bufLen;
+    cell->data_length = bufLen;
+    cell->data_num[cell->sfn_idx]++;
+    return 0;
+}
+
+#ifndef MULTI_PC802
+int pcxxDataReSend(uint8_t *buf, uint32_t bufLen, uint32_t *offset, ...)
+{
+    uint16_t dev_index = 0, cell_index = 0;
+#else
+int pcxxDataReSend(uint8_t *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index )
+{
+#endif
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    bufLen = ((bufLen + 3) >> 2) << 2;
+    if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufLen) > DATA_DL_QUEUE_BLOCK_SIZE)
+        return -1;
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx]] = buf;
+    *offset = cell->data_offset;
+    if (cell->pcxx_data_dl_handle) {
+#ifdef MULTI_PC802
+        if (cell->pcxx_data_dl_handle(buf, bufLen, dev_index, cell_index))
+#else
+        if (cell->pcxx_data_dl_handle(buf, bufLen))
+#endif
+            return -2;
+    }
+
+    PC802_Mem_Block_t *mblk;
     if (cell->data_num[cell->sfn_idx]){
         mblk = (PC802_Mem_Block_t *)(cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx] - 1] - sizeof(PC802_Mem_Block_t));
         mblk->pkt_length = cell->data_length;
