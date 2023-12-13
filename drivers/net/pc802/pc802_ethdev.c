@@ -1875,6 +1875,10 @@ static const cpu_set_t * get_ctrl_cpuset( void )
             for( core=min; core<=max; core++ )
                 CPU_CLR( core, &ctrl_cpuset );
         }
+#if define PCIE_NO_CACHE_COHERENCE
+        CPU_ZERO( &ctrl_cpuset );
+        CPU_SET( min, &ctrl_cpuset );
+#endif
 
         DBLOG( "get ctrl cpu set %lu.\n", *((unsigned long*)&ctrl_cpuset) );
     }
