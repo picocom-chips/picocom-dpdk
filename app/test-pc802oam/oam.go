@@ -68,9 +68,9 @@ static int32_t send_oam_req(uint16_t dev_index, uint8_t *tx_buf, uint32_t tx_len
 
 int oam_recv_cb(uint16_t dev, const uint8_t* buf, uint32_t len)
 {
-    printf( "Dev %d recv oam msg %d\n", dev, len );
+    //printf( "Dev %d recv oam msg %d\n", dev, len );
 
-	//if ( ((oam_msg_head_t*)buf)->seq_id == g_seq_id )
+	if ( ((oam_msg_head_t*)buf)->seq_id == g_seq_id )
 	{
 		memcpy(g_rx_buf, buf, len);
 		g_rx_len = len;
@@ -125,6 +125,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -244,9 +245,11 @@ type tagInfo struct {
 }
 
 type globalConfig struct {
-	dev     uint16
-	msgType uint16
-	module  uint16
+	dev      uint16
+	msgType  uint16
+	module   uint16
+	autoSave bool
+	log      bool
 }
 
 var cmdCfg globalConfig
@@ -291,7 +294,7 @@ func tlvDecode(b []byte) (uint16, []byte, error) {
 
 func getIndexNum(tag uint16) uint16 {
 	table := tag & 0xff00
-	if (table == C.ECPRI_OAM_PTP_CFG&0xFF00) || (table == C.ECPRI_OAM_PTP_CFG&0xFF00) {
+	if (table == C.ECPRI_OAM_BASE_CFG&0xFF00) || (table == C.ECPRI_OAM_PTP_CFG&0xFF00) {
 		return 0
 	} else {
 		return 1
@@ -299,44 +302,41 @@ func getIndexNum(tag uint16) uint16 {
 	return 0
 }
 
-func eCpriGetRspProc(subMsgBody []byte) {
+func eCpriGetRspProc(subMsgBody []byte) (string, error) {
 	//todo: get Number of TLVs
+
 	tag, value, err := tlvDecode(subMsgBody[2:])
 	if err != nil {
-		fmt.Printf("sub msg body decode fail:%s!\n", err)
-		return
+		return "", err
 	}
 
 	indexNum := getIndexNum(tag)
 	indexNum *= 4
 
 	var valueStr []byte
+	var result string
 	switch tag {
 	case C.ECPRI_OAM_BASE_CFG:
 		valueStruct := (*ecpri_base_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
 	case C.ECPRI_OAM_BASE_INFO:
-		valueStruct := (*C.ecpri_base_info_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_base_info_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_ETHERNET_CFG:
 		valueStruct := (*eth_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
 	case C.ECPRI_OAM_ETHERNET_INFO:
-		valueStruct := (*C.ecpri_ethernet_status_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_ethernet_status_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_ETHERNET_STATS:
-		valueStruct := (*C.ecpri_ethernet_stats_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_ethernet_stats_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_PTP_CFG:
 		valueStruct := (*ptp_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
 	case C.ECPRI_OAM_PTP_STATS:
-		valueStruct := (*C.ecpri_ptp_stats_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_ptp_stats_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_RU_CFG:
 		valueStruct := (*ru_base_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
@@ -347,70 +347,59 @@ func eCpriGetRspProc(subMsgBody []byte) {
 		valueStruct := (*ru_trans_win)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
 	case C.ECPRI_OAM_ONE_WAY_DELAY_MEASUREMENT_STATS:
-		valueStruct := (*C.ecpri_one_way_delay_stats_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_one_way_delay_stats_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_CELL_CFG:
 		valueStruct := (*cell_config)(unsafe.Pointer(&value[indexNum]))
 		valueStr, err = json.MarshalIndent(valueStruct, "", "    ")
 	case C.ECPRI_OAM_CELL_STATS:
-		valueStruct := (*C.ecpri_cell_stats_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_cell_stats_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	case C.ECPRI_OAM_CELL_RESERVED_STATS:
-		valueStruct := (*C.ecpri_cell_reserved_stats_t)(unsafe.Pointer(&value[indexNum]))
-		fmt.Printf("%+v\n", valueStruct)
-		return
+		valueStruct := *(*C.ecpri_cell_reserved_stats_t)(unsafe.Pointer(&value[indexNum]))
+		result = fmt.Sprintf("%+v", valueStruct)
 	default:
-		fmt.Printf("unknow tag %x\n", tag)
-		return
+		return "", fmt.Errorf("unknow tag: %x", tag)
 	}
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Printf("rsp info:\n%s\n", string(valueStr))
+	if len(valueStr) > 0 {
+		return string(valueStr), nil
 	}
+	return result, nil
 }
 
-func eCpriSetRspProc(subMsgBody []byte) {
+func eCpriSetRspProc(subMsgBody []byte) (string, error) {
 	val := binary.LittleEndian.Uint16(subMsgBody)
 	if val == 0 {
-		fmt.Printf("set rsp ok\n")
-	} else {
-		fmt.Printf("set rsp err %d tlv\n", val)
+		return "set rsp ok", nil
 	}
+	return "", fmt.Errorf("set rsp %d tlv err!", val)
 }
 
-func oamSubMsgProc(msgId uint16, msgBody []byte) {
+func oamSubMsgProc(msgId uint16, msgBody []byte) (string, error) {
 	switch msgId {
 	case C.ECPRI_OAM_GET_RESP:
-		eCpriGetRspProc(msgBody)
+		return eCpriGetRspProc(msgBody)
 	case C.ECPRI_OAM_SET_RESP:
-		eCpriSetRspProc(msgBody)
-	case C.ECPRI_OAM_TEST_NTFY:
-
-	default:
-		fmt.Printf("unknow msgid %d\n", msgId)
+		return eCpriSetRspProc(msgBody)
+		//	case C.ECPRI_OAM_TEST_NTFY:
 	}
+	return "", fmt.Errorf("unknow msgid: %d", msgId)
 }
 
-func rspMsgProc(buf []byte) {
+func rspMsgProc(buf []byte) (string, error) {
 	head := (*msgHead)(unsafe.Pointer(&buf[0]))
 	if head.startFlag != C.OAM_START_FLAG {
-		fmt.Printf("head start flag %x error!\n", head.startFlag)
-		return
+		return "", fmt.Errorf("invalid head start flag: %x", head.startFlag)
 	}
 	switch head.msgType {
 	case C.PCXX_OAM_MSG:
 		msgId, msgBody, err := tlvDecode(buf[unsafe.Sizeof(*head):])
 		if err != nil {
-			fmt.Printf("sub msg parse error: %s\n%s\n", err, hex.EncodeToString(buf[unsafe.Sizeof(head):]))
-			return
+			return "", err
 		}
-		oamSubMsgProc(msgId, msgBody)
-	default:
-		fmt.Printf("unknow msg type\n")
+		return oamSubMsgProc(msgId, msgBody)
 	}
+	return "", fmt.Errorf("unknow msg type: %d", head.msgType)
 }
 
 func makeGetReq(tag uint16, index []uint32) []byte {
@@ -594,8 +583,17 @@ func getTag(table string, tag string) (uint16, uint16) {
 	return tagValue, indexNum
 }
 
-func getCmd(table string, tag string, index string, input string) error {
-	//fmt.Printf("get %s %s %v %s:\n", table, tag, index, input)
+func getCmd(t string, tag string) error {
+	var table, index string
+
+	re := regexp.MustCompile("([^0-9]+)([0-9.]+)")
+	parts := re.FindStringSubmatch(t)
+	if len(parts) > 2 {
+		table = parts[1]
+		index = parts[2]
+	} else {
+		table = t
+	}
 
 	tagValue, indexNum := getTag(table, tag)
 	idx := make([]uint32, indexNum)
@@ -607,26 +605,58 @@ func getCmd(table string, tag string, index string, input string) error {
 	}
 
 	reqMsg := makeGetReq(tagValue, idx)
-	fmt.Printf("get req buf: %s\n", hex.EncodeToString(reqMsg))
+	if cmdCfg.log {
+		fmt.Printf("get req buf: %s\n", hex.EncodeToString(reqMsg))
+	}
 
 	//send and wait rsp
-	rspBuf := make([]byte, 1024)
+	rspBuf := make([]byte, 8192)
 	rsplen := C.send_oam_req(C.uint16_t(cmdCfg.dev), (*C.uchar)(&reqMsg[0]), C.uint32_t(len(reqMsg)), (*C.uchar)(&rspBuf[0]))
-
 	if rsplen <= 0 {
-		fmt.Printf("oam req err %d:\n", rsplen)
+		fmt.Printf("oam req err %d!\n", rsplen)
 		return nil
 	}
 
 	rspBuf = rspBuf[:rsplen]
-	fmt.Printf("get rsp buf: %s\n", hex.EncodeToString(rspBuf))
-	rspMsgProc(rspBuf)
+	if cmdCfg.log {
+		fmt.Printf("get rsp buf: %s\n", hex.EncodeToString(rspBuf))
+	}
+	result, err := rspMsgProc(rspBuf)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	fmt.Println(result)
 
+	if cmdCfg.autoSave {
+		saveFile(t, tag, result)
+	}
 	return nil
 }
 
-func setCmd(table string, tag string, index string, config string) error {
-	fmt.Printf("set %s %s %v %s:\n", table, tag, index, config)
+func saveFile(t string, tag string, data string) {
+	os.MkdirAll("get", os.ModePerm)
+	fileName := fmt.Sprintf("%s/%s_%s.json", "get", t, tag)
+	openFile, e := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if e != nil {
+		fmt.Println(e)
+		return
+	}
+	openFile.WriteString(data)
+	openFile.Close()
+	fmt.Println("save to", fileName)
+}
+
+func setCmd(table string, tag string, config string) error {
+	//fmt.Printf("set %s %s %v %s:\n", table, tag, index, config)
+	var index string
+
+	re := regexp.MustCompile("([^0-9]+)([0-9.]+)")
+	parts := re.FindStringSubmatch(table)
+	if len(parts) > 2 {
+		table = parts[1]
+		index = parts[2]
+	}
 
 	tagValue, indexNum := getTag(table, tag)
 	idx := make([]uint32, indexNum)
@@ -643,7 +673,9 @@ func setCmd(table string, tag string, index string, config string) error {
 		return nil
 	}
 
-	fmt.Printf("set req buf: %s\n", hex.EncodeToString(reqMsg))
+	if cmdCfg.log {
+		fmt.Printf("set req buf: %s\n", hex.EncodeToString(reqMsg))
+	}
 
 	//send and wait rsp
 	rspBuf := make([]byte, 1024)
@@ -653,7 +685,9 @@ func setCmd(table string, tag string, index string, config string) error {
 		return nil
 	}
 	rspBuf = rspBuf[:rsplen]
-	fmt.Printf("set rsp buf: %s\n", hex.EncodeToString(rspBuf))
+	if cmdCfg.log {
+		fmt.Printf("set rsp buf: %s\n", hex.EncodeToString(rspBuf))
+	}
 	rspMsgProc(rspBuf)
 
 	return nil
@@ -678,103 +712,119 @@ func getPrompt(cfg globalConfig) string {
 
 func completer(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
-		{Text: "get", Description: "get table tag [index]"},
-		{Text: "set", Description: "set table tag [index] config"},
-		{Text: "pc802", Description: "pc802 n : switch pc802 device"},
-		{Text: "phy", Description: "switch to phy"},
-		{Text: "ecpri", Description: "switch to ecpri"},
-		{Text: "p19", Description: "switch to p19"},
-		{Text: "debug", Description: "switch to debug"},
+		{Text: "get", Description: "get table tag"},
+		{Text: "set", Description: "set table tag file|config"},
+		{Text: "pc802", Description: "pc802 n: switch pc802 device"},
+		{Text: "phy", Description: "switch to phy module"},
+		{Text: "ecpri", Description: "switch to ecpri module"},
+		{Text: "p19", Description: "switch to p19 module"},
+		{Text: "debug", Description: "switch to debug module"},
+		{Text: "autosave", Description: "switch autosave mode(true|fasle)"},
+		{Text: "log", Description: "switch log mode(true|fasle)"},
 		{Text: "quit", Description: "quit"},
 	}
 
-	t := []prompt.Suggest{
-		{Text: "get", Description: "get table tag [index]"},
-		{Text: "set", Description: "set table tag [index] config"},
+	table := []prompt.Suggest{
 		{Text: "base"},
-		{Text: "eth"},
+		{Text: "eth0"},
 		{Text: "ptp"},
-		{Text: "cell"},
-		{Text: "rucommon"},
-		{Text: "rucomp"},
-		{Text: "ruwin"},
+		{Text: "cell0"},
+		{Text: "cell1"},
+		{Text: "rucommon0"},
+		{Text: "rucomp0"},
+		{Text: "ruwin0"},
+	}
+
+	settag := []prompt.Suggest{
+		{Text: "config", Description: "set table config config"},
+	}
+
+	gettag := []prompt.Suggest{
 		{Text: "config"},
+		{Text: "info"},
 		{Text: "status"},
 		{Text: "stats"},
 		{Text: "vendor"},
 	}
 
-	if strings.Contains(d.TextBeforeCursor(), "get") || strings.Contains(d.TextBeforeCursor(), "set") {
-		return prompt.FilterHasPrefix(t, d.GetWordBeforeCursor(), true)
+	list := strings.Split(d.TextBeforeCursor(), " ")
+	list = append(list, "", "", "", "")
+
+	switch list[0] {
+	case "get":
+		if (list[2] != "") || ((list[1] != "") && (' ' == d.CurrentLine()[d.CursorPositionCol()-1])) {
+			return prompt.FilterHasPrefix(gettag, d.GetWordBeforeCursor(), true)
+		}
+		return prompt.FilterHasPrefix(table, d.GetWordBeforeCursor(), true)
+	case "set":
+		if (list[2] != "") || ((list[1] != "") && (' ' == d.CurrentLine()[d.CursorPositionCol()-1])) {
+			return prompt.FilterHasPrefix(settag, d.GetWordBeforeCursor(), true)
+		}
+		return prompt.FilterHasPrefix(table, d.GetWordBeforeCursor(), true)
 	}
 
 	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
 }
 
+func executor(in string) {
+	blocks := strings.Split(in, " ")
+	if len(blocks) < 1 {
+		return
+	}
+
+	switch blocks[0] {
+	case "pc802":
+		fmt.Sscanf(blocks[1], "%d", &cmdCfg.dev)
+	case "autosave":
+		cmdCfg.autoSave = !cmdCfg.autoSave
+		fmt.Printf("set auto save to %v.\n", cmdCfg.autoSave)
+	case "log":
+		cmdCfg.log = !cmdCfg.log
+		fmt.Printf("set log to %v.\n", cmdCfg.log)
+	case "ecpri":
+		cmdCfg.msgType = C.PCXX_OAM_MSG
+		cmdCfg.module = C.ECPRI_OAM_GET_REQ
+	case "phy":
+		cmdCfg.msgType = C.PCXX_OAM_MSG
+		cmdCfg.module = 0
+	case "p19":
+		cmdCfg.msgType = C.PCXX_P19_MSG
+	case "debug":
+		cmdCfg.msgType = C.PCXX_DEBUG_MSG
+	case "get":
+		if len(blocks) != 3 {
+			fmt.Printf("Usage: get table tag\n")
+			return
+		}
+		err := getCmd(blocks[1], blocks[2])
+		if err != nil {
+			fmt.Print(err)
+		}
+	case "set":
+		if len(blocks) != 4 {
+			fmt.Printf("Usage: set table tag file|config\n")
+			return
+		}
+		err := setCmd(blocks[1], blocks[2], blocks[3])
+		if err != nil {
+			fmt.Print(err)
+		}
+	case "quit":
+		os.Exit(0)
+	default:
+		fmt.Println("unknow cmd!")
+	}
+}
+
 func main() {
+	var his []string
 	C.oam_init()
 
 	cmdCfg.module = C.ECPRI_OAM_GET_REQ
 
 	for {
-		input := prompt.Input(getPrompt(cmdCfg), completer)
-		cmdArr := strings.Fields(input)
-		if len(cmdArr) < 1 {
-			continue
-		}
-
-		if cmdArr[0] == "pc802" {
-			fmt.Sscanf(cmdArr[1], "%d", &cmdCfg.dev)
-		} else if cmdArr[0] == "p19" {
-			cmdCfg.msgType = C.PCXX_P19_MSG
-		} else if cmdArr[0] == "debug" {
-			cmdCfg.msgType = C.PCXX_DEBUG_MSG
-		} else if cmdArr[0] == "phy" {
-			cmdCfg.msgType = C.PCXX_OAM_MSG
-			cmdCfg.module = 0
-		} else if cmdArr[0] == "ecpri" {
-			cmdCfg.msgType = C.PCXX_OAM_MSG
-			cmdCfg.module = C.ECPRI_OAM_GET_REQ
-		} else if cmdArr[0] == "get" {
-			var index string
-			if len(cmdArr) < 3 {
-				fmt.Printf("Usage: get table tag [index]\n")
-				continue
-			} else if len(cmdArr) < 4 {
-				index = ""
-			} else {
-				index = cmdArr[3]
-			}
-			if err := getCmd(cmdArr[1], cmdArr[2], index, ""); err != nil {
-				fmt.Print(err)
-			}
-		} else if cmdArr[0] == "set" {
-			var index, config string
-			if len(cmdArr) < 4 {
-				fmt.Printf("Usage: set table tag [index] config\n")
-				continue
-			} else if len(cmdArr) < 5 {
-				index = ""
-				config = cmdArr[3]
-			} else {
-				index = cmdArr[3]
-				config = cmdArr[4]
-			}
-			if err := setCmd(cmdArr[1], cmdArr[2], index, config); err != nil {
-				fmt.Print(err)
-			}
-		} else if cmdArr[0] == "quit" {
-			os.Exit(0)
-		} else {
-			fmt.Printf("Usage:\n")
-			fmt.Printf("    pc802 dev\n")
-			fmt.Printf("    ecpri\n")
-			fmt.Printf("    phy\n")
-			fmt.Printf("    p19\n")
-			fmt.Printf("    debug\n")
-			fmt.Printf("    get table tag [index]\n")
-			fmt.Printf("    set table tag [index] config\n")
-			fmt.Printf("    quit\n")
-		}
+		input := prompt.Input(getPrompt(cmdCfg), completer, prompt.OptionHistory(his))
+		executor(strings.TrimSpace(input))
+		his = append(his, input)
 	}
 }
