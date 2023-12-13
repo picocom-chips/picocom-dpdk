@@ -51,12 +51,15 @@ static int32_t send_oam_req(uint16_t dev_index, uint8_t *tx_buf, uint32_t tx_len
         ts.tv_sec += 1;
         if (0 != sem_timedwait(&g_sem, &ts)){
             printf("oam wait rsp timeout!\n");
+#if 0
 			memcpy(rx_buf, tx_buf, tx_len+64);
 			pcxx_oam_sub_msg_t *sub = (pcxx_oam_sub_msg_t *)(((oam_msg_head_t*)rx_buf)+1);
 			sub->msg_id++;
 			sub->msg_size = 48;
 			((oam_tlvs_t*)(&sub->msb_body[2]))->length = 32;
 			return tx_len+64;
+#endif
+			return 0;
 		}
     } else{
         printf("send oam msg err!\n");
@@ -688,7 +691,12 @@ func setCmd(table string, tag string, config string) error {
 	if cmdCfg.log {
 		fmt.Printf("set rsp buf: %s\n", hex.EncodeToString(rspBuf))
 	}
-	rspMsgProc(rspBuf)
+	result, err := rspMsgProc(rspBuf)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	fmt.Println(result)
 
 	return nil
 }
