@@ -91,6 +91,9 @@ typedef struct PC802_Mem_Pool_t {
     uint32_t avail;
     uint32_t alloc;
     uint32_t free;
+    uint16_t port_id;
+    uint16_t queue_id;
+    PC802_Mem_Block_t *blk[1088];
 } PC802_Mem_Pool_t;
 
 struct pmd_queue_stats {
@@ -505,6 +508,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->mpool.avail = 0;
     txq->mpool.alloc = 0;
     txq->mpool.free = 0;
+    txq->mpool.port_id = port_id;
+    txq->mpool.queue_id = queue_id;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
     if (NULL != (mz = rte_memzone_lookup(z_name))) {
         rte_memzone_free(mz);
@@ -533,6 +538,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->alloced = 0;
             txq->mpool.first = mblk;
             txq->mpool.avail++;
+            txq->mpool.blk[k] = mblk;
             DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
                 queue_id, k, mz->iova, mz->addr);
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -552,6 +558,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->alloced = 0;
             txq->mpool.first = mblk;
             txq->mpool.avail++;
+            txq->mpool.blk[k] = mblk;
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
                 queue_id, k, mblk->buf_phy_addr, &mblk[1]);
         }
@@ -605,6 +612,25 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     return 0;
 }
 
+static void pc802_dump_tx_mpool(uint16_t port_id, uint16_t queue_id)
+{
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    struct pc802_tx_queue *txq = &adapter->txq[queue_id];
+    PC802_Mem_Pool_t *mpool = &txq->mpool;
+    PC802_Mem_Block_t *mblk;
+    int n;
+    DBLOG("Begin port_id %1u queue_id %1u first %p avail %u alloc %u free %u block_num %u block_size %u\n",
+        port_id, queue_id, mpool->first, mpool->avail, mpool->alloc, mpool->free, mpool->block_num, mpool->block_size);
+    for (n = 0; n < mpool->block_num; n++) {
+        mblk = mpool->blk[n];
+        DBLOG("n %4u index %4u alloced %1u buf_phy_addr 0x%X next %p first %p mpool %p\n",
+            n, mblk->index, mblk->alloced, mblk->buf_phy_addr, mblk->next, mblk->first, mblk->mpool);
+    }
+    DBLOG("End\n");
+}
+
 PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id)
 {
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
@@ -619,9 +645,14 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
         mblk->alloced = 1;
         txq->mpool.avail--;
         txq->mpool.alloc++;
+        if (txq->mpool.first == NULL) {
+            DBLOG("WARN: No mblk after alloc : port_id %u queue_id%u\n", port_id, queue_id);
+            pc802_dump_tx_mpool(port_id, queue_id);
+        }
     } else {
         DBLOG("ERROR: fail to alloc port_id = %1u queue_id = %1u avail = %u alloc = %u free = %u\n",
             port_id, queue_id, txq->mpool.avail, txq->mpool.alloc, txq->mpool.free);
+        pc802_dump_tx_mpool(port_id, queue_id);
     }
     return mblk;
 }
@@ -634,6 +665,11 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     mblk->next = mblk->mpool->first;
     mblk->mpool->first = mblk;
+    if (mblk->mpool->first == NULL) {
+        DBLOG("WARN: No mblk after free : mblk %p index %4u alloced %1u next %p mpool %p\n",
+            mblk, mblk->index, mblk->alloced, mblk->next, mblk->mpool);
+        pc802_dump_tx_mpool(mblk->mpool->port_id, mblk->mpool->queue_id);
+    }
     mblk->alloced = 0;
     PC802_Mem_Pool_t *mpool = mblk->mpool;
     mpool->avail++;
