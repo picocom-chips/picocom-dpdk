@@ -64,6 +64,7 @@ typedef enum PC802_Traffic_Type_e {
 struct pc802_mem_block {
     struct pc802_mem_block *next;
     struct pc802_mem_block **first;
+    PC802_Mem_Pool_t *mpool;
     uint64_t buf_phy_addr;
     uint16_t index;
     uint16_t alloced;

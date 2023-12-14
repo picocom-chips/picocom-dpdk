@@ -528,6 +528,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->mpool = &txq->mpool;
             mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
@@ -546,6 +547,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->mpool = &txq->mpool;
             mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
@@ -630,10 +632,10 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
-    mblk->next = *mblk->first;
-    *mblk->first = mblk;
+    mblk->next = mblk->mpool->first;
+    mblk->mpool->first = mblk;
     mblk->alloced = 0;
-    PC802_Mem_Pool_t *mpool = (PC802_Mem_Pool_t *)mblk->first;
+    PC802_Mem_Pool_t *mpool = mblk->mpool;
     mpool->avail++;
     mpool->free++;
     return;
