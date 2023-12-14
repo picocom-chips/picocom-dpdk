@@ -68,6 +68,7 @@ struct pc802_mem_block {
     uint64_t buf_phy_addr;
     uint16_t index;
     uint16_t alloced;
+    uint32_t tx_cnt;
     uint32_t pkt_length;
     uint8_t  pkt_type;
     union {

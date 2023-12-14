@@ -625,8 +625,8 @@ static void pc802_dump_tx_mpool(uint16_t port_id, uint16_t queue_id)
         port_id, queue_id, mpool->first, mpool->avail, mpool->alloc, mpool->free, mpool->block_num, mpool->block_size);
     for (n = 0; n < mpool->block_num; n++) {
         mblk = mpool->blk[n];
-        DBLOG("n %4u index %4u alloced %1u buf_phy_addr 0x%X next %p first %p mpool %p\n",
-            n, mblk->index, mblk->alloced, mblk->buf_phy_addr, mblk->next, mblk->first, mblk->mpool);
+        DBLOG("n %4u index %4u alloced %1u tx_cnt %u buf_phy_addr 0x%X next %p first %p mpool %p\n",
+            n, mblk->index, mblk->alloced, mblk->tx_cnt, mblk->buf_phy_addr, mblk->next, mblk->first, mblk->mpool);
     }
     DBLOG("End\n");
 }
@@ -649,6 +649,7 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
             DBLOG("WARN: No mblk after alloc : port_id %u queue_id%u\n", port_id, queue_id);
             pc802_dump_tx_mpool(port_id, queue_id);
         }
+        mblk->tx_cnt = 0;
     } else {
         DBLOG("ERROR: fail to alloc port_id = %1u queue_id = %1u avail = %u alloc = %u free = %u\n",
             port_id, queue_id, txq->mpool.avail, txq->mpool.alloc, txq->mpool.free);
@@ -671,6 +672,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         pc802_dump_tx_mpool(mblk->mpool->port_id, mblk->mpool->queue_id);
     }
     mblk->alloced = 0;
+    mblk->tx_cnt = 0;
     PC802_Mem_Pool_t *mpool = mblk->mpool;
     mpool->avail++;
     mpool->free++;
@@ -836,6 +838,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
         tx_blk->next =  NULL;
+        tx_blk->tx_cnt++;
         tx_id++;
     }
 
