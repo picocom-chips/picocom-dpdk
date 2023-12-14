@@ -196,6 +196,7 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
     cell_info->pcxx_data_dl_handle = info->writeHandle;
+    cell_info->sfn_idx = 0;
     pcxx_devs[dev_index].port_id = port_id;
     return 0;
 }
@@ -230,6 +231,8 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     for (k = 0; k < cell->data_num[cell->sfn_idx]; k++) {
         mblk = (PC802_Mem_Block_t *)((char *)cell->data_buf[cell->sfn_idx][k] - sizeof(PC802_Mem_Block_t));
         pc802_free_mem_block(mblk);
+    }
+    for (k = 0; k < NUM_DATA_BUF; k++) {
         cell->data_buf[cell->sfn_idx][k] = NULL;
     }
     cell->data_num[cell->sfn_idx] = 0;
