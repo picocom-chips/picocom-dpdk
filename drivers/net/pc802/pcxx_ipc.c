@@ -573,7 +573,7 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
         return -1;
     mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_DATA[cell_index]);
     if (NULL == mblk)
-        return -1;
+        return -2;
     *buf = cell->data_buf[cell->sfn_idx][cell->data_num[cell->sfn_idx]] = (char *)&mblk[1];
     *offset = cell->data_offset;
     return 0;
