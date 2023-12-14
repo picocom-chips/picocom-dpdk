@@ -89,6 +89,8 @@ typedef struct PC802_Mem_Pool_t {
     uint32_t block_size;
     uint32_t block_num;
     uint32_t avail;
+    uint32_t alloc;
+    uint32_t free;
 } PC802_Mem_Pool_t;
 
 struct pmd_queue_stats {
@@ -501,6 +503,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 
     txq->mpool.first = NULL;
     txq->mpool.avail = 0;
+    txq->mpool.alloc = 0;
+    txq->mpool.free = 0;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
     if (NULL != (mz = rte_memzone_lookup(z_name))) {
         rte_memzone_free(mz);
@@ -612,6 +616,10 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
         mblk->next = NULL;
         mblk->alloced = 1;
         txq->mpool.avail--;
+        txq->mpool.alloc++;
+    } else {
+        DBLOG("ERROR: fail to alloc port_id = %1u queue_id = %1u avail = %u alloc = %u free = %u\n",
+            port_id, queue_id, txq->mpool.avail, txq->mpool.alloc, txq->mpool.free);
     }
     return mblk;
 }
@@ -627,6 +635,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
     mblk->alloced = 0;
     PC802_Mem_Pool_t *mpool = (PC802_Mem_Pool_t *)mblk->first;
     mpool->avail++;
+    mpool->free++;
     return;
 }
 
