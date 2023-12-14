@@ -84,18 +84,6 @@ static const struct rte_pci_id pci_id_pc802_map[] = {
     { .vendor_id = 0, /* sentinel */ },
 };
 
-typedef struct PC802_Mem_Pool_t {
-    PC802_Mem_Block_t *first;
-    uint32_t block_size;
-    uint32_t block_num;
-    uint32_t avail;
-    uint32_t alloc;
-    uint32_t free;
-    uint16_t port_id;
-    uint16_t queue_id;
-    PC802_Mem_Block_t *blk[1088];
-} PC802_Mem_Pool_t;
-
 struct pmd_queue_stats {
     uint64_t pkts;
     uint64_t bytes;

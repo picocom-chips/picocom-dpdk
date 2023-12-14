@@ -61,6 +61,18 @@ typedef enum PC802_Traffic_Type_e {
 
 #define NPU_CACHE_LINE_SZ   64
 
+typedef struct PC802_Mem_Pool_t {
+    PC802_Mem_Block_t *first;
+    uint32_t block_size;
+    uint32_t block_num;
+    uint32_t avail;
+    uint32_t alloc;
+    uint32_t free;
+    uint16_t port_id;
+    uint16_t queue_id;
+    PC802_Mem_Block_t *blk[1088];
+} PC802_Mem_Pool_t;
+
 struct pc802_mem_block {
     struct pc802_mem_block *next;
     struct pc802_mem_block **first;
