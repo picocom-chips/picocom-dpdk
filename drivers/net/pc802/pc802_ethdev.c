@@ -365,6 +365,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->mpool = &rxq->mpool;
             mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
@@ -382,6 +383,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->mpool = &rxq->mpool;
             mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
