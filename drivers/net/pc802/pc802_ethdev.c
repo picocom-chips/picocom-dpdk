@@ -341,6 +341,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     rxq->mpool.first = NULL;
+    rxq->mpool.avail = 0;
     snprintf(z_name, sizeof(z_name), "PC802Rx_%2d_%2d",
             dev->data->port_id, queue_id);
     if (NULL != (mz = rte_memzone_lookup(z_name))) {
@@ -369,6 +370,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
+            rxq->mpool.avail++;
             DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
                 queue_id, k, mz->iova, mz->addr);
             DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -387,6 +389,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
+            rxq->mpool.avail++;
             DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
                 queue_id, k, mblk->buf_phy_addr, &mblk[1]);
         }
@@ -397,6 +400,8 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     for (k = 0; k < nb_desc; k++) {
         rxep->mblk = rxq->mpool.first;
         rxq->mpool.first = rxep->mblk->next;
+        rxq->mpool.alloc++;
+        rxq->mpool.avail--;
         rxep->mblk->next = NULL;
         rxep->mblk->alloced = 1;
         rxdp->phy_addr = rxep->mblk->buf_phy_addr;
@@ -714,6 +719,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
             break;
         }
         rxq->mpool.first = nmb->next;
+        rxq->mpool.alloc++;
+        rxq->mpool.avail--;
         nmb->next = NULL;
         nmb->alloced = 1;
 
