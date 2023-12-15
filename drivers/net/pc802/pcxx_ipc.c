@@ -624,11 +624,11 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
 }
 
 #ifndef MULTI_PC802
-int pcxxDataReSend(const char *buf, uint32_t bufLen, uint32_t *offset, ...)
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, ...)
 {
     uint16_t dev_index = 0, cell_index = 0;
 #else
-int pcxxDataReSend(const char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index )
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );

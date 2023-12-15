@@ -610,12 +610,12 @@ static void pc802_dump_tx_mpool(uint16_t port_id, uint16_t queue_id)
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
     PC802_Mem_Pool_t *mpool = &txq->mpool;
     PC802_Mem_Block_t *mblk;
-    int n;
+    uint32_t n;
     DBLOG("Begin port_id %1u queue_id %1u first %p avail %u alloc %u free %u block_num %u block_size %u\n",
         port_id, queue_id, mpool->first, mpool->avail, mpool->alloc, mpool->free, mpool->block_num, mpool->block_size);
     for (n = 0; n < mpool->block_num; n++) {
         mblk = mpool->blk[n];
-        DBLOG("n %4u index %4u alloced %1u tx_cnt %u buf_phy_addr 0x%X next %p first %p mpool %p\n",
+        DBLOG("n %4u index %4u alloced %1u tx_cnt %u buf_phy_addr 0x%lX next %p first %p mpool %p\n",
             n, mblk->index, mblk->alloced, mblk->tx_cnt, mblk->buf_phy_addr, mblk->next, mblk->first, mblk->mpool);
     }
     DBLOG("End\n");
