@@ -18,7 +18,7 @@ static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1}
 #endif
 
 #define DATA_QUEUE_BLOCK_SIZE   (256*1024)
-#define CTRL_QUEUE_BLOCK_SIZE   (256*1024)
+#define CTRL_QUEUE_BLOCK_SIZE   (0x8100)
 
 #define NUM_DATA_BUF    64
 #define NUM_SFN_IDX     4
