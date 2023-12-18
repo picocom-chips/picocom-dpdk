@@ -120,12 +120,6 @@ static const struct rte_pci_id pci_id_pc802_map[] = {
     { .vendor_id = 0, /* sentinel */ },
 };
 
-typedef struct PC802_Mem_Pool_t {
-    PC802_Mem_Block_t *first;
-    uint32_t block_size;
-    uint32_t block_num;
-} PC802_Mem_Pool_t;
-
 struct pmd_queue_stats {
     uint64_t pkts;
     uint64_t bytes;
@@ -610,12 +604,21 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
     struct pc802_tx_queue *txq = &adapter->txq[queue_id];
     PC802_Mem_Block_t *mblk = NULL;
     rte_mempool_get(txq->mpool, (void **)&mblk);
+    if (NULL != mblk) {
+        mblk->tx_cnt = 0;
+    } else {
+        DBLOG("ERROR: fail to alloc port_id = %1u queue_id = %1u \n", port_id, queue_id);
+    }
     return mblk;
 }
 
 void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 {
-    return rte_mempool_put(rte_mempool_from_obj(mblk), mblk);
+    if (mblk->tx_cnt > 1) {
+        mblk->tx_cnt--;
+        return;
+    }
+    rte_mempool_put(rte_mempool_from_obj(mblk), mblk);
 }
 
 uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
@@ -769,7 +772,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txe = &sw_ring[idx];
         txd = &tx_ring[idx];
 
-        if ((txe->mblk) && (txd->type)) {
+        if ((txe->mblk) && (txe->mblk != tx_blk) && (txd->type)) {
             pc802_free_mem_block(txe->mblk);
         }
 
@@ -782,6 +785,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
+        tx_blk->tx_cnt++;
         tx_id++;
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, &tx_blk, 1, tsc);
     }
