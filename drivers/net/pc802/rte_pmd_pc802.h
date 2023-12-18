@@ -64,6 +64,7 @@ struct pc802_mem_block {
     struct pc802_mem_block *next;
     struct pc802_mem_block **first;
     uint32_t alloced;
+    uint32_t tx_cnt;
     uint64_t buf_phy_addr;
     uint32_t pkt_length;
     uint8_t  pkt_type;

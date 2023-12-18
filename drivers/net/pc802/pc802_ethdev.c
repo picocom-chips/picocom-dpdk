@@ -658,6 +658,7 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
         txq->mpool.first = mblk->next;
         mblk->next = NULL;
         mblk->alloced = 1;
+        mblk->tx_cnt = 0;
     }
     return mblk;
 }
@@ -668,6 +669,10 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
         return;
     if (mblk->alloced == 0)
         return;
+    if (mblk->tx_cnt > 1) {
+        mblk->tx_cnt--;
+        return;
+    }
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
@@ -816,7 +821,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txe = &sw_ring[idx];
         txd = &tx_ring[idx];
 
-        if ((txe->mblk) && (txd->type)) {
+        if ((txe->mblk) && (txe->mblk != tx_blk) && (txd->type)) {
             pc802_free_mem_block(txe->mblk);
         }
 
@@ -827,6 +832,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
+        tx_blk->tx_cnt++;
         tx_blk->next =  NULL;
         tx_id++;
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, &tx_blk, 1, tsc);
