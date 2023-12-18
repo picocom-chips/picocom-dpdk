@@ -179,6 +179,12 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...);
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index );
 #endif
 
+#ifndef MULTI_PC802
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, ...);
+#else
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index );
+#endif
+
 /**
 * @brief Receive data  from queue by offset
 *
