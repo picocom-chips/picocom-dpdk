@@ -135,14 +135,14 @@ static int port_init( uint16_t pc802_index )
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_TX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            128, 0, 4096, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
     mpool_pc802_tx = mbuf_pool;
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_RX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            128 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            128, 0, 4096, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
 
@@ -475,8 +475,10 @@ static int case1(void)
     uint32_t length = 0;
     uint8_t type, eop = 0;
     get_blk_attr(b, &length, &type, &eop);
-    if ((type != 2) || (eop != 1))
+    if ((type != 2) || (eop != 1) || (N!=length)){
+        DBLOG("ERROR: type = %u  eop = %u N=%u, length=%u\n", type, eop, N, length);
         return -1;
+    }
     swap_msg(b, length);
     //printf("CASE1: UL msg length = %u\n", length);
     //check_ul_dst_data(b, length);
@@ -1714,7 +1716,7 @@ int main(int argc, char** argv)
 
         port_init(pc802_index);
     }
-    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
+    rte_eal_remote_launch(prompt, NULL, rte_get_next_lcore(-1, 1, 0));
 
     while(!main_stop) {
         usleep(10);

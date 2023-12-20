@@ -447,7 +447,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxep->mblk = mblk;
         rxdp->phy_addr = MBLK_IOVA(mblk);
         rxdp->length = 0;
-        INVALIDATE(rxdp);
+        INVALIDATE_SIZE(mblk, block_size);
         DBLOG_INFO("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
         rxep++;
         rxdp++;
@@ -596,7 +596,6 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         }
     }
 
-    //CLEAN_SIZE(adapter->pDescs->ul[queue_id], sizeof(adapter->pDescs->ul[queue_id]));
     DBLOG("Succeed: port %hu queue %hu block_size = %u block_num = %u nb_desc = %hu\n",
         port_id, queue_id, block_size, block_num, nb_desc);
     return 0;
@@ -690,10 +689,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxdp->phy_addr = MBLK_IOVA(nmb);
         rxdp->length = 0;
 #ifdef PCIE_NO_CACHE_COHERENCE
-        rte_ring_mp_enqueue(mblk_invalid_ring, nmb);
-        //INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length, 4096)+2048);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
-        //INVALIDATE(rxdp);
-        //rte_mb();
+        //rte_ring_mp_enqueue(mblk_invalid_ring, nmb);
+        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+4096);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        rte_mb();
 #endif
         rx_id++;
         nb_hold++;
@@ -778,7 +776,6 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
-        //CLEAN(txd);
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
@@ -1238,7 +1235,7 @@ pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
         rxd->length = 0;
         rxe[i].mbuf = mbuf;
         INVALIDATE_SIZE(mbuf->buf_addr, mbuf->buf_len);
-        //INVALIDATE(rxd);
+        rte_mb();
     }
 
     return 0;
@@ -1450,7 +1447,6 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
         txd->type = tx_pkt->packet_type;
         txe->mbuf = tx_pkt;
         CLEAN_SIZE(rte_pktmbuf_mtod(tx_pkt,void *), tx_pkt->data_len);
-        //CLEAN(txd);
         tx_id++;
     }
     nb_tx_free -= mb_pkts;
@@ -1557,7 +1553,6 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->eop = 1;
         rxdp->type = 1;
         INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
-        //INVALIDATE(rxdp);
         rx_id++;
         nb_hold++;
     }
@@ -1875,7 +1870,7 @@ static const cpu_set_t * get_ctrl_cpuset( void )
             for( core=min; core<=max; core++ )
                 CPU_CLR( core, &ctrl_cpuset );
         }
-#if define PCIE_NO_CACHE_COHERENCE
+#ifdef PCIE_NO_CACHE_COHERENCE
         CPU_ZERO( &ctrl_cpuset );
         CPU_SET( min, &ctrl_cpuset );
 #endif
@@ -1996,12 +1991,16 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         uint32_t DBAH = PC802_READ_REG(bar->DBAH);
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
+#ifdef PCIE_NO_CACHE_COHERENCE
+        get_cma_mem((void **)&adapter->descs_phy_addr, (void **)&adapter->pDescs);
+#else
         sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
         const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
         if ( NULL != mz_s){
             DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
             DBLOG("mz_s->addr = %p\n", mz_s->addr);
         }
+#endif
         return 0;
     }
 
@@ -2149,7 +2148,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         pthread_t tid;
 #ifdef PCIE_NO_CACHE_COHERENCE
         mblk_invalid_ring = rte_ring_create( "mblk_invalid_ring", 4096, rte_socket_id(), 0 );
-        pc802_ctrl_thread_create(&tid, "PC802-ivd_mblk", NULL, pc802_invalid_mblk, NULL);
+        //pc802_ctrl_thread_create(&tid, "PC802-ivd_mblk", NULL, pc802_invalid_mblk, NULL);
 #endif
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
         if (0xFFFFFFFF != bar->BOOTRCCNT) {
@@ -2515,7 +2514,7 @@ __next_pfi_0_vec_read:
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
-    CLEAN_SIZE(addr, vec_cnt);
+    CLEAN_SIZE(addr, data_size);
 
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
@@ -2688,7 +2687,7 @@ __next_non_pfi_0_vec_read:
     }
 
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    CLEAN_SIZE(addr, vec_cnt);
+    CLEAN_SIZE(addr, data_size);
     PC802_WRITE_REG(bar->DBGEPADDR, address);
     PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
     PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_DOWNLINK);
