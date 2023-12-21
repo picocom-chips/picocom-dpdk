@@ -135,14 +135,14 @@ static int port_init( uint16_t pc802_index )
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_TX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            128, 0, 4096, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
     mpool_pc802_tx = mbuf_pool;
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_RX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            128 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            128 , 0, 4096, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
 
@@ -160,8 +160,8 @@ static int port_init( uint16_t pc802_index )
     pcxxCtrlOpen(&ctrl_cb_info, pc802_index, LEGACY_CELL_INDEX);
 #endif
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 64, 32));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 64, 32));
 
     rte_eth_dev_start(port);
 
@@ -1714,7 +1714,7 @@ int main(int argc, char** argv)
 
         port_init(pc802_index);
     }
-    rte_eal_remote_launch(prompt, NULL, rte_lcore_count()-1);
+    rte_eal_remote_launch(prompt, NULL, rte_get_next_lcore(-1, 1, 0));
 
     while(!main_stop) {
         usleep(10);
