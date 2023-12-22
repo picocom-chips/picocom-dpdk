@@ -447,7 +447,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxep->mblk = mblk;
         rxdp->phy_addr = MBLK_IOVA(mblk);
         rxdp->length = 0;
-        INVALIDATE_SIZE(mblk, block_size);
+        CLEAN_SIZE(mblk, block_size);
         DBLOG_INFO("UL DESC[%1u][%3u].phy_addr=0x%lX\n", queue_id, k, rxdp->phy_addr);
         rxep++;
         rxdp++;
@@ -690,7 +690,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxdp->length = 0;
 #ifdef PCIE_NO_CACHE_COHERENCE
         //rte_ring_mp_enqueue(mblk_invalid_ring, nmb);
-        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length+4096);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
+        CLEAN_SIZE(&nmb[1], nmb->pkt_length);            //1.invalidate pkt buf mem cache,2.pcie modify mem,3.cpu load mem to cache
         rte_mb();
 #endif
         rx_id++;
@@ -1234,7 +1234,7 @@ pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
         rxd->phy_addr = dma_addr;
         rxd->length = 0;
         rxe[i].mbuf = mbuf;
-        INVALIDATE_SIZE(mbuf->buf_addr, mbuf->buf_len);
+        CLEAN_SIZE(mbuf->buf_addr, mbuf->buf_len);
         rte_mb();
     }
 
@@ -1552,7 +1552,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->length = 0;
         rxdp->eop = 1;
         rxdp->type = 1;
-        INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
+        CLEAN_SIZE(nmb->buf_addr, nmb->buf_len);
         rx_id++;
         nb_hold++;
     }
