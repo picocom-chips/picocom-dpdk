@@ -263,8 +263,6 @@ static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
 #ifdef PCIE_NO_CACHE_COHERENCE
-static void * pc802_invalid_mblk(void *);
-
 void *cma_pv_addr = NULL;
 void *cma_pa_addr = NULL;
 uint32_t cma_size = 0;
@@ -312,12 +310,12 @@ static int init_cma_mem(void)
     uio_addr = (void *)strtoul(uio_addr_buf, NULL, 0);
     uio_size = (int)strtol(uio_size_buf, NULL, 0);
     printf("uio_addr = %p uio_size = %d\n", uio_addr, uio_size);
-
+#if 0
 	if (ftruncate(uio_fd, uio_size) < 0){
 		printf("file '%s' resize to %u for cma err: %s\n", UIO_DEV, uio_size, strerror(errno));
 		exit(-1);
 	}
-
+#endif
     access_address = mmap(NULL, uio_size, PROT_READ | PROT_WRITE, MAP_SHARED, uio_fd, 0);
     if (access_address == NULL) {
         fprintf(stderr, "mmap:%s\n", strerror(errno));
@@ -329,7 +327,7 @@ static int init_cma_mem(void)
     cma_pa_addr = uio_addr;
     cma_pv_addr = access_address;
     cma_size = uio_size;
-
+#if 0
     write(uio_fd, "1", 1);
     lseek(uio_fd, uio_size, SEEK_SET);
 
@@ -337,6 +335,11 @@ static int init_cma_mem(void)
          ((uint8_t*)cma_pv_addr)[i] = 0;
     memset(cma_pv_addr, 0, cma_size-4096);
     memcpy(cma_pv_addr, cma_pv_addr, cma_size-4096);
+#endif
+
+    if (RTE_PROC_PRIMARY != rte_eal_process_type())
+        cma_pos +=  cma_size/2;
+
     return 0;
 }
 #endif
@@ -430,7 +433,6 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     struct pc802_rx_entry *rxep;
     uint32_t mask = NPU_CACHE_LINE_SZ - 1;
     uint32_t k;
-    int socket_id = dev->device->numa_node;
     PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
@@ -552,7 +554,6 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     struct pc802_tx_entry *txep;
     uint32_t mask = NPU_CACHE_LINE_SZ - 1;
     uint32_t k;
-    int socket_id = dev->device->numa_node;
     char z_name[RTE_MEMZONE_NAMESIZE];
     PC802_Mem_Block_t *mblk;
     uint32_t rc_rst_cnt;
@@ -1285,7 +1286,7 @@ pc802_alloc_rx_queue_mbufs(struct pc802_rx_queue *rxq)
         rxd->phy_addr = dma_addr;
         rxd->length = 0;
         rxe[i].mbuf = mbuf;
-        CLEAN_SIZE(mbuf->buf_addr, mbuf->buf_len);
+        INVALIDATE_SIZE(mbuf->buf_addr, mbuf->buf_len);
     }
 
     return 0;
@@ -1597,13 +1598,14 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->length = 0;
         rxdp->eop = 1;
         rxdp->type = 1;
-        CLEAN_SIZE(nmb->buf_addr, nmb->buf_len);
+        INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
         rx_id++;
         nb_hold++;
     }
 
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
+        rte_wmb();
         rte_io_wmb();
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
         nb_hold = 0;
@@ -2039,10 +2041,18 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         uint32_t DBAH = PC802_READ_REG(bar->DBAH);
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
+#ifdef PCIE_NO_CACHE_COHERENCE
+        adapter->pDescs = cma_pv_addr;
+        adapter->descs_phy_addr = (uintptr_t)cma_pa_addr;
+        DBLOG("pDescs->iova = 0x%lX; pDescs->addr = %p\n", adapter->descs_phy_addr, adapter->pDescs);        
+#else
         sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
         const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
-        DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
-        DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        if ( NULL != mz_s){
+            DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
+            DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        }
+#endif
         return 0;
     }
 
