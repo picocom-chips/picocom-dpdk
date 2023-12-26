@@ -52,7 +52,7 @@
 
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
-//#define PCIE_NO_CACHE_COHERENCE
+#define PCIE_NO_CACHE_COHERENCE
 #ifdef PCIE_NO_CACHE_COHERENCE
 	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
     static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
@@ -328,13 +328,10 @@ static int init_cma_mem(void)
     cma_pv_addr = access_address;
     cma_size = uio_size;
 #if 0
-    write(uio_fd, "1", 1);
-    lseek(uio_fd, uio_size, SEEK_SET);
-
     for (size_t i = 0; i < cma_size; i++)
          ((uint8_t*)cma_pv_addr)[i] = 0;
     memset(cma_pv_addr, 0, cma_size-4096);
-    memcpy(cma_pv_addr, cma_pv_addr, cma_size-4096);
+    memcpy(cma_pv_addr, cma_pv_addr+4096, cma_size-4096);
 #endif
 
     if (RTE_PROC_PRIMARY != rte_eal_process_type())
