@@ -776,6 +776,7 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
+    mblk->tx_cnt = 0;
     return;
 }
 

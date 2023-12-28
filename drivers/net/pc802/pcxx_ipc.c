@@ -21,7 +21,7 @@ static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1}
 #define CTRL_QUEUE_BLOCK_SIZE   (32*1024)
 
 #define NUM_DATA_BUF    16
-#define NUM_SFN_IDX     4
+#define NUM_SFN_IDX     16
 #define SFN_IDX_MASK    (NUM_SFN_IDX - 1)
 
 typedef struct SimULSlotMsg_st{
@@ -187,8 +187,8 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     if (info == NULL)
         return -1;
 
-    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 128, 64));
-    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 128, 64));
+    RTE_ASSERT(0 == pc802_create_tx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
+    RTE_ASSERT(0 == pc802_create_rx_queue(port_id, QID_DATA[cell_index], DATA_QUEUE_BLOCK_SIZE, 256, 128));
 
     cell_info->pcxx_data_ul_handle = info->readHandle;
     cell_info->pcxx_data_dl_handle = info->writeHandle;
@@ -656,6 +656,7 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t c
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->rx_data_buf)
         return NULL;
+//  if ((sizeof(PC802_Mem_Block_t) + offset + len) > ((PC802_Mem_Block_t *)(cell->rx_data_buf - sizeof(PC802_Mem_Block_t)))->pkt_length)
     if ((sizeof(PC802_Mem_Block_t) + offset + len) > DATA_QUEUE_BLOCK_SIZE)
         return NULL;
     return (void *)(cell->rx_data_buf + offset);
