@@ -19,6 +19,7 @@ apps = [
         'test-pc802-nr-phy',
         'test-pc802oam',
         'test-pc802-perf',
+        'test-pc802-coredump',
 	'test-pipeline',
 	'test-pmd',
 	'test-regex',
