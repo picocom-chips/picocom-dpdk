@@ -3409,6 +3409,101 @@ uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
     return sfn_slot;
 }
 
+typedef struct {
+    uint32_t panic_magic;
+    uint32_t core;
+    uint32_t msg_id;
+    uint32_t msg_body;
+    uint32_t counter;
+} panic_bar_regs_t;
+
+#define COREDUMP_RC_CTRL    (0x2F80)
+#define COREDUMP_EP_CTRL    (0x2FC0)
+#define COREDUMP_EP_DATA    (0x3000)
+#define COREDUMP_WIN_SZ     (0x1000)
+
+#define COREDUMP_MAGIC      (0xC09EDEAD)
+#define COREDUMP_FILE_IND   (0xDEAD0081)
+#define COREDUMP_ADDR_IND   (0xDEAD0082)
+#define COREDUMP_SIZE_IND   (0xDEAD0083)
+
+int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
+{
+    uint16_t port_id = pc802_get_port_id(pc802_index);
+    uint8_t *bar0 = (uint8_t *)pc802_get_BAR(port_id);
+    panic_bar_regs_t *rc = (panic_bar_regs_t *)(bar0 + COREDUMP_RC_CTRL);
+    panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
+    uint32_t *coredump = (uint32_t *)(bar0 + COREDUMP_EP_DATA);
+
+    PC802_WRITE_REG(rc->core, pc802_core);
+    PC802_WRITE_REG(rc->panic_magic, COREDUMP_MAGIC);
+    uint32_t reg1, reg2;
+    do {
+        reg1 = PC802_READ_REG(ep->panic_magic);
+    } while (reg1 != COREDUMP_MAGIC);
+    do {
+        reg1 = PC802_READ_REG(ep->core);
+    } while (reg1 != pc802_core);
+    DBLOG("PC802 %u Andes core %u received core dump request !\n", pc802_index, pc802_core);
+
+    do {
+        reg1 = PC802_READ_REG(ep->msg_id);
+    } while (reg1 != COREDUMP_FILE_IND);
+    reg2 = PC802_READ_REG(ep->msg_body);
+    uint32_t file_id = reg2;
+    DBLOG("PC802 core dump file id = %u\n", file_id);
+
+    do {
+        reg1 = PC802_READ_REG(ep->msg_id);
+    } while (reg1 != COREDUMP_ADDR_IND);
+    reg2 = PC802_READ_REG(ep->msg_body);
+    uint32_t pc802_addr = reg2;
+    DBLOG("PC802 core dump addr = 0x%08X\n", pc802_addr);
+
+    do {
+        reg1 = PC802_READ_REG(ep->msg_id);
+    } while (reg1 != COREDUMP_SIZE_IND);
+    reg2 = PC802_READ_REG(ep->msg_body);
+    uint32_t byte_size = reg2;
+    DBLOG("PC802 core dump byte_size = 0x%08X = %u bytes\n", byte_size, byte_size);
+
+    char file_name[64];
+    sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
+    FILE *fh_vector = fopen(file_name, "wb");
+
+    uint32_t *pd0 = (uint32_t *)pc802_get_debug_mem(port_id);
+    uint32_t *pd;
+    uint32_t *dump;
+    uint32_t this_size;
+    uint32_t fwr_size;
+    uint32_t rccnt;
+    volatile uint32_t epcnt;
+     rccnt = PC802_READ_REG(rc->counter);
+    do {
+        do {
+            epcnt = PC802_READ_REG(ep->counter);
+        } while (epcnt == rccnt);
+
+        pd = pd0;
+        dump = coredump;
+        this_size = (byte_size > COREDUMP_WIN_SZ) ? COREDUMP_WIN_SZ : byte_size;
+        fwr_size = this_size;
+        byte_size -= this_size;
+        do {
+            *pd++ = PC802_READ_REG(dump[0]);
+            dump++;
+            this_size -= sizeof(uint32_t);
+        } while (0 != this_size);
+        fwrite(pd0, 1, fwr_size, fh_vector);
+        rccnt++;
+        PC802_WRITE_REG(rc->counter, rccnt);
+        DBLOG("Write core dump file: fwr_size = %4u, byte_size = %9u rccnt = %6u\n", fwr_size, byte_size, rccnt-1);
+    } while (byte_size > 0);
+
+    fclose(fh_vector);
+    return 0;
+}
+
 static void pc802_tel_add_reg_array(struct rte_tel_data *d, const char *name, uint32_t *reg_addr, int count)
 {
 	int i;
