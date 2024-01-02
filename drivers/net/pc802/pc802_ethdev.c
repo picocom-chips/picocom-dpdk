@@ -3452,6 +3452,8 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     reg2 = PC802_READ_REG(ep->msg_body);
     uint32_t file_id = reg2;
     DBLOG("PC802 core dump file id = %u\n", file_id);
+    PC802_WRITE_REG(rc->msg_id, reg1);
+    PC802_WRITE_REG(rc->msg_body, reg2);
 
     do {
         reg1 = PC802_READ_REG(ep->msg_id);
@@ -3459,6 +3461,8 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     reg2 = PC802_READ_REG(ep->msg_body);
     uint32_t pc802_addr = reg2;
     DBLOG("PC802 core dump addr = 0x%08X\n", pc802_addr);
+    PC802_WRITE_REG(rc->msg_id, reg1);
+    PC802_WRITE_REG(rc->msg_body, reg2);
 
     do {
         reg1 = PC802_READ_REG(ep->msg_id);
@@ -3466,6 +3470,8 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     reg2 = PC802_READ_REG(ep->msg_body);
     uint32_t byte_size = reg2;
     DBLOG("PC802 core dump byte_size = 0x%08X = %u bytes\n", byte_size, byte_size);
+    PC802_WRITE_REG(rc->msg_id, reg1);
+    PC802_WRITE_REG(rc->msg_body, reg2);
 
     char file_name[64];
     sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
