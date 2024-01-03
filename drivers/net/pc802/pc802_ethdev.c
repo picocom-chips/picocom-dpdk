@@ -3046,6 +3046,12 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
         if (epcnt < prev_epcnt[port_index][core]) {
             NPU_SYSLOG("INFO: Wrapped Trace EPCNT[%2u] = %u < previous EPCNT = %u\n",
                 core, epcnt, prev_epcnt[port_index][core]);
+            struct timespec req;
+            req.tv_sec = 0;
+            req.tv_nsec = 10000000;
+            nanosleep(&req, NULL);
+            epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
+            NPU_SYSLOG("INFO: Reread Trace EPCNT[%2u] = %u\n", core, epcnt);
         }
         prev_epcnt[port_index][core] = epcnt;
 
