@@ -60,8 +60,6 @@
 int main(int argc, char** argv)
 {
     int diag;
-    int port_id = 0;
-    int pc802_index = 0;
 
     printf("%s\n", picocom_pc802_version());
     printf("PC802 Driver Tester built AT %s ON %s\n", __TIME__, __DATE__);
