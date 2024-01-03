@@ -155,6 +155,8 @@ int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length);
 
+int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core);
+
 #ifdef __cplusplus
 }
 #endif
