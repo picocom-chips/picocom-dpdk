@@ -2096,6 +2096,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->descs_phy_addr = mz->iova;
     DBLOG("descs_phy_addr  = 0x%lX\n", adapter->descs_phy_addr);
     DBLOG("descs_virt_addr = %p\n", adapter->pDescs);
+    adapter->pDescs->mr.TRACE_ENABLE = 0;
 
     uint32_t haddr = (uint32_t)(adapter->descs_phy_addr >> 32);
     uint32_t laddr = (uint32_t)adapter->descs_phy_addr;
@@ -3355,6 +3356,18 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
     return NULL;
 }
 
+static uint32_t pc802_update_trace_enable(uint16_t port_index)
+{
+    uint16_t port_id = pc802_devices[port_index]->port_id;
+    struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+    struct pc802_adapter *adapter =
+        PC802_DEV_PRIVATE(dev->data->dev_private);
+    trace_enable[port_index] |= adapter->pDescs->mr.TRACE_ENABLE;
+    return trace_enable[port_index];
+}
+
+#define TRACE_SLEEP_NSEC    (32 * 250 * 1000)
+
 static void * pc802_trace_thread(__rte_unused void *data)
 {
     int i = 0;
@@ -3362,7 +3375,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
     int num = 0;
     struct timespec req;
     req.tv_sec = 0;
-    req.tv_nsec = 250*1000;
+    req.tv_nsec = TRACE_SLEEP_NSEC;
 
     for (i = 0; i < PC802_INDEX_MAX; i++) {
         for (j = 0; j < 32; j++) {
@@ -3378,6 +3391,7 @@ static void * pc802_trace_thread(__rte_unused void *data)
         active = 0;
         for ( i=0; i<num_pc802s; i++ )
         {
+            pc802_update_trace_enable((uint16_t)i);
             if (trace_enable[i] == 0)
                 continue;
             active++;
@@ -3388,8 +3402,8 @@ static void * pc802_trace_thread(__rte_unused void *data)
             pc802_log_flush();
             nanosleep(&req, NULL);
         }
-        if (active == 0)
-            break;
+        active += (active == 0);
+        req.tv_nsec = TRACE_SLEEP_NSEC / active;
     }
     DBLOG("PC802 PCIe Mini Trace thread will be stopped !\n");
     return NULL;
