@@ -2956,12 +2956,13 @@ static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata
 
     trace_datas[port_idx][core][trace_idx[port_idx][core]] = tdata;
     trace_idx[port_idx][core]++;
+    uint32_t msg_data[64];
+    magic_mailbox_t *mb = (magic_mailbox_t *)msg_data;
     if (trace_idx[port_idx][core] == trace_num_args[port_idx][core]) {
-        magic_mailbox_t mb;
-        mb.num_args = trace_num_args[port_idx][core];
-        for (k = 0; k < mb.num_args; k++)
-            mb.arguments[k] = trace_datas[port_idx][core][k];
-        handle_mb_printf(port_idx, &mb, core, 0);
+        mb->num_args = trace_num_args[port_idx][core];
+        for (k = 0; k < mb->num_args; k++)
+            mb->arguments[k] = trace_datas[port_idx][core][k];
+        handle_mb_printf(port_idx, mb, core, 0);
         trace_num_args[port_idx][core] = 0;
         trace_idx[port_idx][core] = 0;
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
