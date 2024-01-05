@@ -231,6 +231,7 @@ static uint32_t handle_data_dump(uint16_t port_id, uint32_t file_id, uint32_t ad
 static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
+static void * pc802_coredump_thread(void *data);
 
 static PC802_BAR_t * pc802_get_BAR(uint16_t port_id)
 {
@@ -2127,6 +2128,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         }
         pc802_ctrl_thread_create(&tid, "PC802-Mailbox", NULL, pc802_mailbox_thread, NULL);
         pc802_ctrl_thread_create(&tid, "PC802-Vec", NULL, pc802_vec_access_thread, NULL);
+        pc802_ctrl_thread_create(&tid, "PC802-CoreDump", NULL, pc802_coredump_thread, NULL);
         pc802_pdump_init( );
     }
 
@@ -3433,6 +3435,7 @@ uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
 typedef struct {
     uint32_t panic_magic;
     uint32_t core;
+    uint32_t cause;
     uint32_t msg_id;
     uint32_t msg_body;
     uint32_t counter;
@@ -3529,6 +3532,31 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
 
     fclose(fh_vector);
     return 0;
+}
+
+static void * pc802_coredump_thread(__rte_unused void *data)
+{
+    uint16_t port_id = pc802_get_port_id(0);
+    PC802_BAR_t * bar = pc802_get_BAR(port_id);
+    volatile uint32_t state;
+    do {
+        usleep(1);
+        state = PC802_READ_REG(bar->DRVSTATE);
+    } while (3 != state);
+
+    uint8_t *bar0 = (uint8_t *)bar;
+    panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
+
+    do {
+        uint32_t magic = PC802_READ_REG(ep->panic_magic);
+        uint32_t cause = PC802_READ_REG(ep->cause);
+        uint32_t core;
+        if ((COREDUMP_MAGIC == magic) && (0 != cause)) {
+            core = PC802_READ_REG(ep->core);
+            pc802_trigger_coredump_from_npu(0, core);
+        }
+        usleep(1000);
+    } while (1);
 }
 
 static void pc802_tel_add_reg_array(struct rte_tel_data *d, const char *name, uint32_t *reg_addr, int count)
