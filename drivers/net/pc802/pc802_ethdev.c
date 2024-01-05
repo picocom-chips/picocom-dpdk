@@ -3497,8 +3497,14 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     PC802_WRITE_REG(rc->msg_id, reg1);
     PC802_WRITE_REG(rc->msg_body, reg2);
 
-    char file_name[64];
-    sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
+    char file_path[PATH_MAX];
+    char file_name[PATH_MAX+NAME_MAX];
+    get_vector_path(port_id, file_path);
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    sprintf(file_name, "%s/core_dump_%u_%u_%4d%02d%02d_%02d%02d%02d.elf", file_path, pc802_index, file_id,
+        tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     FILE *fh_vector = fopen(file_name, "wb");
 
     uint32_t *pd0 = (uint32_t *)pc802_get_debug_mem(port_id);
