@@ -3549,6 +3549,7 @@ static void * pc802_coredump_thread(__rte_unused void *data)
         usleep(1);
         state = PC802_READ_REG(bar->DRVSTATE);
     } while (3 != state);
+    DBLOG("port_id = %1u state = %1u\n", (uint32_t)port_id, state);
 
     uint8_t *bar0 = (uint8_t *)bar;
     panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
@@ -3559,10 +3560,12 @@ static void * pc802_coredump_thread(__rte_unused void *data)
         uint32_t core;
         if ((COREDUMP_MAGIC == magic) && (0 != cause)) {
             core = PC802_READ_REG(ep->core);
+            DBLOG("core = %2u\n", core);
             pc802_trigger_coredump_from_npu(0, core);
         }
         usleep(1000);
     } while (1);
+    return NULL;
 }
 
 static void pc802_tel_add_reg_array(struct rte_tel_data *d, const char *name, uint32_t *reg_addr, int count)
