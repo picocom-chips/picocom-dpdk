@@ -3503,7 +3503,8 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     time_t t = time(NULL);
     struct tm tm;
     localtime_r(&t, &tm);
-    sprintf(file_name, "%s/core_dump_%u_%u_%4d%02d%02d_%02d%02d%02d.elf", file_path, pc802_index, file_id,
+    uint32_t cause = PC802_READ_REG(ep->cause);
+    sprintf(file_name, "%s/core_dump_%u_%u_%u_%4d%02d%02d_%02d%02d%02d.elf", file_path, pc802_index, cause, file_id,
         tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     FILE *fh_vector = fopen(file_name, "wb");
 
