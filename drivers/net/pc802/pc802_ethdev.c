@@ -3453,8 +3453,9 @@ typedef struct {
 
 int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
 {
-    uint16_t port_id = pc802_get_port_id(pc802_index);
-    uint8_t *bar0 = (uint8_t *)pc802_get_BAR(port_id);
+    struct pc802_adapter *adapter = pc802_devices[pc802_index];
+    uint16_t port_id = adapter->port_id;
+    uint8_t *bar0 = adapter->bar0_addr;
     panic_bar_regs_t *rc = (panic_bar_regs_t *)(bar0 + COREDUMP_RC_CTRL);
     panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
     uint32_t *coredump = (uint32_t *)(bar0 + COREDUMP_EP_DATA);
@@ -3546,7 +3547,6 @@ static void * pc802_coredump_thread(__rte_unused void *data)
 {
     uint32_t dumped[PC802_INDEX_MAX];
     uint16_t pc802_index;
-    uint16_t port_id;
     usleep(1);
     for (pc802_index = 0; pc802_index < PC802_INDEX_MAX; pc802_index++) {
         dumped[pc802_index] = 0;
@@ -3557,11 +3557,10 @@ static void * pc802_coredump_thread(__rte_unused void *data)
                 usleep(1000);
                 continue;
             }
-            port_id = pc802_get_port_id(pc802_index);
-            PC802_BAR_t *bar = pc802_get_BAR(port_id);
+            struct pc802_adapter *adpater = pc802_devices[pc802_index];
+            PC802_BAR_t *bar = adpater->bar0;
             uint32_t state = PC802_READ_REG(bar->DRVSTATE);
             if (state != 3) {
-                DBLOG("pc802_index = %1u state = %1u\n", pc802_index, state);
                 continue;
             }
             uint8_t *bar0 = (uint8_t *)bar;
