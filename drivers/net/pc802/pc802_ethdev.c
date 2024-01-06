@@ -3538,34 +3538,46 @@ int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core)
     } while (byte_size > 0);
 
     fclose(fh_vector);
+    DBLOG("Finished coredump file %s\n", file_name);
     return 0;
 }
 
 static void * pc802_coredump_thread(__rte_unused void *data)
 {
-    uint16_t port_id = pc802_get_port_id(0);
-    PC802_BAR_t * bar = pc802_get_BAR(port_id);
-    volatile uint32_t state;
-    do {
-        usleep(1);
-        state = PC802_READ_REG(bar->DRVSTATE);
-    } while (3 != state);
-    DBLOG("port_id = %1u state = %1u\n", (uint32_t)port_id, state);
-
-    uint8_t *bar0 = (uint8_t *)bar;
-    panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
-
-    do {
-        uint32_t magic = PC802_READ_REG(ep->panic_magic);
-        uint32_t cause = PC802_READ_REG(ep->cause);
-        uint32_t core;
-        if ((COREDUMP_MAGIC == magic) && (0 != cause)) {
-            core = PC802_READ_REG(ep->core);
-            DBLOG("core = %2u\n", core);
-            pc802_trigger_coredump_from_npu(0, core);
+    uint32_t dumped[PC802_INDEX_MAX];
+    uint16_t pc802_index;
+    uint16_t port_id;
+    usleep(1);
+    for (pc802_index = 0; pc802_index < PC802_INDEX_MAX; pc802_index++) {
+        dumped[pc802_index] = 0;
+    }
+    while (1) {
+        for (pc802_index = 0; pc802_index < num_pc802s; pc802_index++) {
+            if (dumped[pc802_index]) {
+                usleep(1000);
+                continue;
+            }
+            port_id = pc802_get_port_id(pc802_index);
+            PC802_BAR_t *bar = pc802_get_BAR(port_id);
+            uint32_t state = PC802_READ_REG(bar->DRVSTATE);
+            if (state != 3) {
+                DBLOG("pc802_index = %1u state = %1u\n", pc802_index, state);
+                continue;
+            }
+            uint8_t *bar0 = (uint8_t *)bar;
+            panic_bar_regs_t *ep = (panic_bar_regs_t *)(bar0 + COREDUMP_EP_CTRL);
+            uint32_t magic = PC802_READ_REG(ep->panic_magic);
+            uint32_t cause = PC802_READ_REG(ep->cause);
+            uint32_t core;
+            if ((COREDUMP_MAGIC == magic) && (0 != cause)) {
+                core = PC802_READ_REG(ep->core);
+                DBLOG("core = %2u\n", core);
+                pc802_trigger_coredump_from_npu(0, core);
+                dumped[pc802_index] = 1;
+            }
+            usleep(1000);
         }
-        usleep(1000);
-    } while (1);
+    }
     return NULL;
 }
 
