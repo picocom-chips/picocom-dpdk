@@ -64,7 +64,6 @@ struct pc802_mem_block {
     struct pc802_mem_block *next;
     struct pc802_mem_block **first;
     uint32_t alloced;
-    uint32_t tx_cnt;
     uint64_t buf_phy_addr;
     uint32_t pkt_length;
     uint8_t  pkt_type;
@@ -126,6 +125,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 * @return returns pointer to message body if allocated successfully; returns Null when failure
 */
 PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id);
+
+PC802_Mem_Block_t * pc802_reuse_mem_block(PC802_Mem_Block_t *mblk);
 
 /**
 * @brief Free one message memory from the current block in use for rx.

@@ -833,6 +833,66 @@ static int case106(void)
 #endif
 }
 
+static int case107(void)
+{
+    uint16_t D = (uint16_t)rand()%PCXX_MAX_TX_DATAS;
+    uint32_t *ctrl_buf;
+    char *data_buf[PCXX_MAX_TX_DATAS];
+    uint32_t data_len[PCXX_MAX_TX_DATAS];
+    uint32_t offset;
+    uint32_t avail;
+    int k;
+
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
+
+    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index);
+
+    for (k = 0; k < D; k++) {
+        produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
+        data_len[k] = sizeof(uint32_t) * (tmp[1] + 2);
+        RTE_ASSERT(0 == pcxxDataAlloc(data_len[k], &data_buf[k], &offset, g_pc802_index, g_cell_index));
+        memcpy(data_buf[k], tmp, data_len[k]);
+        pcxxDataSend(offset, data_len[k], g_pc802_index, g_cell_index);
+    }
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc((char**)&ctrl_buf, &avail, g_pc802_index, g_cell_index));
+    produce_dl_src_data(ctrl_buf, QID_CTRL[g_cell_index]);
+    pcxxCtrlSend((char*)ctrl_buf, sizeof(uint32_t) * (ctrl_buf[1] + 2), g_pc802_index, g_cell_index);
+
+    PCXX_CALL(pcxxSendEnd, g_pc802_index, g_cell_index);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, g_cell_index));
+
+    int re = atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
+    free_blk(tmp);
+
+    uint32_t L = (uint32_t)rand()%(PCXX_MAX_TX_TTIS/2);
+    while (L--) {
+        if (case104((uint32_t)rand()%4))
+            return -1;
+    }
+
+    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index);
+
+    for (k = 0; k < D; k++) {
+        if ( 0 != pcxxDataReSend(data_buf[k], data_len[k], &offset, g_pc802_index, g_cell_index) )
+            break;
+    }
+    RTE_ASSERT(0 == pcxxCtrlAlloc((char**)&ctrl_buf, &avail, g_pc802_index, g_cell_index));
+    produce_dl_src_data(ctrl_buf, QID_CTRL[g_cell_index]);
+    pcxxCtrlSend((char*)ctrl_buf, sizeof(uint32_t) * (ctrl_buf[1] + 2), g_pc802_index, g_cell_index);
+
+    PCXX_CALL(pcxxSendEnd, g_pc802_index, g_cell_index);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv, g_pc802_index, g_cell_index));
+
+    re += atl_test_result[g_pc802_index][g_cell_index];
+    atl_test_result[g_pc802_index][g_cell_index] = 0;
+
+    return re;
+}
+
 static int case201(void)
 {
     struct rte_mbuf *tx_pkts[16];
@@ -1210,6 +1270,8 @@ static int case_n800(void)
     m = 0;
     k = 0;
     while (1) {
+        diag = case107();
+        return_if_fail(107, diag, k);
         diag = case301();
         return_if_fail(301, diag, k);
         diag = case1();
@@ -1543,6 +1605,10 @@ static void run_case(int caseNo)
         break;
     case 106:
         diag = case106();
+        disp_test_result(caseNo, diag);
+        break;
+    case 107:
+        diag = case107();
         disp_test_result(caseNo, diag);
         break;
     case 201:

@@ -14,6 +14,10 @@ extern "C" {
 #else
 #define CELL_NUM_PRE_DEV    1                   /**< Number of cells per baseband device */
 #endif
+
+#define PCXX_MAX_TX_DATAS    16
+#define PCXX_MAX_TX_TTIS     32
+
 /**< Get the total number of baseband devices that have been successfully initialised */
 #define pcxxGetDevCount()   pc802_get_count()
 
