@@ -3547,20 +3547,21 @@ static void * pc802_coredump_thread(__rte_unused void *data)
 {
     uint32_t dumped[PC802_INDEX_MAX];
     uint16_t pc802_index;
-    usleep(1);
+    uint32_t state = 0;
+    usleep(50000);
     for (pc802_index = 0; pc802_index < PC802_INDEX_MAX; pc802_index++) {
         dumped[pc802_index] = 0;
     }
     while (1) {
         for (pc802_index = 0; pc802_index < num_pc802s; pc802_index++) {
             if (dumped[pc802_index]) {
-                usleep(1000);
+                usleep(50000);
                 continue;
             }
             struct pc802_adapter *adpater = pc802_devices[pc802_index];
             PC802_BAR_t *bar = adpater->bar0;
-            uint32_t state = PC802_READ_REG(bar->DRVSTATE);
             if (state != 3) {
+                state = PC802_READ_REG(bar->DRVSTATE);
                 continue;
             }
             uint8_t *bar0 = (uint8_t *)bar;
@@ -3574,7 +3575,7 @@ static void * pc802_coredump_thread(__rte_unused void *data)
                 pc802_trigger_coredump_from_npu(0, core);
                 dumped[pc802_index] = 1;
             }
-            usleep(1000);
+            usleep(50000);
         }
     }
     return NULL;
