@@ -35,6 +35,7 @@
 #endif
 #include <rte_memory.h>
 #include <rte_eal.h>
+#include <rte_eal_paging.h>
 #include <rte_malloc.h>
 #include <rte_mempool.h>
 #include <rte_mbuf_pool_ops.h>
@@ -261,79 +262,111 @@ static void * pc802_mailbox_thread(void *data);
 static void * pc802_trace_thread(void *data);
 static void * pc802_vec_access_thread(void *data);
 #ifdef PCIE_NO_CACHE_COHERENCE
-void *cma_pv_addr = NULL;
-void *cma_pa_addr = NULL;
-uint32_t cma_size = 0;
-uint32_t cma_pos = 0;
+
+struct cma_config{
+    rte_iova_t base_iova;
+    rte_spinlock_t lock;
+    uint32_t size;
+    uint32_t cur_pos;
+    uint32_t desc_pos;
+};
+
+static struct cma_config *cma_cfg = NULL;
+static void *cma_addr = NULL;
 
 static void *cma_alloc(uint32_t size, uintptr_t *pa_addr)
 {
-    if ( cma_pos+size > cma_size ){
-        printf( "cma(%p,%p,%u,%u) alloc %u return null!\n", cma_pv_addr, cma_pa_addr, cma_size, cma_pos, size);
+    void *tmp = NULL;
+
+    if ( NULL == cma_cfg ){
+        DBLOG("cma not init!\n");
         return NULL;
     }
-
-    void *tmp = (void*)((uintptr_t)cma_pv_addr + cma_pos);    
-    *pa_addr = (uintptr_t)cma_pa_addr + cma_pos;
-    cma_pos += size;
-    printf( "cma(%p,%p,%u,%u) return(%p,%lx)\n", cma_pv_addr, cma_pa_addr, cma_size, cma_pos, tmp, *pa_addr);
+    rte_spinlock_lock(&cma_cfg->lock);
+    if ( cma_cfg->cur_pos + size < cma_cfg->size ){
+        tmp = (void*)((uintptr_t)cma_addr + cma_cfg->cur_pos);    
+        *pa_addr = (uintptr_t)cma_cfg->base_iova + cma_cfg->cur_pos;
+        cma_cfg->cur_pos += size;
+    }
+    rte_spinlock_unlock(&cma_cfg->lock);
+    DBLOG("cma return(%p,%lX)\n", tmp, *pa_addr);
     return tmp;
+}
+
+static void cma_set_desc_addr(void *addr)
+{
+    if ((uintptr_t)addr - (uintptr_t)cma_addr < cma_cfg->size )
+        cma_cfg->desc_pos = (uintptr_t)cma_addr - (uintptr_t)cma_cfg;
+}
+
+static void * cma_get_desc_addr( uintptr_t *pa_addr )
+{
+    *pa_addr =  (uintptr_t)cma_cfg->base_iova + cma_cfg->desc_pos;
+    return (void *)((uintptr_t)cma_addr + (uintptr_t)cma_cfg->desc_pos);
 }
 
 static int init_cma_mem(void)
 {
+#define CMA_CONFIG     "cma config"
 #define UIO_DEV     "/dev/uio1"
 #define UIO_ADDR    "/sys/class/uio/uio1/maps/map0/addr"
 #define UIO_SIZE    "/sys/class/uio/uio1/maps/map0/size"
+    int uio_fd;
+    const struct rte_memzone * mz;
 
-    void *uio_addr, *access_address;
-    int uio_fd, addr_fd, size_fd;
-    int uio_size, ret;
-    char uio_addr_buf[64]={0}, uio_size_buf[64]={0};
+    if (NULL == (mz = rte_memzone_lookup(CMA_CONFIG))) {
+        mz = rte_memzone_reserve(CMA_CONFIG, sizeof(struct cma_config), SOCKET_ID_ANY, 0);
+        memset(mz->addr, 0, sizeof(struct cma_config));
+    }
+    cma_cfg = (struct cma_config *)mz->addr;
+
+    if( 0 == cma_cfg->size) {
+        void *uio_addr;
+        int addr_fd, size_fd, uio_size=0;
+        char uio_addr_buf[64]={0}, uio_size_buf[64]={0};
+
+        addr_fd = open(UIO_ADDR, O_RDONLY);
+        size_fd = open(UIO_SIZE, O_RDONLY);
+        if (addr_fd < 0 || size_fd < 0) {
+            DBLOG("open err: %s\n", strerror(errno));
+            RTE_ASSERT(0);
+        }
+
+        read(addr_fd, uio_addr_buf, sizeof(uio_addr_buf));
+        read(size_fd, uio_size_buf, sizeof(uio_size_buf));
+        close(addr_fd);
+        close(size_fd);
+
+        uio_addr = (void *)strtoul(uio_addr_buf, NULL, 0);
+        uio_size = (int)strtol(uio_size_buf, NULL, 0);
+
+        if ( uio_size > 0 ) {
+            cma_cfg->base_iova = (uintptr_t)uio_addr;
+            cma_cfg->size = uio_size;
+        } else {
+            DBLOG("cma size err: %s\n", uio_size_buf);
+            RTE_ASSERT(0);
+        }
+    }
 
     uio_fd = open(UIO_DEV, O_RDWR);
-    addr_fd = open(UIO_ADDR, O_RDONLY);
-    size_fd = open(UIO_SIZE, O_RDONLY);
-    if (addr_fd < 0 || size_fd < 0 || uio_fd < 0) {
-        fprintf(stderr, "mmap: %s\n", strerror(errno));
-        exit(-1);
+    if (uio_fd < 0) {
+        DBLOG("open err: %s\n", strerror(errno));
+        RTE_ASSERT(0);
     }
-
-    ret = read(addr_fd, uio_addr_buf, sizeof(uio_addr_buf));
-    ret = read(size_fd, uio_size_buf, sizeof(uio_size_buf));
-    close(addr_fd);
-    close(size_fd);
-
-    printf("ret=%d\n uio_addr_buf:\n%s uio_size_buf:\n%s", ret, uio_addr_buf, uio_size_buf);
-    uio_addr = (void *)strtoul(uio_addr_buf, NULL, 0);
-    uio_size = (int)strtol(uio_size_buf, NULL, 0);
-    printf("uio_addr = %p uio_size = %d\n", uio_addr, uio_size);
 #if 0
-	if (ftruncate(uio_fd, uio_size) < 0){
-		printf("file '%s' resize to %u for cma err: %s\n", UIO_DEV, uio_size, strerror(errno));
-		exit(-1);
+	if (ftruncate(uio_fd, cma_cfg->size) < 0){
+		printf("file '%s' resize to %u for cma err: %s\n", UIO_DEV, cma_cfg->size, strerror(errno));
+		RTE_ASSERT(0);
 	}
 #endif
-    access_address = mmap(NULL, uio_size, PROT_READ | PROT_WRITE, MAP_SHARED, uio_fd, 0);
-    if (access_address == NULL) {
-        fprintf(stderr, "mmap:%s\n", strerror(errno));
-        exit(-1);
+    cma_addr = mmap(NULL, cma_cfg->size, PROT_READ | PROT_WRITE, MAP_SHARED, uio_fd, 0);
+    if (cma_addr == NULL) {
+        DBLOG("mmap err:%s\n", strerror(errno));
+        RTE_ASSERT(0);
     }
-
-    printf( "The device address %p (lenth %x), can beaccessed over logicaladdress %p\n", uio_addr, uio_size, access_address);
-
-    cma_pa_addr = uio_addr;
-    cma_pv_addr = access_address;
-    cma_size = uio_size;
-#if 0
-    for (size_t i = 0; i < cma_size; i++)
-         ((uint8_t*)cma_pv_addr)[i] = 0;
-    memset(cma_pv_addr, 0, cma_size-4096);
-    memcpy(cma_pv_addr, cma_pv_addr+4096, cma_size-4096);
-#endif
-
-    if (RTE_PROC_PRIMARY != rte_eal_process_type())
-        cma_pos +=  cma_size/2;
+    DBLOG("The cma(addr=%lX size=%X pos=%x desc=%x) mmap to %p\n",
+            cma_cfg->base_iova, cma_cfg->size, cma_cfg->cur_pos, cma_cfg->desc_pos, cma_addr);
 
     return 0;
 }
@@ -2152,8 +2185,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
 #ifdef PCIE_NO_CACHE_COHERENCE
-        adapter->pDescs = cma_pv_addr;
-        adapter->descs_phy_addr = (uintptr_t)cma_pa_addr;
+        adapter->pDescs = cma_get_desc_addr(&adapter->descs_phy_addr);
         DBLOG("pDescs->iova = 0x%lX; pDescs->addr = %p\n", adapter->descs_phy_addr, adapter->pDescs);        
 #else
         sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
@@ -2257,6 +2289,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     }
 #ifdef PCIE_NO_CACHE_COHERENCE
     adapter->pDescs = (PC802_Descs_t *)cma_alloc(sizeof(PC802_Descs_t), &adapter->descs_phy_addr);
+    cma_set_desc_addr(adapter->pDescs);
 #else
     tsize = sizeof(PC802_Descs_t);
     sprintf(temp_name, "PC802_DESCS_MR%d", data->port_id );
