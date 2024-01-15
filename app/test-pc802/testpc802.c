@@ -1164,6 +1164,169 @@ static int case302(void)
     return ret;
 }
 
+#if 1
+	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
+    static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
+    {
+        do{
+            CLEAN(begin);
+            begin+=RTE_CACHE_LINE_MIN_SIZE;
+        }while(begin<end);
+    }
+	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+
+	#define INVALIDATE(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+    static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
+    {
+        do{
+            INVALIDATE(begin);
+            begin+=RTE_CACHE_LINE_MIN_SIZE;
+        }while(begin<end);
+    }
+	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+#endif
+
+
+static int case500(void)
+{
+    #define COUNT 32
+    uint32_t i = 0, n = 0;
+    uint32_t ctrl = 1024, data = 64*1024, num = 1*2000;
+    uint64_t cycles = rte_get_timer_hz();
+    uint64_t t = 0;
+    uint64_t total = 0, count = 0, size = 0;
+
+    char *mem = rte_malloc(NULL, data, RTE_CACHE_LINE_MIN_SIZE);
+    char *ctrl_mem[COUNT] = {NULL};
+    char *data_mem[COUNT] = {NULL};
+    PC802_Mem_Block_t *ctrl_mblk[COUNT] = {NULL};
+    PC802_Mem_Block_t *data_mblk[COUNT] = {NULL};   
+
+    for ( i = 0; i < COUNT; i++) {
+        ctrl_mem[i] = rte_malloc(NULL, ctrl, RTE_CACHE_LINE_MIN_SIZE);
+        data_mem[i] = rte_malloc(NULL, data, RTE_CACHE_LINE_MIN_SIZE);
+
+        ctrl_mblk[i] = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_CTRL_1);
+        data_mblk[i] = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_DATA_1);
+    }
+
+    printf("start pc802 mblk(ctrl=%u data=%u) mem test ..... \n", ctrl, data);
+#if 1    
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(mem, ctrl_mblk[i]+1, ctrl);
+            rte_memcpy(mem, data_mblk[i]+1, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tcma -> huge mem: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mblk[i]+1, mem, ctrl);
+            rte_memcpy(data_mblk[i]+1, mem, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thuge mem -> cma: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+#if 1
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            INVALIDATE_SIZE(ctrl_mem[i], ctrl);
+            rte_mb();
+            rte_memcpy(mem, ctrl_mem[i], ctrl);
+            INVALIDATE_SIZE(data_mem[i], data);            
+            rte_mb();
+            rte_memcpy(mem, data_mem[i], data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thmem&invalid -> mem: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mem[i], mem, ctrl);
+            CLEAN_SIZE(ctrl_mem[i], ctrl);
+            rte_memcpy(data_mem[i], mem, data);
+            CLEAN_SIZE(data_mem[i], data);
+            rte_wmb();
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tmem -> hmem&clean: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+#if 1
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(mem, ctrl_mem[i], ctrl);
+            rte_memcpy(mem, data_mem[i], data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thmem -> mem: \t\t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mem[i], mem, ctrl);
+            rte_memcpy(data_mem[i], mem, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tmem -> hmem: \t\t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+    for ( i = 0; i < COUNT; i++) {
+        rte_free(ctrl_mem[i]);
+        rte_free(data_mem[i]);
+
+        pc802_free_mem_block(ctrl_mblk[i]);
+        pc802_free_mem_block(data_mblk[i]);
+    }
+    rte_free(mem);
+    return 0;
+}
+
 extern cmdline_parse_ctx_t main_ctx[];
 static int prompt(void* arg)
 {
@@ -1622,6 +1785,10 @@ static void run_case(int caseNo)
     case 302:
         diag = case302();
         disp_test_result(302, diag);
+        break;
+    case 500:
+        diag = case500();
+        disp_test_result(500, diag);
         break;
     case 4802:
         diag = case4802();
