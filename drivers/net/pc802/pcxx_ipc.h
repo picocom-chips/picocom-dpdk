@@ -14,6 +14,10 @@ extern "C" {
 #else
 #define CELL_NUM_PRE_DEV    1                   /**< Number of cells per baseband device */
 #endif
+
+#define PCXX_MAX_TX_DATAS    16
+#define PCXX_MAX_TX_TTIS     32
+
 /**< Get the total number of baseband devices that have been successfully initialised */
 #define pcxxGetDevCount()   pc802_get_count()
 
@@ -177,6 +181,12 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...);
 #else
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index );
+#endif
+
+#ifndef MULTI_PC802
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, ...);
+#else
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index );
 #endif
 
 /**

@@ -126,6 +126,8 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
 */
 PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id);
 
+PC802_Mem_Block_t * pc802_reuse_mem_block(PC802_Mem_Block_t *mblk);
+
 /**
 * @brief Free one message memory from the current block in use for rx.
 *
