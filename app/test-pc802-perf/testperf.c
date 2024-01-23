@@ -495,6 +495,7 @@ int test_cell_perf(uint16_t count)
         if ( sn - rx_ttis > 0)
             continue;       
 
+        tsc = rte_rdtsc();
         pcxxSendStart(dev, cell);
 
         while(0 != pcxxCtrlAlloc((char **)&ctrl_msg, &avail, dev, cell));
@@ -541,7 +542,6 @@ int test_cell_perf(uint16_t count)
         pcxxCtrlSend((const char *)ctrl_msg, ctrl_len+HLEN, dev, cell);
         bytes += ctrl_len+HLEN;
 
-        tsc = rte_rdtsc();
         pcxxSendEnd(dev, cell);
         tsc = rte_rdtsc()-tsc;
         if (tsc>max_dt2_0) max_dt2_0 = tsc;
