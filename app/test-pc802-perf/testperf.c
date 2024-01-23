@@ -46,6 +46,8 @@
 #include <rte_ethdev.h>
 #include <rte_dev.h>
 #include <rte_string_fns.h>
+#include <rte_net_crc.h>
+#include <rte_cycles.h>
 
 #include <cmdline_rdline.h>
 #include <cmdline_parse.h>
@@ -54,6 +56,7 @@
 
 #include <rte_pmd_pc802.h>
 #include <pcxx_ipc.h>
+#include <pcxx_oam.h>
 
 
 static void
@@ -76,23 +79,93 @@ static const struct rte_eth_conf dev_conf = {
 
 uint16_t pc802_port = 0;
 
+struct perf_msg{
+    uint32_t cell;
+    uint32_t group;
+    uint32_t no;
+    uint32_t sn;
+    uint32_t len;
+    uint32_t data_len;
+    uint32_t crc;
+    uint32_t tscs;
+    uint32_t tsc[8];
+    uint8_t data[];
+};
+
+struct dt{
+    uint64_t dt7_0;
+    uint64_t dt1_0;
+    uint64_t dt4_3;
+    uint64_t dt7_6;
+};
+static uint64_t g_rx_ttis = 0;
+static struct dt dt_max, dt_sum;
+
+// [t0]app[t1]->udrv[t2]->pcie->core0->[t3]phy)
+// [t7]app[t6]<-udrv[t5]<-pcie<-core0<-[t4]phy)
+
+static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint16_t dev, uint16_t cell)
+{
+#define US(t) (uint32_t)((uint64_t)(t)*1000000/rte_get_tsc_hz())
+    static uint8_t rx_data[256*1024];
+    struct perf_msg *c = (struct perf_msg *)((char *)buf);
+    struct perf_msg *d = pcxxDataRecv(0, c->data_len, dev, cell);
+    uint32_t dt7_0, dt1_0, dt4_3, dt7_6;
+
+    c->tsc[6] = (uint32_t)rte_rdtsc();
+    if ( NULL == d )
+        printf("cann't recv data(no=%u)!\n", c->no);
+    else
+        rte_memcpy(rx_data, d, c->data_len);
+    
+    if (c->crc != rte_raw_cksum(c->data, c->len)){
+        printf("ctrl msg crc=%u err!\n", c->crc);
+        RTE_ASSERT(0);
+    }
+
+    g_rx_ttis++;
+    c->tsc[7] = (uint32_t)rte_rdtsc();
+
+    if (dt_max.dt7_0 < (dt7_0 = US(c->tsc[7] - c->tsc[0]))) dt_max.dt7_0 = dt7_0;
+    dt_sum.dt7_0 += dt7_0;
+    RTE_ASSERT(dt7_0>50);
+
+    if (dt_max.dt1_0 < (dt1_0 = US(c->tsc[2] - c->tsc[0]))) dt_max.dt1_0 = dt1_0;
+    dt_sum.dt1_0 += dt1_0;
+
+    if (dt_max.dt7_6 < (dt7_6 = US(c->tsc[7] - c->tsc[6]))) dt_max.dt7_6 = dt7_6;
+    dt_sum.dt7_6 += dt7_6;
+
+    if (dt_max.dt4_3 < (dt4_3 = c->tsc[4] - c->tsc[3])) dt_max.dt4_3 = dt4_3;
+    dt_sum.dt4_3 += dt4_3;
+
+    //printf("RX msg %2x-%4u: t7-t0=%3u t1-t0=%2u t4-t3=%2u t7-t6=%2u\n", c->crc, c->no, dt7_0, dt1_0, dt4_3, dt7_6);
+    //printf("Rx ctrl: cell=%u, group=%u, no=%u, sn=%u, len=%u, crc=%u, tscs=%u.\n", c->cell, c->group, c->no, c->sn, c->len, c->crc, c->tscs);
+    //printf("TSC: %8u %8u %8u %8u %8u %8u %8u %8u %8u\n", tsc, c->tsc[0], c->tsc[1], c->tsc[2], c->tsc[3], c->tsc[4], c->tsc[5], c->tsc[6], c->tsc[6]);
+    
+    return payloadSize;
+}
+
 static int port_init(uint16_t port)
 {
+    static pcxxInfo_s ctrl_cb_info = {process_ul_ctrl_msg, NULL};
+    static pcxxInfo_s data_cb_info = {NULL, NULL};
+
     struct rte_mempool *mbuf_pool;
     struct rte_eth_dev_info dev_info;
     struct rte_eth_txconf tx_conf;
-    int socket_id;
+    int socket_id, cell;
 
     rte_eth_dev_info_get(port, &dev_info);
     socket_id = dev_info.device->numa_node;
 
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL_ETH_TX", 2048,
-            128, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
 
     mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL_ETH_RX", 2048,
-            128 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
+            0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
 
@@ -101,21 +174,14 @@ static int port_init(uint16_t port)
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    pc802_create_tx_queue( port, PC802_TRAFFIC_DATA_1, 256*1024, 256, 128);
-    pc802_create_rx_queue( port, PC802_TRAFFIC_DATA_1, 256*1024, 256, 128);
-
-    pc802_create_tx_queue( port, PC802_TRAFFIC_CTRL_1, 256*1024, 256, 128);
-    pc802_create_rx_queue( port, PC802_TRAFFIC_CTRL_1, 256*1024, 256, 128);
-
-    pc802_create_tx_queue( port, PC802_TRAFFIC_DATA_2, 256*1024, 256, 128);
-    pc802_create_rx_queue( port, PC802_TRAFFIC_DATA_2, 256*1024, 256, 128);
-
-    pc802_create_tx_queue( port, PC802_TRAFFIC_CTRL_2, 256*1024, 256, 128);
-    pc802_create_rx_queue( port, PC802_TRAFFIC_CTRL_2, 256*1024, 256, 128);
-
-    pc802_create_tx_queue( port, PC802_TRAFFIC_CTRL_3, 256*1024, 256, 128);
-    pc802_create_rx_queue( port, PC802_TRAFFIC_CTRL_3, 256*1024, 256, 128);
-
+    for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
+    {
+        pcxxDataOpen(&data_cb_info, 0, cell);
+        pcxxCtrlOpen(&ctrl_cb_info, 0, cell);
+    }
+#ifdef MULTI_PC802
+    pcxxCtrlOpen(&ctrl_cb_info, 0, LEGACY_CELL_INDEX);
+#endif
     pc802_create_tx_queue( port, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
     pc802_create_rx_queue( port, PC802_TRAFFIC_OAM, 256*1024, 256, 128);
 
@@ -143,6 +209,12 @@ static void free_blk(uint32_t *blk)
         p -= sizeof(PC802_Mem_Block_t);
         pc802_free_mem_block((PC802_Mem_Block_t *)p);
     }
+}
+
+static void produce_random_data(uint32_t *buf, uint32_t len)
+{
+    while ( (len -= sizeof(buf[0])) )
+        *buf++ = (uint32_t)rte_rand();
 }
 
 static uint16_t tx_blks(uint16_t qId, uint32_t **blks, uint16_t nb_blks)
@@ -352,6 +424,145 @@ int pc802_test_pcie( int len, int time, int ch, int type )
     printf("Tx total send pkgs %lu.\n", total);
 
     return total;
+}
+
+int test_cell_perf(uint16_t count);
+int test_cell_perf(uint16_t count)
+{
+    #define HLEN sizeof(struct perf_msg)
+    uint16_t i, dev=0, cell=0;
+    uint32_t ctrl_len=1024, data_len=64*1024;
+    struct perf_msg *ctrl_msg = NULL;
+    struct perf_msg *data_msg = NULL;
+    uint32_t offset = 0, avail = 0;
+    uint32_t group=0, no=0, gourp_size = 2000;
+    uint64_t sn=0;
+    uint64_t tsc=0, dt2_0=0, max_dt2_0=0, dt7_5=0, max_dt7_5=0, bytes=0, tx_ttis=0, rx_ttis=0;
+    uint64_t hz = rte_get_tsc_hz();
+    void *ctrl_buf[8] = {NULL};
+    void *data_buf[8] = {NULL};
+
+    printf("start perf test: count=%u gourp_size=%u hz=%lu\n\n", count, gourp_size, hz);
+    printf("----    [t0]app[t1] -> udrv[t2] -> pcie -> core0 -> [t3]phy)    ----\n");
+    printf("----    [t7]app[t6] <- udrv[t5] <- pcie <- core0 <- [t4]phy)    ----\n\n");
+
+    for ( i = 0; i < 8; i++) {
+        ctrl_buf[i] = rte_malloc(NULL, ctrl_len, RTE_CACHE_LINE_MIN_SIZE);
+        produce_random_data(ctrl_buf[i], ctrl_len);
+        data_buf[i] = rte_malloc(NULL, data_len, RTE_CACHE_LINE_MIN_SIZE);
+        produce_random_data(data_buf[i], data_len);
+    }
+
+    while( 0 == pcxxCtrlRecv(dev, cell) );
+
+    g_rx_ttis = 0;
+    memset( &dt_max, 0, sizeof(dt_max));
+    memset( &dt_sum, 0, sizeof(dt_sum));
+
+    while ( group < count ) {
+        while( 1 ){
+            tsc = rte_rdtsc();
+            if( 0 != pcxxCtrlRecv(dev, cell) )
+                break;
+            tsc = rte_rdtsc()-tsc;
+            if (tsc > max_dt7_5) max_dt7_5 = tsc;
+            dt7_5 += tsc;
+            rx_ttis++;
+            if ( rx_ttis >= gourp_size){
+                printf("recv %4lu TTIs stats: t7-t0=%3lu,%3lu; t1-t0=%2lu,%2lu; t4-t3=%2lu,%2lu; t7-t6=%2lu,%2lu\n", g_rx_ttis,
+                    dt_max.dt7_0, dt_sum.dt7_0/g_rx_ttis, dt_max.dt1_0, dt_sum.dt1_0/g_rx_ttis,
+                    dt_max.dt4_3, dt_sum.dt4_3/g_rx_ttis, dt_max.dt7_6, dt_sum.dt7_6/g_rx_ttis);
+                g_rx_ttis = 0;
+                memset( &dt_max, 0, sizeof(dt_max));
+                memset( &dt_sum, 0, sizeof(dt_sum));
+
+                printf("test %lu TTIs tx stats: max = %2lu us/TTI, avg = %2lu us/TTI, speed = %4lu MB/sec.\n", tx_ttis, (max_dt2_0*1000000/hz), ((dt2_0/tx_ttis)*1000000/hz), bytes/((dt2_0*1000000/hz)));
+                printf("test %lu TTIs rx stats: max = %2lu us/TTI, avg = %2lu us/TTI.\n", rx_ttis, (max_dt7_5*1000000/hz), ((dt7_5/rx_ttis)*1000000/hz));
+
+                bytes = 0;
+                tx_ttis = 0;
+                dt2_0 = 0;
+                max_dt2_0 = 0;
+
+                rx_ttis = 0;
+                max_dt7_5 = 0;
+                dt7_5 = 0;
+
+                group++;
+                no = 0;
+            }
+        }
+        if ( sn - rx_ttis > 0)
+            continue;       
+
+        pcxxSendStart(dev, cell);
+
+        while(0 != pcxxCtrlAlloc((char **)&ctrl_msg, &avail, dev, cell));
+
+        ctrl_msg->tscs = 0;
+        ctrl_msg->tsc[ctrl_msg->tscs++] = rte_rdtsc();
+
+        ctrl_msg->cell = cell;
+        ctrl_msg->group = group;
+        ctrl_msg->no = no;
+        ctrl_msg->sn = sn++;
+
+        ctrl_msg->len = ctrl_len;
+        ctrl_msg->data_len = data_len;
+
+        while(0 != pcxxDataAlloc(data_len+HLEN, (char **)&data_msg, &offset, dev, cell));
+
+        data_msg->cell = cell;
+        data_msg->group = group;
+        data_msg->no = no;
+        data_msg->len = data_len;
+        data_msg->data_len = data_len;
+        data_msg->sn = sn;
+
+        data_msg->tscs = 0;
+        data_msg->tsc[data_msg->tscs++] = rte_rdtsc();
+
+        memcpy(data_msg->data, data_buf[rte_rand()%8], data_len);
+        data_msg->tsc[data_msg->tscs++] = rte_rdtsc();
+
+        //data_msg->crc = rte_net_crc_calc(data_msg->data, data_len, RTE_NET_CRC32_ETH);
+        //data_msg->tsc[data_msg->tscs++] = rte_rdtsc();
+
+        pcxxDataSend(offset, data_len+HLEN, dev, cell);
+        bytes += data_len+HLEN;
+
+        memcpy(ctrl_msg->data, ctrl_buf[rte_rand()%8], ctrl_len);
+        ctrl_msg->tsc[ctrl_msg->tscs++] = rte_rdtsc();
+
+        ctrl_msg->data[rte_rand()%ctrl_len] = rte_rdtsc();
+        ctrl_msg->crc = rte_raw_cksum(ctrl_msg->data, ctrl_len);
+        ctrl_msg->tsc[ctrl_msg->tscs++] = rte_rdtsc();
+
+        pcxxCtrlSend((const char *)ctrl_msg, ctrl_len+HLEN, dev, cell);
+        bytes += ctrl_len+HLEN;
+
+        tsc = rte_rdtsc();
+        pcxxSendEnd(dev, cell);
+        tsc = rte_rdtsc()-tsc;
+        if (tsc>max_dt2_0) max_dt2_0 = tsc;
+        dt2_0 += tsc;
+        //printf("\tTX %lu: len = %2lu us/TTI\n", sn, bytes);
+
+        tx_ttis++;
+        no++;
+    };
+    usleep(1000);
+    while( 0 == pcxxCtrlRecv(dev, cell) );
+
+    for ( i = 0; i < 8; i++) {
+        rte_free(ctrl_buf[i]);
+        rte_free(data_buf[i]);
+    }
+
+    usleep(100*1000);
+    while( 0 == pcxxCtrlRecv(dev, cell) );
+
+    return 0;
 }
 
 extern cmdline_parse_ctx_t main_ctx[];
