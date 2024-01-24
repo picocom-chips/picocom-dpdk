@@ -485,7 +485,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     rxq->mpool.first = NULL;
-#ifndef PCIE_NO_CACHE_COHERENCE
+#if 1
     int socket_id = dev->device->numa_node;
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
@@ -887,6 +887,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
+        //INVALIDATE_SIZE(&nmb[1], RTE_ALIGN(nmb->pkt_length+1024, 4096));
 
         rx_id++;
         nb_hold++;
@@ -1587,8 +1588,9 @@ eth_pc802_start(struct rte_eth_dev *dev)
     macAddrL = PC802_READ_REG(bar->MACADDRL);
     adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
     adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
-
+#ifndef PCIE_NO_CACHE_COHERENCE
     pc802_kni_add_port( adapter->port_id );
+#endif
     PMD_INIT_LOG(DEBUG, "<<");
 
     return 0;

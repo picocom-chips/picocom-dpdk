@@ -336,8 +336,10 @@ static int check_single_same(uint32_t *a, uint32_t *b)
             DBLOG("ERROR: a[%3u] = 0x%08X  !=  b[%3u] = 0x%08X\n",
                 k, a[k], k, b[k]);
             err_cnt++;
-            if (16 == err_cnt)
+            if (16 == err_cnt){
+                RTE_ASSERT(0);
                 return -1;
+            }
         }
    }
    return res;

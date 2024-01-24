@@ -13,6 +13,7 @@
 #include <rte_pmd_pc802.h>
 
 extern int pc802_test_pcie( int len, int time, int ch, int type );
+extern int test_cell_perf( uint16_t count );
 
 struct cmd_quit_result {
     cmdline_fixed_string_t quit;
@@ -83,9 +84,43 @@ cmdline_parse_inst_t test_pcie = {
         },
 };
 
+struct cmd_test_perf {
+    cmdline_fixed_string_t test;
+    cmdline_fixed_string_t perf;
+    uint32_t               count;
+};
+
+cmdline_parse_token_string_t cmd_test_perf_test =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_perf, test, "test");
+cmdline_parse_token_string_t cmd_test_perf_pcie =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_perf, perf, "perf");
+cmdline_parse_token_num_t cmd_test_perf_count =
+    TOKEN_NUM_INITIALIZER(struct cmd_test_perf, count, RTE_UINT32);
+
+static void cmd_test_perf_parsed(void *parsed,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    struct cmd_test_perf *res = parsed;
+    test_cell_perf( res->count );
+}
+
+cmdline_parse_inst_t test_perf = {
+    .f = cmd_test_perf_parsed,
+    .data = NULL,
+    .help_str = "test perf <count>",
+    .tokens = {
+        (void *)&cmd_test_perf_test,
+        (void *)&cmd_test_perf_pcie,
+        (void *)&cmd_test_perf_count,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&test_pcie,
+    (cmdline_parse_inst_t *)&test_perf,
     NULL,
 };
 
