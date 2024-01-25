@@ -296,7 +296,7 @@ static void *cma_alloc(uint32_t size, uintptr_t *pa_addr)
 static void cma_set_desc_addr(void *addr)
 {
     if ((uintptr_t)addr - (uintptr_t)cma_addr < cma_cfg->size )
-        cma_cfg->desc_pos = (uintptr_t)cma_addr - (uintptr_t)cma_cfg;
+        cma_cfg->desc_pos = (uintptr_t)addr - (uintptr_t)cma_addr;
 }
 
 static void * cma_get_desc_addr( uintptr_t *pa_addr )
@@ -2290,7 +2290,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         adapter->log_flag  |= (1<<PC802_LOG_EVENT);
     }
 #ifdef PCIE_NO_CACHE_COHERENCE
-    adapter->pDescs = (PC802_Descs_t *)cma_alloc(sizeof(PC802_Descs_t), &adapter->descs_phy_addr);
+    adapter->pDescs = (PC802_Descs_t *)cma_alloc(RTE_ALIGN(sizeof(PC802_Descs_t), 1024*1024), &adapter->descs_phy_addr);
     cma_set_desc_addr(adapter->pDescs);
 #else
     tsize = sizeof(PC802_Descs_t);
