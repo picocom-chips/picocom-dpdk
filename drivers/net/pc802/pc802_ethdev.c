@@ -1554,8 +1554,9 @@ eth_pc802_start(struct rte_eth_dev *dev)
     macAddrL = PC802_READ_REG(bar->MACADDRL);
     adapter->eth_addr.addr_bytes[4] |= ((macAddrL >> 8) & 0xF);
     adapter->eth_addr.addr_bytes[5] |= (macAddrL & 0xFF);
-
+#ifndef PCIE_NO_CACHE_COHERENCE
     pc802_kni_add_port( adapter->port_id );
+#endif
     PMD_INIT_LOG(DEBUG, "<<");
 
     return 0;
