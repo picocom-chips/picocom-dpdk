@@ -3418,18 +3418,10 @@ static void * pc802_trace_thread(__rte_unused void *data)
     return NULL;
 }
 
-uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
+uint32_t pc802_get_sfn_slot(uint16_t pc802_index, uint32_t cell_index)
 {
-    PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    uint32_t sfn_slot;
-    if (0 == cell_index) {
-        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_0);
-    } else if (1 == cell_index) {
-        sfn_slot = PC802_READ_REG(bar->SFN_SLOT_1);
-    } else {
-        sfn_slot = 0xFFFFFFFF;
-    }
-    return sfn_slot;
+    struct pc802_adapter *adapter = pc802_devices[pc802_index];
+    return adapter->pDescs->mr.SLOT_SFN[cell_index];
 }
 
 typedef struct {
