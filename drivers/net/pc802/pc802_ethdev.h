@@ -291,6 +291,10 @@ struct stPC802_EP_Counter_Mirror_t {
         PC802_CacheLine_t   cache_line_3;
         volatile uint32_t TRACE_ENABLE;
     };
+    union {
+        PC802_CacheLine_t   cache_line_4;
+        volatile uint32_t   SLOT_SFN[2];
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
@@ -506,7 +510,7 @@ typedef struct {
 #define MAILBOX_COUNTER_OFFSET_DSP  0
 
 int pc802_kni_add_port(uint16_t port);
-uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
+uint32_t pc802_get_sfn_slot(uint16_t pc802_index, uint32_t cell_index);
 uint16_t pc802_get_index_by_name(const char *name);
 
 enum {
