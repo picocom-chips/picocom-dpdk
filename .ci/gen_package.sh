@@ -56,11 +56,11 @@ touch  $RELEASE_DIR/DEBIAN/postinst
 cd $PRJ_PATH/
 if [ "$ARCH" == "arm64" ]; then
     rm -rf aarch64-build-gcc
-    meson aarch64-build-gcc --prefix=$RELEASE_DIR/usr/local --cross-file config/arm/arm64_armv8_linux_gcc
+    meson aarch64-build-gcc -Denable_multi_pc802=true --prefix=$RELEASE_DIR/usr/local --cross-file config/arm/arm64_armv8_linux_gcc
     ninja -C aarch64-build-gcc install
 else
     rm -rf build
-    meson build --prefix=$RELEASE_DIR/usr/local
+    meson build -Denable_multi_pc802=true --prefix=$RELEASE_DIR/usr/local
     ninja -C build install
 fi
 
