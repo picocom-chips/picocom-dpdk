@@ -48,6 +48,9 @@ struct pcxx_cell_info_st{
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
     uint8_t  dl_sn;
+    uint8_t  scs;
+    uint8_t  tgt_dl_sfn;
+    uint8_t  tgt_dl_slot;
     SimULSlotMsg_t slot_msg;
 
     char     *data_buf[NUM_SFN_IDX][NUM_DATA_BUF];
@@ -149,9 +152,23 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
     cell_info->dl_sn = 0;
+    pcxx_devs[dev_index].cell_info[cell_index].scs = 1; //default 30 KHz
 
     pcxx_devs[dev_index].port_id = port_id;
 
+    return 0;
+}
+
+#ifndef MULTI_PC802
+int pcxxSetSCS(uint8_t scs)
+{
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#else
+int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index)
+{
+#endif
+    pcxx_devs[dev_index].cell_info[cell_index].scs = scs;
     return 0;
 }
 
@@ -235,6 +252,33 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     cell->data_num[cell->sfn_idx] = 0;
     cell->data_offset = 0;
     cell->data_length = 0;
+
+    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
+    uint8_t  num_slots = 10 << cell->scs;
+    uint8_t tgt_dl_slot = ((slot_sfn >> 16) & 0xFF) + 2;
+    uint8_t tgt_dl_sfn = slot_sfn & 0xFF;
+    if (tgt_dl_slot >= num_slots) {
+        tgt_dl_slot -= num_slots;
+        tgt_dl_sfn++;
+    }
+    cell->tgt_dl_sfn = tgt_dl_sfn;
+    cell->tgt_dl_slot = tgt_dl_slot;
+    return 0;
+}
+
+#ifndef MULTI_PC802
+int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot)
+{
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#else
+int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index)
+{
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
+#endif
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    cell->tgt_dl_sfn = sfn;
+    cell->tgt_dl_slot = slot;
     return 0;
 }
 
@@ -304,6 +348,8 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
             return -1;
         cell->ctrl_buf = (char *)&mblk[1];
         cell->ctrl_length = 0;
+        mblk->sfn = cell->tgt_dl_sfn;
+        mblk->slot = cell->tgt_dl_slot;
     }
     if (NULL == cell->ctrl_buf)
         return -1;
