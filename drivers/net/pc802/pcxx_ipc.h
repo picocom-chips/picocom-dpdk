@@ -41,6 +41,18 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, ...);
 int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index );
 #endif
 
+#ifndef MULTI_PC802
+int pcxxSetSCS(uint8_t scs);
+#else
+int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index);
+#endif
+
+#ifndef MULTI_PC802
+int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot);
+#else
+int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index);
+#endif
+
 /**
 * @brief Close and free the control shared memory.
 *
