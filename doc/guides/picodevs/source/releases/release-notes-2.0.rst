@@ -167,3 +167,10 @@ PC802 driver 2.8
 New features
 ************
 * NDF-191: ethernet channel support tap vdev
+
+PC802 driver 2.9
+##################
+
+New features
+************
+* NDF-200: Add a script to reset pc802 on EVB
