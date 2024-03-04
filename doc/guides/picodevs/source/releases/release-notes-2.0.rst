@@ -174,3 +174,4 @@ PC802 driver 2.9
 New features
 ************
 * NDF-196: Support coredump even when PFI 0 is dead
+* NDF-175: Support discard DL msg if too late
