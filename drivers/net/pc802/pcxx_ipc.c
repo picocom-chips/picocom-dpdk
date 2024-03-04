@@ -51,6 +51,7 @@ struct pcxx_cell_info_st{
     uint8_t  scs;
     uint8_t  tgt_dl_sfn;
     uint8_t  tgt_dl_slot;
+    uint8_t  dl_discard;
     SimULSlotMsg_t slot_msg;
 
     char     *data_buf[NUM_SFN_IDX][NUM_DATA_BUF];
@@ -263,6 +264,7 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     }
     cell->tgt_dl_sfn = tgt_dl_sfn;
     cell->tgt_dl_slot = tgt_dl_slot;
+    cell->dl_discard = 0;
     return 0;
 }
 
@@ -304,18 +306,23 @@ int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t 
         if (curr_slot < tgt_slot) {
             delta_slot = tgt_slot - curr_slot;
             re = (delta_slot >> 1) - 1;
+            cell->dl_discard = re < 0;
             return re;
         } else { // too late
+            cell->dl_discard = 1;
             return -1;
         }
     } else if (delta_sfn == 1) {
         tgt_slot += (10 <<cell->scs);
         delta_slot = tgt_slot - curr_slot;
         re = (delta_slot >> 1) - 1;
+        cell->dl_discard = re < 0;
         return re;
     } else if (delta_sfn < 128) { // too early
+        cell->dl_discard = 0;
         return 1;
     } else { // too late
+        cell->dl_discard = 1;
         return -1;
     }
     return 0;
