@@ -307,9 +307,15 @@ int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t 
             delta_slot = tgt_slot - curr_slot;
             re = (delta_slot >> 1) - 1;
             cell->dl_discard = re < 0;
+            if (cell->dl_discard) {
+                NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                    tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+            }
             return re;
         } else { // too late
             cell->dl_discard = 1;
+            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
             return -1;
         }
     } else if (delta_sfn == 1) {
@@ -317,12 +323,20 @@ int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t 
         delta_slot = tgt_slot - curr_slot;
         re = (delta_slot >> 1) - 1;
         cell->dl_discard = re < 0;
+        if (cell->dl_discard) {
+            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+        }
         return re;
     } else if (delta_sfn < 128) { // too early
         cell->dl_discard = 0;
+        NPU_SYSLOG("DL Too Early not discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+            tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
         return 1;
     } else { // too late
         cell->dl_discard = 1;
+        NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
         return -1;
     }
     return 0;
