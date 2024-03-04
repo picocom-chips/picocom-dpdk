@@ -266,16 +266,37 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-int pcxxDlInWin(uint16_t dev_index, uint16_t cell_index)
+/**
+ * Check if target sfn and slot is in DL transfer window
+ *
+ * @param tgt_sfn
+ *   target sfn
+ * @param tgt_slot
+ *   target slot
+ * @return
+ *   0 if in transfer window
+ *  >0 too early
+ *  <0 too late
+ */
+#ifndef MULTI_PC802
+int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot)
 {
-    uint8_t curr_sfn, tgt_sfn;
-    uint8_t curr_slot, tgt_slot;
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#else
+int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index)
+{
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
+#endif
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    cell->tgt_dl_sfn = tgt_sfn;
+    cell->tgt_dl_slot = tgt_slot;
+
+    uint8_t curr_sfn;
+    uint8_t curr_slot;
     uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
     curr_sfn = slot_sfn & 0xFF;
     curr_slot = slot_sfn >> 16;
-    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
-    tgt_sfn = cell->tgt_dl_sfn;
-    tgt_slot = cell->tgt_dl_slot;
     uint8_t delta_sfn = tgt_sfn - curr_sfn;
     uint8_t delta_slot;
     int re;
@@ -297,21 +318,6 @@ int pcxxDlInWin(uint16_t dev_index, uint16_t cell_index)
     } else { // too late
         return -1;
     }
-}
-
-#ifndef MULTI_PC802
-int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index)
-{
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-#endif
-    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
-    cell->tgt_dl_sfn = sfn;
-    cell->tgt_dl_slot = slot;
     return 0;
 }
 
