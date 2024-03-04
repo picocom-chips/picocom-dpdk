@@ -266,6 +266,39 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
+int pcxxDlInWin(uint16_t dev_index, uint16_t cell_index)
+{
+    uint8_t curr_sfn, tgt_sfn;
+    uint8_t curr_slot, tgt_slot;
+    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
+    curr_sfn = slot_sfn & 0xFF;
+    curr_slot = slot_sfn >> 16;
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    tgt_sfn = cell->tgt_dl_sfn;
+    tgt_slot = cell->tgt_dl_slot;
+    uint8_t delta_sfn = tgt_sfn - curr_sfn;
+    uint8_t delta_slot;
+    int re;
+    if (delta_sfn == 0) {
+        if (curr_slot < tgt_slot) {
+            delta_slot = tgt_slot - curr_slot;
+            re = (delta_slot >> 1) - 1;
+            return re;
+        } else { // too late
+            return -1;
+        }
+    } else if (delta_sfn == 1) {
+        tgt_slot += (10 <<cell->scs);
+        delta_slot = tgt_slot - curr_slot;
+        re = (delta_slot >> 1) - 1;
+        return re;
+    } else if (delta_sfn < 128) { // too early
+        return 1;
+    } else { // too late
+        return -1;
+    }
+}
+
 #ifndef MULTI_PC802
 int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot)
 {
