@@ -355,6 +355,9 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     if (cell->data_num[cell->sfn_idx]) {
         if (NULL == cell->ctrl_buf) {
             NPU_SYSLOG("ERROR: Dev %1u Cell %1u send DL data (SN = %u) but no associated control msg !\n",
@@ -402,6 +405,10 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        *availableSize = 0;
+        return -1;
+    }
     if (NULL == cell->ctrl_buf) {
         mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index]);
         if (NULL == mblk)
@@ -430,6 +437,9 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     //RTE_ASSERT(0 == (bufLen & 3));
     if (NULL == cell->pcxx_ctrl_dl_handle) {
         cell->ctrl_length += bufLen;
@@ -675,6 +685,9 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
     mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_DATA[cell_index]);
@@ -696,6 +709,9 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     bufLen = ((bufLen + 3) >> 2) << 2;
     if ((sizeof(PC802_Mem_Block_t) + offset + bufLen) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
