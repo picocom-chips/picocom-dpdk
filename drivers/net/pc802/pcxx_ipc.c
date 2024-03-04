@@ -368,6 +368,8 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         mblk_data->pkt_type = 0;
         mblk_data->eop = 1;
         mblk_data->sn = cell->dl_sn;
+        mblk_data->sfn = cell->tgt_dl_sfn;
+        mblk_data->slot = cell->tgt_dl_slot;
         if (0 == mblk_data->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL data msg with EOP=1 : port %1u queue %1u SN %u\n",
                 pcxx_devs[dev_index].port_id, QID_DATA[cell_index], mblk_data->sn);
@@ -381,6 +383,8 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         mblk_ctrl->pkt_type = 1 + (0 == cell->data_offset);
         mblk_ctrl->eop = 1;
         mblk_ctrl->sn = cell->dl_sn;
+        mblk_ctrl->sfn = cell->tgt_dl_sfn;
+        mblk_ctrl->slot = cell->tgt_dl_slot;
         cell->dl_sn += (cell->data_offset > 0);
         if (0 == mblk_ctrl->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL control msg : port %1u queue %1u SN %u\n",
@@ -729,6 +733,8 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
         mblk->pkt_type = 0;
         mblk->eop = 0;
         mblk->sn = cell->dl_sn;
+        mblk->sfn = cell->tgt_dl_sfn;
+        mblk->slot = cell->tgt_dl_slot;
         if (0 == mblk->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL data msg with EOP=0 : port %1u queue %1u SN %u\n",
                 pcxx_devs[dev_index].port_id, QID_DATA[cell_index], mblk->sn);
