@@ -286,7 +286,7 @@ int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot)
     uint16_t dev_index = 0;
     uint16_t cell_index = 0;
 #else
-int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index)
+int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot, uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
 #endif
