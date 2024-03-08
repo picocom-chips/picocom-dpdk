@@ -47,8 +47,6 @@
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
 #define PCI_DEVICE_PICOCOM_PC806    0x0806
 
-#define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
-
 #define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
 
 #define PC802_BAR_EXT_OFFSET  (4 * 1024)
@@ -218,6 +216,7 @@ struct pc802_adapter {
 
 static char DEFAULT_IMAGE_PATH[] = "/lib/firmware/pico";
 static char CUR_PATH[] = ".";
+static int mb_fd[2];
 
 int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
@@ -2123,7 +2122,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     if (0 == adapter->port_index) {
         pthread_t tid;
-        mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
+        if (pipe(mb_fd) < 0)
+		    return -1;
         if (0xFFFFFFFF != bar->BOOTRCCNT) {
             pc802_ctrl_thread_create(&tid, "PC802-Trace", NULL, pc802_trace_thread, NULL);
         }
@@ -2879,16 +2879,14 @@ static void pc802_write_dump_reg(PC802_BAR_Ext_t *ext, uint16_t core, uint8_t re
 static void * pc802_vec_access_thread(__rte_unused void *data)
 {
     MbVecAccess_t msg;
-    int fd;
     uint32_t command;
     uint32_t re = 0;
     uint8_t result;
 
     (void)data;
 
-    fd = open(FIFO_PC802_VEC_ACCESS, O_RDONLY, 0);
     while (1) {
-        pc802_vec_access_msg_recv(fd, &msg);
+        pc802_vec_access_msg_recv(mb_fd[0], &msg);
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
         command = msg.command;
         if (MB_DATA_DUMP == command) {
@@ -3192,7 +3190,7 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     uint16_t port_id;
 
     if (fd < 0) {
-        fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
+        fd = mb_fd[1];
         mb_set_ssbl_end(port_idx);
     }
 
