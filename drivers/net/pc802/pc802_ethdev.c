@@ -3026,6 +3026,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
 {
     static uint32_t rccnt[PC802_INDEX_MAX][32] = {0};
     static PC802_BAR_Ext_t *ext[PC802_INDEX_MAX] = {NULL};
+    PC802_Descs_t *descs = pc802_devices[port_index]->pDescs;
     int num;
     int N = 0;
     uint32_t core;
@@ -3046,7 +3047,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
         if (0 == (trace_enable[port_index] & (1 << core)))
             continue;
         num = 0;
-        epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
+        epcnt = descs->mr.TRACE_EPCNT[core].v;
         if (epcnt < prev_epcnt[port_index][core]) {
             NPU_SYSLOG("INFO: Wrapped Trace EPCNT[%2u] = %u < previous EPCNT = %u\n",
                 core, epcnt, prev_epcnt[port_index][core]);
@@ -3054,7 +3055,7 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
             req.tv_sec = 0;
             req.tv_nsec = 10000000;
             nanosleep(&req, NULL);
-            epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
+            epcnt = descs->mr.TRACE_EPCNT[core].v;
             NPU_SYSLOG("INFO: Reread Trace EPCNT[%2u] = %u\n", core, epcnt);
         }
         prev_epcnt[port_index][core] = epcnt;
