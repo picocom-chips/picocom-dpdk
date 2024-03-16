@@ -275,6 +275,11 @@ typedef struct stPC802_Descriptor_t{
     uint8_t  slot;
 } PC802_Descriptor_t;
 
+typedef union {
+    PC802_CacheLine_t   cache_line_epcnt;
+    volatile uint32_t v;
+} PerCoreEpCnt_u;
+
 struct stPC802_EP_Counter_Mirror_t {
     union {
         PC802_CacheLine_t   cache_line_tepcnt;
@@ -296,6 +301,7 @@ struct stPC802_EP_Counter_Mirror_t {
         PC802_CacheLine_t   cache_line_4;
         volatile uint32_t   SLOT_SFN[2];
     };
+    PerCoreEpCnt_u TRACE_EPCNT[32];
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
