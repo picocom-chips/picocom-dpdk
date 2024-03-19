@@ -175,3 +175,4 @@ New features
 ************
 * NDF-200: Add a script to reset pc802 on EVB
 * NDF-196: Support coredump even when PFI 0 is dead
+* NDF-175: Support discard DL msg if too late
