@@ -2748,10 +2748,12 @@ __next_non_pfi_0_vec_dump:
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
     if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
+#if 0
         if (is_data_dump) {
             NPU_SYSLOG("data_dump(%u, 0x%08X, %u, %u);\n",
                 file_id, address, data_size, flag);
         }
+#endif
     } else {
         for (offset = 0; offset < data_size; offset += 4) {
             unsigned int mem_data = *pd++;;
