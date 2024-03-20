@@ -147,9 +147,9 @@ example:
 
     #in another terminal
     #Capturing PC802 PCIe queue data to file:
-    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=/tmp/pc802.pcap,tx-dev=/tmp/pc802.pcap,mbuf-size=32768'
+    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=/tmp/pc802.pcap,tx-dev=/tmp/pc802.pcap,mbuf-size=2048'
     #Capturing PC802 PCIe queue data to interface:
-    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=lo,tx-dev=lo,mbuf-size=32768'
+    dpdk-pdump -l 0 -- --pdump 'port=0,queue=*,rx-dev=lo,tx-dev=lo,mbuf-size=4096'
 
 
 capture data description:
