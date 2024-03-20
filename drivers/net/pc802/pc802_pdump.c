@@ -69,19 +69,20 @@ struct pdump_response {
 	int32_t err_value;
 };
 
-static struct pdump_cfg {
+struct pdump_cfg {
 	bool enable;
 	uint16_t pc802_idx;
 	uint16_t queue;
 	uint32_t flags;
 	struct rte_ring *ring;
 	struct rte_mempool *mp;
+	struct rte_ring *pdump_ring;
 
 	uint16_t dst_port;
 	uint16_t src_port;
 	uint32_t sleep_us;
 	uint64_t drops;
-} pdump_cfg;
+};
 
 struct pdump_pkg {
 	uint16_t pc802_index;
@@ -96,7 +97,7 @@ static uint64_t start_tsc;
 static uint64_t tsc_hz = 1000000;
 static rte_atomic32_t pdump_stop = RTE_ATOMIC32_INIT(0);
 static pthread_t pdump_tid;
-struct rte_ring *pdump_ring;
+static struct pdump_cfg* pdump_cfg;
 
 extern int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
@@ -122,18 +123,18 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
         pkg = (struct pdump_pkg *)m->buf_addr;
 
         // fill ether package
-        if (pkg->blk->pkt_length > (rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS))
-            pkt_len = rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS;
-        else
-            pkt_len = (uint16_t)pkg->blk->pkt_length;
+        pkt_len = RTE_MIN(pkg->blk->pkt_length, (rte_pktmbuf_data_room_size(m->pool) - m->data_off - UDP_BUF_POS));
         rte_memcpy(&udp_hdr[1], &pkg->blk[1], pkt_len);
 
         pkt_len += sizeof(struct rte_udp_hdr);
-        udp_hdr->src_port = rte_cpu_to_be_16(pdump_cfg.src_port + pkg->rxtx_flag);
-        udp_hdr->dst_port = rte_cpu_to_be_16(pdump_cfg.dst_port + pkg->queue_id);
-        udp_hdr->dgram_len = rte_cpu_to_be_16(pkt_len);
+        udp_hdr->src_port = rte_cpu_to_be_16(pdump_cfg->src_port + pkg->rxtx_flag);
+        udp_hdr->dst_port = rte_cpu_to_be_16(pdump_cfg->dst_port + pkg->queue_id);
+		udp_hdr->dgram_len = (uint16_t)(pkg->blk->pkt_length+sizeof(struct rte_udp_hdr));
+        udp_hdr->dgram_len = rte_cpu_to_be_16(udp_hdr->dgram_len);
 
         pkt_len += IP_HDR_SIZE;
+        ip_hdr->type_of_service = (pkg->blk->pkt_type<<2)|pkg->blk->eop;
+		ip_hdr->packet_id = rte_cpu_to_be_16((uint16_t)pkg->blk->sn);
         ((struct ip_options_timestamp *)&ip_hdr[1])->time_stamp =
             rte_cpu_to_be_32((pkg->tsc - start_tsc) * 1000000/tsc_hz);
 		if( pkg->tsc1 )
@@ -152,19 +153,19 @@ static void pdump_copy(struct rte_mbuf **mbufs, uint16_t count)
         m->port = pkg->pc802_index;
     }
 
-    nb_ring = rte_ring_enqueue_burst(pdump_cfg.ring, (void *)mbufs, count, NULL);
+    nb_ring = rte_ring_enqueue_burst(pdump_cfg->ring, (void *)mbufs, count, NULL);
     if (unlikely(nb_ring < count)) {
         unsigned int drops = count - nb_ring;
         DBLOG("drop %d of packets enqueued to ring\n", drops);
         rte_pktmbuf_free_bulk(&mbufs[nb_ring], drops);
-        pdump_cfg.drops += drops;
+        pdump_cfg->drops += drops;
     }
 }
 
-uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc)
+uint64_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc)
 {
-    if (pdump_cfg.enable && (pc802_index == pdump_cfg.pc802_idx)
-		&& ((1<<queue_id) & pdump_cfg.queue) && (rxtx_flag & pdump_cfg.flags)) {
+    if (pdump_cfg->enable && (pc802_index == pdump_cfg->pc802_idx)
+		&& ((1<<queue_id) & pdump_cfg->queue) && (rxtx_flag & pdump_cfg->flags)) {
         int i;
 		int nb_rings;
 		struct rte_mbuf *mbufs[BURST_SIZE];
@@ -172,9 +173,9 @@ uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, P
 		uint64_t tsc = rte_rdtsc();
 
 		for (i = 0; i < nb_blks; i++) {
-			mbufs[i] = rte_pktmbuf_alloc(pdump_cfg.mp);
+			mbufs[i] = rte_pktmbuf_alloc(pdump_cfg->mp);
 			if (unlikely(mbufs[i] == NULL)){
-				DBLOG("drop %d of packets alloc mbuf %p\n", nb_blks-i, pdump_cfg.mp );
+				DBLOG("drop %d of packets alloc mbuf %p\n", nb_blks-i, pdump_cfg->mp );
 				break;
 			}
 			pkg = (struct pdump_pkg *)mbufs[i]->buf_addr;
@@ -186,15 +187,16 @@ uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, P
 			pkg->blk = blks[i];
 		}
 
-		nb_rings = rte_ring_enqueue_burst(pdump_ring, (void *)mbufs, i, NULL);
+		nb_rings = rte_ring_enqueue_burst(pdump_cfg->pdump_ring, (void *)mbufs, i, NULL);
 		if (unlikely(nb_rings < i)) {
 			unsigned int drops = i - nb_rings;
 			DBLOG("drop %d of packets enqueued to ring\n", drops );
 			rte_pktmbuf_free_bulk(&mbufs[i], drops);
-			pdump_cfg.drops += drops;
+			//pdump_cfg->drops += drops;
 		}
+		return tsc;
     }
-    return nb_blks;
+    return 0;
 }
 
 static inline uint16_t ipv4_header_init(struct rte_ipv4_hdr *ip_hdr, uint64_t tsc )
@@ -244,8 +246,8 @@ static void mbuf_init(__rte_unused struct rte_mempool *mp, __rte_unused void *op
 
 	ipv4_header_init(ipv4_hdr,0);
 
-	udp_hdr->src_port  = rte_cpu_to_be_16(pdump_cfg.src_port);
-	udp_hdr->dst_port  = rte_cpu_to_be_16(pdump_cfg.dst_port);
+	udp_hdr->src_port  = rte_cpu_to_be_16(pdump_cfg->src_port);
+	udp_hdr->dst_port  = rte_cpu_to_be_16(pdump_cfg->dst_port);
 	udp_hdr->dgram_len = rte_cpu_to_be_16(sizeof(struct rte_udp_hdr));
 	udp_hdr->dgram_cksum = 0; /* No UDP checksum. */
 }
@@ -257,13 +259,13 @@ static void *pc802_pdump( __rte_unused void *arg)
 	struct rte_mbuf *mbufs[BURST_SIZE];
     struct timespec req;
     req.tv_sec = 0;
-    req.tv_nsec = pdump_cfg.sleep_us;
+    req.tv_nsec = pdump_cfg->sleep_us;
 
     while (1) {
         f_stop = rte_atomic32_read(&pdump_stop);
         if (f_stop)
 			break;
-		count = rte_ring_dequeue_burst(pdump_ring, (void *)mbufs, BURST_SIZE, NULL);
+		count = rte_ring_dequeue_burst(pdump_cfg->pdump_ring, (void *)mbufs, BURST_SIZE, NULL);
 		if(count)
 			pdump_copy(mbufs, count);
 		else
@@ -280,12 +282,12 @@ static int pc802_pdump_start(void)
 	tsc_hz = rte_get_tsc_hz();
 
 	//init mbuf eth ip head
-	rte_mempool_obj_iter(pdump_cfg.mp, mbuf_init, NULL);
-	if ( NULL == pdump_ring ) {
-		pdump_ring = rte_ring_lookup( PDUMP_RING );
-		if ( NULL == pdump_ring ) {
-			pdump_ring = rte_ring_create( PDUMP_RING, 4096, rte_socket_id(), 0 );
-			if ( NULL == pdump_ring){
+	rte_mempool_obj_iter(pdump_cfg->mp, mbuf_init, NULL);
+	if ( NULL == pdump_cfg->pdump_ring ) {
+		pdump_cfg->pdump_ring = rte_ring_lookup( PDUMP_RING );
+		if ( NULL == pdump_cfg->pdump_ring ) {
+			pdump_cfg->pdump_ring = rte_ring_create( PDUMP_RING, 4096, rte_socket_id(), 0 );
+			if ( NULL == pdump_cfg->pdump_ring){
 				DBLOG( "Failed to create ring: %s", strerror(rte_errno));
 				return -1;
 			}
@@ -295,18 +297,18 @@ static int pc802_pdump_start(void)
 	rte_atomic32_set( &pdump_stop, 0);
 	pc802_ctrl_thread_create( &pdump_tid, "pc802_pdump", NULL, pc802_pdump, NULL);
 
-	pdump_cfg.enable = true;
+	pdump_cfg->enable = true;
 	return 0;
 }
 
 static int pc802_pdump_stop(void)
 {
-	pdump_cfg.enable = false;
+	pdump_cfg->enable = false;
 	rte_atomic32_inc(&pdump_stop);
 	pthread_join(pdump_tid, NULL);
-	if( pdump_ring ){
-		rte_ring_free(pdump_ring);
-		pdump_ring = NULL;
+	if( pdump_cfg->pdump_ring ){
+		rte_ring_free(pdump_cfg->pdump_ring);
+		pdump_cfg->pdump_ring = NULL;
 	}
 	return 0;
 }
@@ -326,21 +328,21 @@ static int set_pdump_rxtx_cbs(const struct pdump_request *p)
 			DBLOG("failed to get port id for device id=%s\n",p->data.en_v1.device);
 			return -EINVAL;
 		}
-		pdump_cfg.flags |= p->flags;
-		pdump_cfg.queue |= p->data.en_v1.queue;
-		if ( !pdump_cfg.enable ){
-			pdump_cfg.pc802_idx = index;
-			pdump_cfg.ring  = p->data.en_v1.ring;
-			pdump_cfg.mp    = p->data.en_v1.mp;
+		pdump_cfg->flags |= p->flags;
+		pdump_cfg->queue |= p->data.en_v1.queue;
+		if ( !pdump_cfg->enable ){
+			pdump_cfg->pc802_idx = index;
+			pdump_cfg->ring  = p->data.en_v1.ring;
+			pdump_cfg->mp    = p->data.en_v1.mp;
 			ret = pc802_pdump_start();
 		}
 	} else {
 		DBLOG( "disable pdump req.\n" );
 		pc802_pdump_stop();
-		pdump_cfg.ring = NULL;
-		pdump_cfg.mp = NULL;
-		pdump_cfg.flags = 0;
-		pdump_cfg.queue = 0;
+		pdump_cfg->ring = NULL;
+		pdump_cfg->mp = NULL;
+		pdump_cfg->flags = 0;
+		pdump_cfg->queue = 0;
 	}
 
 	return ret;
@@ -376,10 +378,16 @@ static int pdump_server(const struct rte_mp_msg *mp_msg, const void *peer)
 
 int pc802_pdump_init(void)
 {
-	pdump_cfg.src_port = 8020;
-	pdump_cfg.dst_port = 6880;
-	pdump_cfg.sleep_us = 100;
-	return rte_mp_action_register(PDUMP_MP, pdump_server);;
+	if ( RTE_PROC_PRIMARY == rte_eal_process_type() ){
+		pdump_cfg = (struct pdump_cfg*)(rte_memzone_reserve("pc802_pdump", sizeof(struct pdump_cfg), 0, 0)->addr);
+		pdump_cfg->src_port = 8020;
+		pdump_cfg->dst_port = 6880;
+		pdump_cfg->sleep_us = 100;
+		rte_mp_action_register(PDUMP_MP, pdump_server);
+	} else {
+		pdump_cfg = (struct pdump_cfg*)(rte_memzone_lookup("pc802_pdump")->addr);
+	}
+	return 0;
 }
 
 int pc802_pdump_uninit(void)

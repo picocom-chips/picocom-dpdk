@@ -716,8 +716,9 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     if (PC802_TRAFFIC_MAILBOX == queue_id)
         return nb_rx;
     if( nb_rx )
-        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
-    last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
+        last_tsc[adapter->port_index][queue_id] = pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
+    else
+        last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
 
 #if 0
     tend = rte_rdtsc();
@@ -758,13 +759,13 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint32_t idx;
     uint32_t tx_id = txq->rc_cnt;
     uint16_t nb_tx;
+    uint64_t tsc = rte_rdtsc();
 
     if ((txq->nb_tx_free < txq->tx_free_thresh) || (txq->nb_tx_free < nb_blks)) {
         txq->nb_tx_free = (uint32_t)txq->nb_tx_desc - txq->rc_cnt + *txq->tepcnt_mirror_addr;
     }
 
     nb_blks = (txq->nb_tx_free < nb_blks) ? txq->nb_tx_free : nb_blks;
-    pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks, 0);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
         if (0 == tx_blk->pkt_length) {
@@ -791,6 +792,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txe->mblk = tx_blk;
         tx_blk->next =  NULL;
         tx_id++;
+        pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, &tx_blk, 1, tsc);
     }
 
 
@@ -1990,6 +1992,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         const struct rte_memzone *mz_s = rte_memzone_lookup(temp_name);
         DBLOG("mz_s->iova = 0x%lX\n", mz_s->iova);
         DBLOG("mz_s->addr = %p\n", mz_s->addr);
+        pc802_pdump_init( );
         return 0;
     }
 
