@@ -32,7 +32,7 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
 
         cd ${your_DPDK_PATH}
         patch -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
-        meson build -Denable_multi_pc802=true
+        meson build
         #default path is /usr/local
         ninja -C build install
 
@@ -44,14 +44,13 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
         cd components/apps/networking/dpdk
         patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-flexbuild-lsdk2108.patch
         meson aarch64-build-gcc --cross-file config/arm/arm64_armv8_linux_gcc
-        meson configure -Dprefix=~/dpdk_arm_libs -Denable_multi_pc802=true aarch64-build-gcc
+        meson configure -Dprefix=~/dpdk_arm_libs aarch64-build-gcc
         #cross compile libs output to "~/dpdk_arm_libs"
         ninja -C aarch64-build-gcc install
 
 More information on how to compile the DPDK, see `DPDK Documentation <https://www.dpdk.org/>`_ .
 
 .. note:: If no source code, please contact `Picocom <info@picocom.com>`_ to get PC-002897-DC-A-PC802_UDriver_libs
-.. note:: The new version supports multiple PC802. If you don't need this function, you can compile without the "-Denable_multi_pc802=true" option, and the interface is the same as release 1.
 
 Compiling DPDK application using cmake with link static libraries
 -----------------------------------------------------------------
@@ -125,6 +124,7 @@ Example of CMakeLists.txt::
     -l:librte_net_octeontx.a
     -l:librte_net_octeontx2.a
     -l:librte_net_octeontx_ep.a
+    -l:librte_net_pcap.a
     -l:librte_net_pc802.a
     -l:librte_net_pfe.a
     -l:librte_net_qede.a
@@ -283,6 +283,7 @@ Example of CMakeLists.txt::
     -lm
     -ldl
     -lnuma
+    -lpcap
     -Wl,--export-dynamic
     -latomic
     -Wl,--end-group
