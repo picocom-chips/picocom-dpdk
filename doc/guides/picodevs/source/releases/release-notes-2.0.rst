@@ -177,7 +177,8 @@ New features
 * NDF-196: Support coredump even when PFI 0 is dead
 * NDF-175: Support discard DL msg if too late
 * NDF-204: Secondary pc802 processes supports pdump
+* NDF-203: Improve PCIe mini trace by using mirroed EP counter
 
 Bug fixes
 *********
-NDF-202: Mailbox message modified to use pipe, fix startup failure when multi-primary process
+* NDF-202: Mailbox message modified to use pipe, fix startup failure when multi-primary process
