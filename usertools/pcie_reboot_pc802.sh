@@ -9,7 +9,7 @@
 # Copyright PICOCOM.
 #
 
-reset_pc802() {
+scb_reset_pc802() {
 	if [ ! -f /sys/class/gpio/gpio422/value ]
 	then
 		echo "Export GPIO 3-6 (422) to userspace."
@@ -24,6 +24,56 @@ reset_pc802() {
 
 	echo "Set GPIO 3-6 (422) value to 1."
 	echo 1 > /sys/class/gpio/gpio422/value
+}
+
+evb_reset_pc802() {
+	if [ -z $1 ]; then
+		gpio_port_number=$1
+	else
+		gpio_port_number=27
+	fi
+
+	bar0=0x`lspci -v -s $1 | grep Memory | head -n 1 | cut -f3 -d' '`
+	echo bar0=$bar0
+
+	addr=`echo $(($bar0+0x2e0))`
+	RCCNT=`printf "0x%08X\n" $addr`
+	echo RCCNT=$RCCNT
+
+	addr=`echo $(($bar0+0x2e4))`
+	CMD=`printf "0x%08X\n" $addr`
+	echo CMD=$CMD
+
+	addr=`echo $(($bar0+0x2e8))`
+	OFFSET=`printf "0x%08X\n" $addr`
+	echo OFFSET=$OFFSET
+
+	addr=`echo $(($bar0+0x2ec))`
+	WR_DATA=`printf "0x%08X\n" $addr`
+	echo WR_DATA=$WR_DATA
+
+	addr=`echo $(($bar0+0x300))`
+	EPCNT=`printf "0x%08X\n" $addr`
+	echo EPCNT=$EPCNT
+
+	addr=`echo $(($bar0+0x304))`
+	ERROR=`printf "0x%08X\n" $addr`
+	echo ERROR=$ERROR
+
+	addr=`echo $(($bar0+0x308))`
+	RD_DATA=`printf "0x%08X\n" $addr`
+	echo RD_DATA=$RD_DATA
+
+	epcnt=`busybox devmem $EPCNT`
+	echo epcnt=$epcnt
+
+	rccnt=`echo $(($epcnt+1))`
+	echo rccnt=$rccnt
+
+	busybox devmem $WR_DATA 32 $gpio_port_number
+	busybox devmem $CMD 32 2
+
+	busybox devmem $RCCNT 32 $rccnt
 }
 
 set_speed() {
@@ -106,33 +156,45 @@ set_speed() {
 }
 
 
-echo ""
-["`lsmod | grep uio_pci_generic`" == ""] && sudo modprobe uio_pci_generic 
+if [ $1 ];then
+    index=$1
+    PCI_ADDR=`lspci | awk  '/802/{i++;if(i=="'$index'"){print $1;exit;}}'`
+else
+	index=1
+    PCI_ADDR=`lspci | awk  '/802/{print $1;exit;}'`
+fi
+if [ -z $PCI_ADDR ];then
+	echo "Error: cann't find PC802 $index"
+	exit
+else
+    echo "PC802 is located at ${PCI_ADDR}"
+fi
 
-PCI_ADDR=`lspci | grep -i 1ec4 | cut -f1 -d' '`
-echo "PC802 is located at ${PCI_ADDR}"
-
+echo "Remove and reset PC802 ${PCI_ADDR} from pice"
 dpdk-devbind.py -u ${PCI_ADDR}
-
-echo "remove and reset PC802 ${PCI_ADDR} from pice"
-echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
-
-reset_pc802
+if [[ `arch` =~ "x86_64" ]];then
+    evb_reset_pc802 $PCI_ADDR
+	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
+else
+	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
+    scb_reset_pc802
+fi
 sleep 1
 
+echo ""
+echo "Start pcie rescan ......"
 echo "1" > /sys/bus/pci/rescan
 lspci
 
-PCI_ADDR=`lspci | grep -i 1ec4 | cut -f1 -d' '`
+PCI_ADDR=`lspci | awk  '/802/{i++;if(i=="'$index'"){print $1;exit;}}'`
 if [ -z "$PCI_ADDR" ]; then
 	echo "Error: cann't find PC802, need to reboot npu."
 	exit 1
 fi
-echo "rescan PC802 at ${PCI_ADDR}"
+echo "Rescan PC802 at ${PCI_ADDR}"
 echo ""
 set_speed ${PCI_ADDR} 3
 
+modprobe uio_pci_generic 
 dpdk-devbind.py -b uio_pci_generic ${PCI_ADDR}
 dpdk-devbind.py -s
-sleep 1
-

@@ -5,5 +5,6 @@ install_data([
 	'dpdk-devbind.py',
 	'dpdk-pmdinfo.py',
 	'dpdk-telemetry.py',
-	'dpdk-hugepages.py'
+	'dpdk-hugepages.py',
+    'pcie_reboot_pc802.sh'
 ],install_dir: 'bin')
