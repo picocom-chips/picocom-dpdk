@@ -178,6 +178,7 @@ New features
 * NDF-175: Support discard DL msg if too late
 * NDF-204: Secondary pc802 processes supports pdump
 * NDF-203: Improve PCIe mini trace by using mirroed EP counter
+* NDF-205: Support 4 Cells: 2 NR + 2 LTE
 
 Bug fixes
 *********
