@@ -299,7 +299,7 @@ struct stPC802_EP_Counter_Mirror_t {
     };
     union {
         PC802_CacheLine_t   cache_line_4;
-        volatile uint32_t   SLOT_SFN[2];
+        volatile uint32_t   SLOT_SFN[4];
     };
     PerCoreEpCnt_u TRACE_EPCNT[32];
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
