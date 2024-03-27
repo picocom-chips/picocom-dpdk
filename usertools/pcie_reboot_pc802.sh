@@ -158,10 +158,10 @@ set_speed() {
 
 if [ $1 ];then
     index=$1
-    PCI_ADDR=`lspci | awk  '/802/{i++;if(i=="'$index'"){print $1;exit;}}'`
+    PCI_ADDR=`lspci | awk  '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
 else
 	index=1
-    PCI_ADDR=`lspci | awk  '/802/{print $1;exit;}'`
+    PCI_ADDR=`lspci | awk  '/1ec4/{print $1;exit;}'`
 fi
 if [ -z $PCI_ADDR ];then
 	echo "Error: cann't find PC802 $index"
@@ -186,7 +186,7 @@ echo "Start pcie rescan ......"
 echo "1" > /sys/bus/pci/rescan
 lspci
 
-PCI_ADDR=`lspci | awk  '/802/{i++;if(i=="'$index'"){print $1;exit;}}'`
+PCI_ADDR=`lspci | awk  '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
 if [ -z "$PCI_ADDR" ]; then
 	echo "Error: cann't find PC802, need to reboot npu."
 	exit 1
