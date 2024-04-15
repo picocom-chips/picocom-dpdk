@@ -36,27 +36,27 @@ typedef struct PC802_BAR_t {
     };
     union {
         PC802_CacheLine_t _cahce_line_tdnum;
-        uint32_t TDNUM[PC802_TRAFFIC_NUM];
+        uint32_t TDNUM[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_trccnt;
-        uint32_t TRCCNT[PC802_TRAFFIC_NUM];
+        uint32_t TRCCNT[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_tepcnt;
-        uint32_t TEPCNT[PC802_TRAFFIC_NUM];
+        uint32_t TEPCNT[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_rdnum;
-        uint32_t RDNUM[PC802_TRAFFIC_NUM];
+        uint32_t RDNUM[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_rrccnt;
-        uint32_t RRCCNT[PC802_TRAFFIC_NUM];
+        uint32_t RRCCNT[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_repcnt;
-        uint32_t REPCNT[PC802_TRAFFIC_NUM];
+        uint32_t REPCNT[8];
     };
     union {
         PC802_CacheLine_t _cahce_line_brccnt;
@@ -224,25 +224,85 @@ typedef struct PC802_BAR_t {
     union {
         PC802_CacheLine_t _cache_line_tx_rst_req;
         struct {
-            uint32_t TX_RST_RCCNT[PC802_TRAFFIC_NUM];
+            uint32_t TX_RST_RCCNT[8];
         };
     };
     union {
         PC802_CacheLine_t _cache_line_tx_rst_rsp;
         struct {
-            uint32_t TX_RST_EPCNT[PC802_TRAFFIC_NUM];
+            uint32_t TX_RST_EPCNT[8];
         };
     };
     union {
         PC802_CacheLine_t _cache_line_rx_rst_req;
         struct {
-            uint32_t RX_RST_RCCNT[PC802_TRAFFIC_NUM];
+            uint32_t RX_RST_RCCNT[8];
         };
     };
     union {
         PC802_CacheLine_t _cache_line_rx_rst_rsp;
         struct {
-            uint32_t RX_RST_EPCNT[PC802_TRAFFIC_NUM];
+            uint32_t RX_RST_EPCNT[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tdnum8;
+        struct {
+            uint32_t TDNUM8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_trccnt8;
+        struct {
+            uint32_t TRCCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tepcnt8;
+        struct {
+            uint32_t TEPCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rdnum8;
+        struct {
+            uint32_t RDNUM8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rrccnt8;
+        struct {
+            uint32_t RRCCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_repcnt8;
+        struct {
+            uint32_t REPCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_req8;
+        struct {
+            uint32_t TX_RST_RCCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_tx_rst_rsp8;
+        struct {
+            uint32_t TX_RST_EPCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_req8;
+        struct {
+            uint32_t RX_RST_RCCNT8[8];
+        };
+    };
+    union {
+        PC802_CacheLine_t _cache_line_rx_rst_rsp8;
+        struct {
+            uint32_t RX_RST_EPCNT8[8];
         };
     };
 } PC802_BAR_t;
