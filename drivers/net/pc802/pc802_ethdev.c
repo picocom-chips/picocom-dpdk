@@ -590,15 +590,24 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         }
     }
 
-    txq->tx_ring = adapter->pDescs->dl[queue_id];
+    if (queue_id <= PC802_TRAFFIC_OAM) {
+        txq->tx_ring = adapter->pDescs->dl[queue_id];
+    } else {
+        txq->tx_ring = adapter->pDescs->dl7[queue_id - (PC802_TRAFFIC_OAM + 1)];
+    }
     txep = txq->sw_ring;
     for (k = 0; k < nb_desc; k++) {
         txep->mblk = NULL;
         txep++;
     }
 
-    txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_id];
-    txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT[queue_id];
+    if (queue_id < 8) {
+        txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT[queue_id];
+        txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT[queue_id];
+    } else {
+        txq->trccnt_reg_addr = (volatile uint32_t *)&bar->TRCCNT8[queue_id - 8];
+        txq->tepcnt_mirror_addr = &adapter->pDescs->mr.TEPCNT8[queue_id - 8];
+    }
     txq->nb_tx_desc = nb_desc;
     txq->rc_cnt = 0;
     txq->nb_tx_free = nb_desc;
@@ -607,7 +616,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->port_id = port_id;
     txq->sn = 0;
 
-    if (PC802_READ_REG(bar->DEVEN)) {
+    if ((PC802_READ_REG(bar->DEVEN)) && (queue_id < 8)) {
         PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
         rte_io_wmb();
         rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT[queue_id]);
@@ -629,6 +638,32 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             PC802_WRITE_REG(bar->TRCCNT[queue_id], 0);
             do {
                 ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT[queue_id]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
+    }
+
+    if ((PC802_READ_REG(bar->DEVEN)) && (8 <= queue_id) && (queue_id < PC802_TRAFFIC_NUM)) {
+        PC802_WRITE_REG(bar->TDNUM8[queue_id - 8], nb_desc);
+        rte_io_wmb();
+        rc_rst_cnt = PC802_READ_REG(bar->TX_RST_RCCNT8[queue_id - 8]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->TX_RST_RCCNT8[queue_id - 8], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT8[queue_id - 8]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+        do {
+            ep_cnt = PC802_READ_REG(bar->TEPCNT8[queue_id - 8]);
+        } while (0 != ep_cnt);
+        do {
+            ep_cnt = *txq->tepcnt_mirror_addr;
+        } while (0 != ep_cnt);
+        if (0 != PC802_READ_REG(bar->TRCCNT8[queue_id - 8])) {
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->TX_RST_RCCNT8[queue_id - 8], rc_rst_cnt);
+            rte_io_wmb();
+            PC802_WRITE_REG(bar->TRCCNT8[queue_id - 8], 0);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->TX_RST_EPCNT8[queue_id - 8]);
             } while (ep_rst_cnt != rc_rst_cnt);
         }
     }
