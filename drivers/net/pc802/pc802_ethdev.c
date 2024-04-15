@@ -1460,11 +1460,18 @@ eth_pc802_start(struct rte_eth_dev *dev)
     DBLOG("DRVSTATE=%u, DEVRDY=%u, BOOTERROR=%u\n", old_drv_state, devRdy,
         PC802_READ_REG(bar->BOOTERROR));
 
-    for (q = 0; q <= PC802_TRAFFIC_OAM; q++) {
+    int qN = (PC802_TRAFFIC_NUM > 8) ? 8 : PC802_TRAFFIC_NUM;
+    for (q = 0; q < qN; q++) {
         PC802_WRITE_REG(bar->TDNUM[q], adapter->txq[q].nb_tx_desc);
         PC802_WRITE_REG(bar->TRCCNT[q], 0);
         PC802_WRITE_REG(bar->RDNUM[q], adapter->rxq[q].nb_rx_desc);
         PC802_WRITE_REG(bar->RRCCNT[q], 0);
+    }
+    for (q = 8; q < PC802_TRAFFIC_NUM; q++) {
+        PC802_WRITE_REG(bar->TDNUM8[q], adapter->txq[q].nb_tx_desc);
+        PC802_WRITE_REG(bar->TRCCNT8[q], 0);
+        PC802_WRITE_REG(bar->RDNUM8[q], adapter->rxq[q].nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT8[q], 0);
     }
 
     PC802_WRITE_REG(bar->DEVEN, 1);
