@@ -681,18 +681,27 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    struct pc802_rx_queue *rxq;
     volatile PC802_Descriptor_t *rx_ring;
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *sw_ring;
     PC802_Mem_Block_t *rxm;
     PC802_Mem_Block_t *nmb;
-    uint32_t mask = rxq->nb_rx_desc - 1;
+    uint32_t mask;
     uint32_t idx;
     uint32_t ep_txed;
     uint32_t rx_id;
     uint16_t nb_rx;
     uint16_t nb_hold;
+
+    if (queue_id <= PC802_TRAFFIC_OAM) {
+        rxq = &adapter->rxq[queue_id];
+    } else if (queue_id < PC802_TRAFFIC_NUM) {
+        rxq = &adapter->rxq[queue_id + 1];
+    } else { // mailbox
+        rxq = &adapter->rxq[PC802_TRAFFIC_OAM + 1];
+    }
+    mask = rxq->nb_rx_desc - 1;
 
     nb_rx = 0;
     nb_hold = rxq->nb_rx_hold;
