@@ -247,20 +247,6 @@ typedef struct PC802_BAR_t {
     };
 } PC802_BAR_t;
 
-#define PC802_DEVEN             (offsetof(PC802_BAR_t,   DEVEN))
-#define PC802_DEVRDY            (offsetof(PC802_BAR_t,   DEVRDY))
-#define PC802_DBAL              (offsetof(PC802_BAR_t,   DBAL))
-#define PC802_DBAH              (offsetof(PC802_BAR_t,   DBAH))
-
-#define PC802_TDNUM(n)          (offsetof(PC802_BAR_t, TDNUM[0]) + sizeof(uint32_t) * (n))
-#define PC802_TRCCNT(n)         (offsetof(PC802_BAR_t, TRCCNT[0]) + sizeof(uint32_t) * (n))
-#define PC802_TEPCNT(n)         (offsetof(PC802_BAR_t, TEPCNT[0]) + sizeof(uint32_t) * (n))
-
-#define PC802_RDNUM(n)          (offsetof(PC802_BAR_t, RDNUM[0]) + sizeof(uint32_t) * (n))
-#define PC802_RRCCNT(n)         (offsetof(PC802_BAR_t, RRCCNT[0]) + sizeof(uint32_t) * (n))
-#define PC802_REPCNT(n)         (offsetof(PC802_BAR_t, REPCNT[0]) + sizeof(uint32_t) * (n))
-
-
 #define NPU_CACHE_LINE_SZ   64
 
 typedef struct stPC802_Descriptor_t{
