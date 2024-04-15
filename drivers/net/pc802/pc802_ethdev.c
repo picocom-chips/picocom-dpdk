@@ -2030,37 +2030,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->log_flag = 0;
     adapter->port_index = num_pc802s;
 
-#if 0
-    if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
-        DBLOG("PC802_BAR[1].vaddr = %p\n", pci_dev->mem_resource[1].addr);
-        if (adapter->DEVRDY < 2) {
-            pc802_bar_memset((uint32_t *)pci_dev->mem_resource[1].addr, 0, pci_dev->mem_resource[1].len / sizeof(uint32_t));
-            DBLOG("Finish clearing BAR 1\n");
-        }
-        DBLOG("PC802_BAR[2].vaddr = %p\n", pci_dev->mem_resource[2].addr);
-        if (adapter->DEVRDY < 2) {
-            pc802_bar_memset((uint32_t *)pci_dev->mem_resource[2].addr, 0, pci_dev->mem_resource[2].len / sizeof(uint32_t));
-            DBLOG("Finish clearing BAR 2\n");
-        }
-        rte_mb();
-
-        adapter->mailbox_info_pfi = (mailbox_info_exclusive *)((uint8_t*)pci_dev->mem_resource[1].addr);
-        adapter->mailbox_pfi   = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[1].addr + 0x580);
-        adapter->mailbox_ecpri = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr);
-        adapter->mailbox_info_ecpri = (mailbox_info_exclusive *)((uint8_t *)pci_dev->mem_resource[2].addr + sizeof(mailbox_exclusive) * 16);
-        for (dsp = 0; dsp < 3; dsp++) {
-            adapter->mailbox_dsp[dsp] = (mailbox_exclusive *)((uint8_t *)pci_dev->mem_resource[0].addr + 0x2000 + 0x400 * dsp);
-        }
-        adapter->log_flag |= (1<<PC802_LOG_PRINT);
-    } else {
-        PC802_WRITE_REG(bar->MB_ANDES_DIS, 0xFFFFFFFF);
-        PC802_WRITE_REG(bar->MB_DSP_DIS, 0x7);
-        rte_wmb();
-        DBLOG("WARN: No PCIe based printf output !\n");
-    }
-#else
     adapter->log_flag |= (1<<PC802_LOG_PRINT);
-#endif
 
     int socket_id = eth_dev->device->numa_node;
     uint32_t tsize = PC802_DEBUG_BUF_SIZE;
