@@ -312,21 +312,6 @@ typedef struct PC802_Descs_t {
     PC802_EP_Counter_Mirror_t  mr;
 } PC802_Descs_t;
 
-static inline uint32_t get_dl_desc_offset(uint32_t ch, uint32_t idx)
-{
-    return (ch * MAX_DESC_NUM + idx) * sizeof(PC802_Descriptor_t);
-}
-
-static inline uint32_t get_ul_desc_offset(uint32_t ch, uint32_t idx)
-{
-    return (MAX_DL_CH_NUM * MAX_DESC_NUM + ch * MAX_DESC_NUM + idx) * sizeof(PC802_Descriptor_t);
-}
-
-static inline uint32_t get_ep_counter_mirror_offset(void)
-{
-    return (MAX_DL_CH_NUM + MAX_UL_CH_NUM) * MAX_DESC_NUM * sizeof(PC802_Descriptor_t);
-}
-
 static inline int isPowerOf2(uint32_t n)
 {
     return n && !(n & (n - 1));
