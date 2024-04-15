@@ -316,7 +316,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
-    struct pc802_rx_queue *rxq;
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *rxep;
     uint32_t mask = NPU_CACHE_LINE_SZ - 1;
@@ -330,13 +330,10 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     volatile uint32_t ep_cnt;
 
     if (queue_id <= PC802_TRAFFIC_OAM) {
-        rxq = &adapter->rxq[queue_id];
         rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
     } else if (queue_id < PC802_TRAFFIC_NUM) {
-        rxq = &adapter->rxq[queue_id + 1];
         rxdp = rxq->rx_ring = adapter->pDescs->ul7[queue_id - (PC802_TRAFFIC_OAM + 1)];
     } else { // mailbox
-        rxq = &adapter->rxq[PC802_TRAFFIC_OAM + 1];
         rxdp = rxq->rx_ring = adapter->pDescs->ul[PC802_TRAFFIC_OAM + 1];
     }
 
@@ -716,7 +713,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
-    struct pc802_rx_queue *rxq;
+    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
     volatile PC802_Descriptor_t *rx_ring;
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *sw_ring;
@@ -729,13 +726,6 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     uint16_t nb_rx;
     uint16_t nb_hold;
 
-    if (queue_id <= PC802_TRAFFIC_OAM) {
-        rxq = &adapter->rxq[queue_id];
-    } else if (queue_id < PC802_TRAFFIC_NUM) {
-        rxq = &adapter->rxq[queue_id + 1];
-    } else { // mailbox
-        rxq = &adapter->rxq[PC802_TRAFFIC_OAM + 1];
-    }
     mask = rxq->nb_rx_desc - 1;
 
     nb_rx = 0;
