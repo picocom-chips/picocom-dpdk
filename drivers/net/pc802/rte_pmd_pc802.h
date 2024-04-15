@@ -48,6 +48,9 @@ typedef enum PC802_Traffic_Type_e {
 
     PC802_TRAFFIC_CTRL_4,
 
+    PC802_TRAFFIC_QUEUE_8,
+    PC802_TRAFFIC_CTRL_5 = PC802_TRAFFIC_QUEUE_8,
+
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
 
