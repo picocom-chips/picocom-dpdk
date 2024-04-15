@@ -191,7 +191,7 @@ struct pc802_adapter {
     PC802_BAR_Ext_t *bar0_ext;
     PC802_Descs_t *pDescs;
     uint64_t descs_phy_addr;
-    struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
+    struct pc802_tx_queue  txq[PC802_TRAFFIC_NUM];
     struct pc802_rx_queue  rxq[PC802_TRAFFIC_NUM + 1]; //additional rxq for c2h mailbox
     struct rte_ether_addr eth_addr;
     uint16_t port_id;

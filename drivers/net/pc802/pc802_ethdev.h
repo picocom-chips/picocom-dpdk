@@ -11,7 +11,6 @@
 #define MIN_DESC_NUM    8
 #define MAX_DESC_NUM  4096
 
-#define MAX_DL_CH_NUM   PC802_TRAFFIC_NUM
 #define MAX_UL_CH_NUM   PC802_TRAFFIC_NUM
 
 #define DEFAULT_PC802_5G_DESC_NUM   256
@@ -283,7 +282,7 @@ typedef union {
 struct stPC802_EP_Counter_Mirror_t {
     union {
         PC802_CacheLine_t   cache_line_tepcnt;
-        volatile uint32_t TEPCNT[MAX_DL_CH_NUM];
+        volatile uint32_t TEPCNT[8];
     };
     union {
         PC802_CacheLine_t   cache_line_repcnt;
@@ -307,7 +306,7 @@ struct stPC802_EP_Counter_Mirror_t {
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
 typedef struct PC802_Descs_t {
-    PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
+    PC802_Descriptor_t  dl[PC802_TRAFFIC_OAM + 1][MAX_DESC_NUM];
     PC802_Descriptor_t  ul[MAX_UL_CH_NUM + 1][MAX_DESC_NUM]; //additional ul[MAX_UL_CH_NUM] for c2h mailbox
     PC802_EP_Counter_Mirror_t  mr;
 } PC802_Descs_t;
