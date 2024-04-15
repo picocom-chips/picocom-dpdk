@@ -345,6 +345,14 @@ struct stPC802_EP_Counter_Mirror_t {
         volatile uint32_t   SLOT_SFN[4];
     };
     PerCoreEpCnt_u TRACE_EPCNT[32];
+    union {
+        PC802_CacheLine_t   cache_line_tepcnt8;
+        volatile uint32_t TEPCNT8[8];
+    };
+    union {
+        PC802_CacheLine_t   cache_line_repcnt8;
+        volatile uint32_t REPCNT8[8];
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
@@ -353,6 +361,8 @@ typedef struct PC802_Descs_t {
     PC802_Descriptor_t  dl[PC802_TRAFFIC_OAM + 1][MAX_DESC_NUM];
     PC802_Descriptor_t  ul[PC802_TRAFFIC_OAM + 2][MAX_DESC_NUM]; //additional ul[PC802_TRAFFIC_OAM+1] for c2h mailbox
     PC802_EP_Counter_Mirror_t  mr;
+    PC802_Descriptor_t  dl7[15 - PC802_TRAFFIC_OAM][MAX_DESC_NUM];
+    PC802_Descriptor_t  ul7[15 - PC802_TRAFFIC_OAM][MAX_DESC_NUM];
 } PC802_Descs_t;
 
 static inline int isPowerOf2(uint32_t n)
