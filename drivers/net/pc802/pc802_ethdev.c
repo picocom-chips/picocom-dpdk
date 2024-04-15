@@ -316,7 +316,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
-    struct pc802_rx_queue *rxq = &adapter->rxq[queue_id];
+    struct pc802_rx_queue *rxq;
     volatile PC802_Descriptor_t *rxdp;
     struct pc802_rx_entry *rxep;
     uint32_t mask = NPU_CACHE_LINE_SZ - 1;
@@ -328,6 +328,17 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     uint32_t rc_rst_cnt;
     uint32_t ep_rst_cnt;
     volatile uint32_t ep_cnt;
+
+    if (queue_id <= PC802_TRAFFIC_OAM) {
+        rxq = &adapter->rxq[queue_id];
+        rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
+    } else if (queue_id < PC802_TRAFFIC_NUM) {
+        rxq = &adapter->rxq[queue_id + 1];
+        rxdp = rxq->rx_ring = adapter->pDescs->ul7[queue_id - (PC802_TRAFFIC_OAM + 1)];
+    } else { // mailbox
+        rxq = &adapter->rxq[PC802_TRAFFIC_OAM + 1];
+        rxdp = rxq->rx_ring = adapter->pDescs->ul[PC802_TRAFFIC_OAM + 1];
+    }
 
     rxq->mpool.block_size = block_size;
     rxq->mpool.block_num = block_num;
@@ -397,7 +408,6 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         }
     }
 
-    rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
     rxep = rxq->sw_ring;
     for (k = 0; k < nb_desc; k++) {
         rxep->mblk = rxq->mpool.first;
@@ -422,12 +432,15 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&ext->MB_C2H_RCCNT;
         rxq->repcnt_mirror_addr = (volatile uint32_t *)&adapter->pDescs->mr.MB_C2H_EPCNT;
         PC802_WRITE_REG(bar->MB_C2H_RDNUM, nb_desc);
-    } else {
+    } else if (queue_id < 8) {
         rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT[queue_id];
         rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT[queue_id];
+    } else {
+        rxq->rrccnt_reg_addr = (volatile uint32_t *)&bar->RRCCNT8[queue_id - 8];
+        rxq->repcnt_mirror_addr = &adapter->pDescs->mr.REPCNT8[queue_id - 8];
     }
 
-    if ((queue_id < PC802_TRAFFIC_MAILBOX) && (PC802_READ_REG(bar->DEVEN))) {
+    if ((queue_id < 8) && (PC802_READ_REG(bar->DEVEN))) {
         PC802_WRITE_REG(bar->RDNUM[queue_id], nb_desc);
         rte_wmb();
         rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT[queue_id]);
@@ -449,6 +462,32 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             PC802_WRITE_REG(bar->RRCCNT[queue_id], 0);
             do {
                 ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT[queue_id]);
+            } while (ep_rst_cnt != rc_rst_cnt);
+        }
+    }
+
+    if ((8 <= queue_id) && (queue_id < PC802_TRAFFIC_NUM) && (PC802_READ_REG(bar->DEVEN))) {
+        PC802_WRITE_REG(bar->RDNUM8[queue_id - 8], nb_desc);
+        rte_wmb();
+        rc_rst_cnt = PC802_READ_REG(bar->RX_RST_RCCNT8[queue_id - 8]);
+        rc_rst_cnt++;
+        PC802_WRITE_REG(bar->RX_RST_RCCNT8[queue_id - 8], rc_rst_cnt);
+        do {
+            ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT8[queue_id - 8]);
+        } while (ep_rst_cnt != rc_rst_cnt);
+        do {
+            ep_cnt = PC802_READ_REG(bar->REPCNT8[queue_id - 8]);
+        } while (0 != ep_cnt);
+        do {
+            ep_cnt = *rxq->repcnt_mirror_addr;
+        } while (0 != ep_cnt);
+        if (0 != PC802_READ_REG(bar->RRCCNT8[queue_id - 8])) {
+            rc_rst_cnt++;
+            PC802_WRITE_REG(bar->RX_RST_RCCNT8[queue_id - 8], rc_rst_cnt);
+            rte_io_wmb();
+            PC802_WRITE_REG(bar->RRCCNT8[queue_id - 8], 0);
+            do {
+                ep_rst_cnt = PC802_READ_REG(bar->RX_RST_EPCNT8[queue_id - 8]);
             } while (ep_rst_cnt != rc_rst_cnt);
         }
     }
