@@ -195,7 +195,7 @@ int pcxxDataOpen(const pcxxInfo_s* info, ...)
 int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
         return -1;
@@ -227,7 +227,7 @@ void pcxxDataClose(void)
 void pcxxDataClose( uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
 }
 
 #ifndef MULTI_PC802
@@ -686,7 +686,7 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
 int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
@@ -710,7 +710,7 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
@@ -756,7 +756,7 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
 void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
 {
 #endif
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->rx_data_buf)
         return NULL;
@@ -783,7 +783,7 @@ int pcxxCtrlDestroy( uint16_t dev_index, uint16_t cell_index )
 }
 int pcxxDataDestroy( uint16_t dev_index, uint16_t cell_index )
 {
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<2) );
     return 0;
 }
 #endif
