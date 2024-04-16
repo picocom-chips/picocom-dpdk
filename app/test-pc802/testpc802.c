@@ -155,14 +155,22 @@ static int port_init( uint16_t pc802_index )
     rte_eth_tx_queue_setup(port, 0, 128, socket_id, &tx_conf);
     rte_eth_rx_queue_setup(port, 0, 128, socket_id, NULL, mbuf_pool);
 
-    for (cell = 0; cell < CELL_NUM_PRE_DEV; cell++)
+    uint16_t ctrl_num, data_num;
+#ifdef MULTI_PC802
+    ctrl_num = CELL_NUM_PRE_DEV + 1;
+    data_num = 2;
+#else
+    ctrl_num = 1;
+    data_num = 1;
+#endif
+    for (cell = 0; cell < data_num; cell++)
     {
         pcxxDataOpen(&data_cb_info, pc802_index, cell);
+    }
+    for (cell = 0; cell < ctrl_num; cell++)
+    {
         pcxxCtrlOpen(&ctrl_cb_info, pc802_index, cell);
     }
-#ifdef MULTI_PC802
-    pcxxCtrlOpen(&ctrl_cb_info, pc802_index, LEGACY_CELL_INDEX);
-#endif
 
     RTE_ASSERT(0 == pc802_create_tx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
     RTE_ASSERT(0 == pc802_create_rx_queue(port, PC802_TRAFFIC_OAM, OAM_QUEUE_BLOCK_SIZE, 128, 64));
