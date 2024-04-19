@@ -6,5 +6,8 @@ install_data([
 	'dpdk-pmdinfo.py',
 	'dpdk-telemetry.py',
 	'dpdk-hugepages.py',
-    'pcie_reboot_pc802.sh'
+    'pcie_reboot_pc802.sh',
+    'reset_evb_pc802.sh',
+    'reset_pc802_from_gpio.sh',
+    'test_reset_evb_pc802.sh'
 ],install_dir: 'bin')
