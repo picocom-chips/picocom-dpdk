@@ -175,6 +175,7 @@ dpdk-devbind.py -u ${PCI_ADDR}
 if [[ `arch` =~ "x86_64" ]];then
     evb_reset_pc802 $PCI_ADDR
 	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
+    sleep 4
 else
 	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
     scb_reset_pc802
