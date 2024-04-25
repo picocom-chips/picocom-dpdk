@@ -15,6 +15,7 @@ apps = [
 	'test-eventdev',
 	'test-fib',
 	'test-flow-perf',
+    'review-pc802',
         'test-pc802',
         'test-pc802-nr-phy',
         'test-pc802oam',
