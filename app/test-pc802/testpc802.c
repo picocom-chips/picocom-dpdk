@@ -57,7 +57,7 @@
 #include <pcxx_ipc.h>
 #include <pcxx_oam.h>
 
-#define LEGACY_CELL_INDEX 0
+#define LEGACY_CELL_INDEX PC802_TRAFFIC_CTRL_3
 
 #define TEST_PC802_DISP_LOOP_NUM    10000
 
@@ -827,7 +827,7 @@ static int case106(void)
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, LEGACY_CELL_INDEX));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, PC802_TRAFFIC_5G_URLLC);
+    produce_dl_src_data(A, PC802_TRAFFIC_CTRL_3);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a, length, g_pc802_index, LEGACY_CELL_INDEX);
 
