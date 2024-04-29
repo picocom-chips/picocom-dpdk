@@ -1011,9 +1011,58 @@ static int case109(void)
     produce_dl_src_data(A, QID_CTRL[2]);
     N = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a, N, g_pc802_index, 2);
-    PCXX_CALL(pcxxSendEnd,g_pc802_index, 22);
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, 2);
 
     while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, 2));
+    int re = atl_test_result[g_pc802_index][2];
+    atl_test_result[g_pc802_index][2] = 0;
+    return re;
+}
+
+static int case10(void)
+{
+    int re;
+    uint32_t N;
+    uint32_t *a = alloc_tx_blk(QID_CTRL[3]);
+    if (NULL == a) return -1;
+
+    produce_dl_src_data(a, QID_CTRL[3]);
+    N = sizeof(uint32_t) * (a[1] + 2);
+    set_blk_attr(a, N, 2, 1);
+    tx_blks(QID_CTRL[3], &a, 1);
+
+    uint32_t *b;
+    while (0 == rx_blks(QID_CTRL[3], &b, 1));
+    uint32_t length = 0;
+    uint8_t type, eop = 0;
+    get_blk_attr(b, &length, &type, &eop);
+    if ((type != 2) || (eop != 1))
+        return -1;
+    swap_msg(b, length);
+    //printf("CASE1: UL msg length = %u\n", length);
+    //check_ul_dst_data(b, length);
+    re = check_single_same(a, b);
+    free_blk(a);
+    free_blk(b);
+    return re;
+}
+
+static int case110(void)
+{
+    char *a;
+    uint32_t *A;
+    uint32_t N;
+    uint32_t avail;
+
+    PCXX_CALL(pcxxSendStart, g_pc802_index, 3 );
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, 3));
+    A = (uint32_t *)a;
+    produce_dl_src_data(A, QID_CTRL[2]);
+    N = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a, N, g_pc802_index, 3);
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, 3);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, 3));
     int re = atl_test_result[g_pc802_index][2];
     atl_test_result[g_pc802_index][2] = 0;
     return re;
