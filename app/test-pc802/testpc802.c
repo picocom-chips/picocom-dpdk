@@ -384,8 +384,8 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 }
 
 #ifdef MULTI_PC802
-static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
-static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2};
+static PC802_Traffic_Type_e QID_DATA[] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
+static PC802_Traffic_Type_e QID_CTRL[] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2, PC802_TRAFFIC_CTRL_3, PC802_TRAFFIC_CTRL_4, PC802_TRAFFIC_CTRL_5};
 #else
 static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1};
 static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1};
@@ -841,6 +841,133 @@ static int case106(void)
 #else
     return 0;
 #endif
+}
+
+static int case7(uint16_t D)
+{
+    uint32_t N;
+    uint32_t *a[17];
+    uint32_t *b[2];
+    int k;
+    uint32_t length = 0;
+    uint8_t  type, eop;
+
+    if (D > 16) D = 16;
+
+    for (k = 0; k < D; k++) {
+        a[k] = alloc_tx_blk(QID_DATA[1]);
+        produce_dl_src_data(a[k], QID_DATA[1]);
+        N = sizeof(uint32_t) * (a[k][1] + 2);
+        eop = k == (D-1);
+        set_blk_attr(a[k], N, 0, eop);
+        //printf("  Type=0  m=%u  EOP=%1u\n", k, eop);
+        tx_blks(QID_DATA[1], &a[k], 1);
+    }
+    a[k] = alloc_tx_blk(QID_CTRL[1]);
+    produce_dl_src_data(a[k], QID_CTRL[1]);
+    N = sizeof(uint32_t) * (a[k][1] + 2);
+    set_blk_attr(a[k], N, 1, 1);
+    //printf("  Type=1  m=%u  EOP=1\n", k);
+    tx_blks(QID_CTRL[1], &a[k], 1);
+
+    uint16_t s;
+    do {
+        s = rx_blks(QID_DATA[1], &b[0], 1);
+    } while(0 == s);
+    do {
+        s = rx_blks(QID_CTRL[1], &b[1], 1);
+    } while(0 == s);
+
+    get_blk_attr(b[0], &length, &type, &eop);
+    swap_msg(b[0], length);
+    if (check_same(&a[0], D, b[0]))
+        return -1;
+    get_blk_attr(b[1], &length, &type, &eop);
+    swap_msg(b[1], length);
+    if (check_single_same(a[D], b[1]))
+        return -2;
+
+    for (k = 0; k < D; k++)
+        free_blk(a[k]);
+    free_blk(b[0]);
+    free_blk(b[1]);
+    return 0;
+}
+
+static int case107(uint16_t D)
+{
+    char *a[17];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+    int k;
+
+    if (D > 16) D = 16;
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[1]);
+
+    PCXX_CALL(pcxxSendStart,g_pc802_index, 1);
+
+    for (k = 0; k < D; k++) {
+        produce_dl_src_data(tmp, QID_DATA[1]);
+        length = sizeof(uint32_t) * (tmp[1] + 2);
+        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset, g_pc802_index, 1));
+        memcpy(a[k], tmp, length);
+        pcxxDataSend(offset, length, g_pc802_index, 1);
+    }
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail, g_pc802_index, 1));
+    A = (uint32_t *)a[k];
+    produce_dl_src_data(A, QID_CTRL[1]);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[k], length, g_pc802_index, 1);
+
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, 1);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, 1));
+
+    int re = atl_test_result[g_pc802_index][1];
+    atl_test_result[g_pc802_index][1] = 0;
+    free_blk(tmp);
+    return re;
+}
+
+static int case8(void)
+{
+    uint32_t D;
+    uint32_t L = (uint32_t)rand();
+    L = 16 + (L & 7);
+
+    //printf("Case 5 will execute Case 4 for %u times!\n", L);
+    //n = 0;
+    while (L) {
+        D = (uint32_t)rand();
+        D = (D & 15) + 1;
+        L--;
+        //printf("... Test Case 4 with %u users for No. %u, Left %u times.\n", D, n++, L);
+        if (case7(D))
+            return -1;
+    }
+    return 0;
+}
+
+static int case108(void)
+{
+    uint32_t D;
+    uint32_t L = (uint32_t)rand();
+    L = 16 + (L & 7);
+
+    //printf("Case 105 will execute Case 104 for %u times!\n", L);
+    //n = 0;
+    while (L) {
+        D = (uint32_t)rand();
+        D = (D & 15) + 1;
+        L--;
+        //printf("... Test Case 104 with %u users for No. %u, Left %u times\n", D, n++, L);
+        if (case107(D))
+            return -1;
+    }
+    return 0;
 }
 
 static int case201(void)
