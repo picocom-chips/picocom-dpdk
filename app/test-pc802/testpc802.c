@@ -1801,6 +1801,26 @@ static void run_case(int caseNo)
         diag = case5();
         disp_test_result(caseNo, diag);
         break;
+    case 7:
+        diag = case7();
+        disp_test_result(caseNo, diag);
+        break;
+    case 8:
+        diag = case8();
+        disp_test_result(caseNo, diag);
+        break;
+    case 9:
+        diag = case9();
+        disp_test_result(caseNo, diag);
+        break;
+    case 10:
+        diag = case10();
+        disp_test_result(caseNo, diag);
+        break;
+    case 11:
+        diag = case11();
+        disp_test_result(caseNo, diag);
+        break;
     case 101:
         diag = case101();
         disp_test_result(caseNo, diag);
@@ -1825,6 +1845,25 @@ static void run_case(int caseNo)
         diag = case106();
         disp_test_result(caseNo, diag);
         break;
+    case 107:
+        diag = case107();
+        disp_test_result(caseNo, diag);
+        break;
+    case 108:
+        diag = case108();
+        disp_test_result(caseNo, diag);
+        break;
+    case 109:
+        diag = case109();
+        disp_test_result(caseNo, diag);
+        break;
+    case 110:
+        diag = case110();
+        disp_test_result(caseNo, diag);
+        break;
+    case 111:
+        diag = case111();
+        disp_test_result(caseNo, diag);
     case 201:
         diag = case201();
         disp_test_result(201, diag);
