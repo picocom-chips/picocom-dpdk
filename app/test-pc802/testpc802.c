@@ -1802,7 +1802,7 @@ static void run_case(int caseNo)
         disp_test_result(caseNo, diag);
         break;
     case 7:
-        diag = case7();
+        diag = case7(16);
         disp_test_result(caseNo, diag);
         break;
     case 8:
@@ -1846,7 +1846,7 @@ static void run_case(int caseNo)
         disp_test_result(caseNo, diag);
         break;
     case 107:
-        diag = case107();
+        diag = case107(16);
         disp_test_result(caseNo, diag);
         break;
     case 108:
@@ -1864,6 +1864,7 @@ static void run_case(int caseNo)
     case 111:
         diag = case111();
         disp_test_result(caseNo, diag);
+        break;
     case 201:
         diag = case201();
         disp_test_result(201, diag);
