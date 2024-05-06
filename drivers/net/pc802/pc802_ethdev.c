@@ -1388,7 +1388,7 @@ eth_pc802_start(struct rte_eth_dev *dev)
     //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
     //struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
     int ret;
-    int q;
+    int q, n;
     //uint32_t intr_vector = 0;
     //uint32_t *speeds;
     //int num_speeds;
@@ -1457,11 +1457,11 @@ eth_pc802_start(struct rte_eth_dev *dev)
         PC802_WRITE_REG(bar->RDNUM[q], adapter->rxq[q].nb_rx_desc);
         PC802_WRITE_REG(bar->RRCCNT[q], 0);
     }
-    for (q = 8; q < PC802_TRAFFIC_NUM; q++) {
-        PC802_WRITE_REG(bar->TDNUM8[q], adapter->txq[q].nb_tx_desc);
-        PC802_WRITE_REG(bar->TRCCNT8[q], 0);
-        PC802_WRITE_REG(bar->RDNUM8[q], adapter->rxq[q].nb_rx_desc);
-        PC802_WRITE_REG(bar->RRCCNT8[q], 0);
+    for (n =0, q = 8; q < PC802_TRAFFIC_NUM; n++, q++) {
+        PC802_WRITE_REG(bar->TDNUM8[n], adapter->txq[q].nb_tx_desc);
+        PC802_WRITE_REG(bar->TRCCNT8[n], 0);
+        PC802_WRITE_REG(bar->RDNUM8[n], adapter->rxq[q].nb_rx_desc);
+        PC802_WRITE_REG(bar->RRCCNT8[n], 0);
     }
 
     PC802_WRITE_REG(bar->DEVEN, 1);
