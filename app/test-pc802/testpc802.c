@@ -59,7 +59,7 @@
 
 #define LEGACY_CELL_INDEX PC802_TRAFFIC_CTRL_3
 
-#define TEST_PC802_DISP_LOOP_NUM    10000
+#define TEST_PC802_DISP_LOOP_NUM    2000
 
 int testpc802_data_mode = 0;
 int testpc802_exit_loop = 0;
