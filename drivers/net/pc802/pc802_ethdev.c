@@ -2273,12 +2273,12 @@ static FILE * get_image_file(uint16_t port, const char *image_name)
 static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
-    volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
-    volatile uint32_t *BOOTEPCNT = &bar->BOOTEPCNT;
+    uint32_t BOOTRCCNT;
+    volatile uint32_t BOOTEPCNT;
     volatile uint32_t devRdy;
 
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
-    if (0xFFFFFFFF == *BOOTRCCNT) {
+    if (0xFFFFFFFF == PC802_READ_REG(bar->BOOTRCCNT)) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
         mb_set_ssbl_end(port_idx);
         return 0;
@@ -2292,7 +2292,8 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     DBLOG( "DRVSTATE=%d, DEVRDY=%d. Begin download ssbl(port=%hu) ...\n",
         PC802_READ_REG(bar->DRVSTATE), devRdy, port );
 
-    *BOOTRCCNT = 0;
+    BOOTRCCNT = 0;
+    PC802_WRITE_REG(bar->BOOTRCCNT, BOOTRCCNT);
     const struct rte_memzone *mz;
     uint32_t tsize = 64 * 1024;
     int socket_id = pc802_get_socket_id(port);
@@ -2311,10 +2312,10 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
         return -1;
     }
 
-    bar->BOOTSRCL = (uint32_t)(mz->iova);
-    bar->BOOTSRCH = (uint32_t)(mz->iova >> 32);
-    bar->BOOTDST  = 0;
-    bar->BOOTSZ = 0;
+    PC802_WRITE_REG(bar->BOOTSRCL, (uint32_t)(mz->iova));
+    PC802_WRITE_REG(bar->BOOTSRCH, (uint32_t)(mz->iova >> 32));
+    PC802_WRITE_REG(bar->BOOTDST, 0);
+    PC802_WRITE_REG(bar->BOOTSZ, 0);
     uint32_t N, sum;
     sum = 0;
     do {
@@ -2322,16 +2323,17 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
         if (N < 4)
             break;
         rte_wmb();
-        (*BOOTRCCNT)++;
-        while(*BOOTRCCNT != *BOOTEPCNT)
+        BOOTRCCNT++;
+        PC802_WRITE_REG(bar->BOOTRCCNT, BOOTRCCNT);
+        while(BOOTRCCNT != (BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT)))
             usleep(1);
         sum += N;
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", BOOTRCCNT, sum);
         N = 0;
     } while (1);
     printf("\n");
 
-    *BOOTRCCNT = 0xFFFFFFFF; //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
+    PC802_WRITE_REG(bar->BOOTRCCNT, 0xFFFFFFFF); //wrtite BOOTRCCNT=-1 to make FSBL finish downloading SSBL.
     fclose(fp);
     DBLOG("Finish dowloading SSBL !\n");
 
@@ -2339,7 +2341,8 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
     do {
         devRdy = PC802_READ_REG(bar->DEVRDY);
     } while (devRdy<2);
-    *BOOTRCCNT = 0x0;
+    BOOTRCCNT = 0;
+    PC802_WRITE_REG(bar->BOOTRCCNT, BOOTRCCNT);
     DBLOG( "DRVSTATE=%d, DEVRDY=%d.\n", PC802_READ_REG(bar->DRVSTATE), devRdy );
 
     do {
@@ -2362,14 +2365,15 @@ static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
             break;
         }
         rte_wmb();
-        (*BOOTRCCNT)++;
-        while(*BOOTRCCNT != *BOOTEPCNT)
+        BOOTRCCNT++;
+        PC802_WRITE_REG(bar->BOOTRCCNT, BOOTRCCNT);
+        while(BOOTRCCNT != (BOOTEPCNT = PC802_READ_REG(bar->BOOTEPCNT)))
             usleep(1);
         sum += N;
-        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", bar->BOOTRCCNT, sum);
+        printf("\rBAR->BOOTRCCNT = %u  Finish downloading %u bytes", BOOTRCCNT, sum);
         N = 0;
     } while (1);
-    *BOOTRCCNT = 0xFFFFFFFF; //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
+    PC802_WRITE_REG(bar->BOOTRCCNT, 0xFFFFFFFF); //write BOOTRCCNT=-1 to notify SSBL complete downaloding the 3rd stage image.
     printf("\nFinish downloading the 3rd stage image !\n");
 
     rte_memzone_free(mz);
