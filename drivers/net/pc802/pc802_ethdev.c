@@ -3609,6 +3609,7 @@ static void * pc802_coredump_thread(__rte_unused void *data)
             PC802_BAR_t *bar = adpater->bar0;
             if (state != 3) {
                 state = PC802_READ_REG(bar->DRVSTATE);
+                usleep(50000);
                 continue;
             }
             uint8_t *bar0 = (uint8_t *)bar;
