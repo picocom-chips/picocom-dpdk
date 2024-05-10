@@ -9,7 +9,7 @@
 # Copyright PICOCOM.
 #
 
-scb_reset_pc802() {
+ext_reset() {
 	if [ ! -f /sys/class/gpio/gpio422/value ]
 	then
 		echo "Export GPIO 3-6 (422) to userspace."
@@ -26,14 +26,11 @@ scb_reset_pc802() {
 	echo 1 > /sys/class/gpio/gpio422/value
 }
 
-evb_reset_pc802() {
-	if [ -z $1 ]; then
-		gpio_port_number=$1
-	else
-		gpio_port_number=27
-	fi
+int_reset() {
+	dev=$1
+	port_id=$2
 
-	bar0=0x`lspci -v -s $1 | grep Memory | head -n 1 | cut -f3 -d' '`
+	bar0=0x`lspci -v -s $dev | grep Memory | head -n 1 | cut -f3 -d' '`
 	echo bar0=$bar0
 
 	addr=`echo $(($bar0+0x2e0))`
@@ -70,7 +67,7 @@ evb_reset_pc802() {
 	rccnt=`echo $(($epcnt+1))`
 	echo rccnt=$rccnt
 
-	busybox devmem $WR_DATA 32 $gpio_port_number
+	busybox devmem $WR_DATA 32 $port_id
 	busybox devmem $CMD 32 2
 
 	busybox devmem $RCCNT 32 $rccnt
@@ -155,13 +152,43 @@ set_speed() {
 	echo "Current link speed:" $(("0x$ls" & 0xF))
 }
 
+usage() {
+	echo "Usage: Script for reset pc802 on NPU"
+	echo -e "\t$0 [pc802_index] [-i|-e] [-h]"
+	echo -e "\tpc802_index, Input pc802 index to be reset: 1-4, default 1"
+	echo -e "\t-i, Reset pc802 by pc802 internal gpio, x86 platform default mode"
+	echo -e "\t-e, Reset pc802 by NPU gpio, arm platform default mode"
+	echo -e "\t-h, Display this help"
+}
+
+index=1
+mode=""
+gpio=""
+
+if [[ `arch` =~ "x86_64" ]];then
+	mode="INT"
+	gpio=422
+else
+	mode="EXT"
+	gpio=27
+fi
+
+while getopts "hiep:" ARG ; do
+	case $ARG in
+		i ) mode="INT" ;;
+		e ) mode="EXT" ;;
+		p ) gpio=${options} ;;
+		h ) usage ; exit 0 ;;
+	esac
+done
+shift $((OPTIND -1))
 
 if [ $1 ];then
     index=$1
-    PCI_ADDR=`lspci | awk  '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
+    PCI_ADDR=`lspci | awk '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
 else
 	index=1
-    PCI_ADDR=`lspci | awk  '/1ec4/{print $1;exit;}'`
+    PCI_ADDR=`lspci | awk '/1ec4/{print $1;exit;}'`
 fi
 if [ -z $PCI_ADDR ];then
 	echo "Error: cann't find PC802 $index"
@@ -172,13 +199,13 @@ fi
 
 echo "Remove and reset PC802 ${PCI_ADDR} from pice"
 dpdk-devbind.py -u ${PCI_ADDR}
-if [[ `arch` =~ "x86_64" ]];then
-    evb_reset_pc802 $PCI_ADDR
+if [[ $mode == "INT" ]];then
+    int_reset $PCI_ADDR $gpio
 	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
     sleep 4
-else
+elif [[ $mode == "EXT" ]];then
 	echo "1" > /sys/bus/pci/devices/0000\:${PCI_ADDR/:/\\:}/remove
-    scb_reset_pc802
+    ext_reset $gpio
 fi
 sleep 1
 
@@ -187,14 +214,18 @@ echo "Start pcie rescan ......"
 echo "1" > /sys/bus/pci/rescan
 lspci
 
-PCI_ADDR=`lspci | awk  '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
-if [ -z "$PCI_ADDR" ]; then
+NEW_ADDR=`lspci | awk '/1ec4/{i++;if(i=="'$index'"){print $1;exit;}}'`
+if [[ -z "$NEW_ADDR" ]]; then
 	echo "Error: cann't find PC802, need to reboot npu."
 	exit 1
+elif [[ "$NEW_ADDR" != "$PCI_ADDR" ]]; then
+	echo "Error: pcie dev:$NEW_ADDR not match source dev:$PCI_ADDR."
+    exit 1
 fi
 echo "Rescan PC802 at ${PCI_ADDR}"
 echo ""
 set_speed ${PCI_ADDR} 3
+lspci -v -s ${PCI_ADDR}
 
 modprobe uio_pci_generic 
 dpdk-devbind.py -b uio_pci_generic ${PCI_ADDR}
