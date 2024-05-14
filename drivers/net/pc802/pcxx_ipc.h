@@ -114,7 +114,7 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index );
 #ifndef MULTI_PC802
 int pcxxSendEnd(void);
 #else
-int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );;
+int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );
 #endif
 
 /**

@@ -182,3 +182,10 @@ New features
 Bug fixes
 *********
 * NDF-202: Mailbox message modified to use pipe, fix startup failure when multi-primary process
+
+PC802 driver 2.10
+##################
+
+Others
+******
+* NDF-211: Adjust code style of pcxx_ipc.c for reviewing codes in source insight
