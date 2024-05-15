@@ -57,7 +57,8 @@
 #include <pcxx_ipc.h>
 #include <pcxx_oam.h>
 
-#define TEST_PC802_DISP_LOOP_NUM    10000
+#define LEGACY_CELL_INDEX PC802_TRAFFIC_CTRL_3
+#define TEST_PC802_DISP_LOOP_NUM    500
 
 int testpc802_data_mode = 0;
 int testpc802_exit_loop = 0;
@@ -109,8 +110,8 @@ static uint32_t process_ul_data_msg(const char* buf, uint32_t payloadSize);
 static uint32_t process_dl_data_msg(const char* buf, uint32_t payloadSize);
 #endif
 
-static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg};
-static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg};
+static pcxxInfo_s   ctrl_cb_info = {process_ul_ctrl_msg, process_dl_ctrl_msg, 1};
+static pcxxInfo_s   data_cb_info = {process_ul_data_msg, process_dl_data_msg, 1};
 uint16_t g_pc802_index = 0;
 uint16_t g_cell_index = 0;
 
@@ -374,8 +375,8 @@ static void swap_msg(uint32_t *a, uint32_t msgSz)
 }
 
 #ifdef MULTI_PC802
-static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
-static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2};
+static PC802_Traffic_Type_e QID_DATA[] = { PC802_TRAFFIC_DATA_1, PC802_TRAFFIC_DATA_2};
+static PC802_Traffic_Type_e QID_CTRL[] = { PC802_TRAFFIC_CTRL_1, PC802_TRAFFIC_CTRL_2, PC802_TRAFFIC_CTRL_3};
 #else
 static PC802_Traffic_Type_e QID_DATA[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_DATA_1};
 static PC802_Traffic_Type_e QID_CTRL[CELL_NUM_PRE_DEV] = { PC802_TRAFFIC_CTRL_1};
@@ -817,7 +818,7 @@ static int case106(void)
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, LEGACY_CELL_INDEX));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, PC802_TRAFFIC_5G_URLLC);
+    produce_dl_src_data(A, PC802_TRAFFIC_CTRL_3);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a, length, g_pc802_index, LEGACY_CELL_INDEX);
 
@@ -831,6 +832,182 @@ static int case106(void)
 #else
     return 0;
 #endif
+}
+
+static int case7(uint16_t D)
+{
+    uint32_t N;
+    uint32_t *a[17];
+    uint32_t *b[2];
+    int k;
+    uint32_t length = 0;
+    uint8_t  type, eop;
+
+    if (D > 16) D = 16;
+
+    for (k = 0; k < D; k++) {
+        a[k] = alloc_tx_blk(QID_DATA[1]);
+        produce_dl_src_data(a[k], QID_DATA[1]);
+        N = sizeof(uint32_t) * (a[k][1] + 2);
+        eop = k == (D-1);
+        set_blk_attr(a[k], N, 0, eop);
+        //printf("  Type=0  m=%u  EOP=%1u\n", k, eop);
+        tx_blks(QID_DATA[1], &a[k], 1);
+    }
+    a[k] = alloc_tx_blk(QID_CTRL[1]);
+    produce_dl_src_data(a[k], QID_CTRL[1]);
+    N = sizeof(uint32_t) * (a[k][1] + 2);
+    set_blk_attr(a[k], N, 1, 1);
+    //printf("  Type=1  m=%u  EOP=1\n", k);
+    tx_blks(QID_CTRL[1], &a[k], 1);
+
+    uint16_t s;
+    do {
+        s = rx_blks(QID_DATA[1], &b[0], 1);
+    } while(0 == s);
+    do {
+        s = rx_blks(QID_CTRL[1], &b[1], 1);
+    } while(0 == s);
+
+    get_blk_attr(b[0], &length, &type, &eop);
+    swap_msg(b[0], length);
+    if (check_same(&a[0], D, b[0]))
+        return -1;
+    get_blk_attr(b[1], &length, &type, &eop);
+    swap_msg(b[1], length);
+    if (check_single_same(a[D], b[1]))
+        return -2;
+
+    for (k = 0; k < D; k++)
+        free_blk(a[k]);
+    free_blk(b[0]);
+    free_blk(b[1]);
+    return 0;
+}
+
+static int case107(uint16_t D)
+{
+    char *a[17];
+    uint32_t *A;
+    uint32_t length;
+    uint32_t offset;
+    uint32_t avail;
+    int k;
+
+    if (D > 16) D = 16;
+    uint32_t *tmp = alloc_tx_blk(QID_DATA[1]);
+
+    PCXX_CALL(pcxxSendStart,g_pc802_index, 1);
+
+    for (k = 0; k < D; k++) {
+        produce_dl_src_data(tmp, QID_DATA[1]);
+        length = sizeof(uint32_t) * (tmp[1] + 2);
+        RTE_ASSERT(0 == pcxxDataAlloc(length, &a[k], &offset, g_pc802_index, 1));
+        memcpy(a[k], tmp, length);
+        pcxxDataSend(offset, length, g_pc802_index, 1);
+    }
+
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a[k], &avail, g_pc802_index, 1));
+    A = (uint32_t *)a[k];
+    produce_dl_src_data(A, QID_CTRL[1]);
+    length = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a[k], length, g_pc802_index, 1);
+
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, 1);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, 1));
+
+    int re = atl_test_result[g_pc802_index][1];
+    atl_test_result[g_pc802_index][1] = 0;
+    free_blk(tmp);
+    return re;
+}
+
+static int case8(void)
+{
+    uint32_t D;
+    uint32_t L = (uint32_t)rand();
+    L = 16 + (L & 7);
+
+    //printf("Case 5 will execute Case 4 for %u times!\n", L);
+    //n = 0;
+    while (L) {
+        D = (uint32_t)rand();
+        D = (D & 15) + 1;
+        L--;
+        //printf("... Test Case 4 with %u users for No. %u, Left %u times.\n", D, n++, L);
+        if (case7(D))
+            return -1;
+    }
+    return 0;
+}
+
+static int case108(void)
+{
+    uint32_t D;
+    uint32_t L = (uint32_t)rand();
+    L = 16 + (L & 7);
+
+    //printf("Case 105 will execute Case 104 for %u times!\n", L);
+    //n = 0;
+    while (L) {
+        D = (uint32_t)rand();
+        D = (D & 15) + 1;
+        L--;
+        //printf("... Test Case 104 with %u users for No. %u, Left %u times\n", D, n++, L);
+        if (case107(D))
+            return -1;
+    }
+    return 0;
+}
+
+static int case9(void)
+{
+    int re;
+    uint32_t N;
+    uint32_t *a = alloc_tx_blk(QID_CTRL[2]);
+    if (NULL == a) return -1;
+
+    produce_dl_src_data(a, QID_CTRL[2]);
+    N = sizeof(uint32_t) * (a[1] + 2);
+    set_blk_attr(a, N, 2, 1);
+    tx_blks(QID_CTRL[2], &a, 1);
+
+    uint32_t *b;
+    while (0 == rx_blks(QID_CTRL[2], &b, 1));
+    uint32_t length = 0;
+    uint8_t type, eop = 0;
+    get_blk_attr(b, &length, &type, &eop);
+    if ((type != 2) || (eop != 1))
+        return -1;
+    swap_msg(b, length);
+    //printf("CASE1: UL msg length = %u\n", length);
+    //check_ul_dst_data(b, length);
+    re = check_single_same(a, b);
+    free_blk(a);
+    free_blk(b);
+    return re;
+}
+
+static int case109(void)
+{
+    char *a;
+    uint32_t *A;
+    uint32_t N;
+    uint32_t avail;
+
+    PCXX_CALL(pcxxSendStart, g_pc802_index, 2 );
+    RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, 2));
+    A = (uint32_t *)a;
+    produce_dl_src_data(A, QID_CTRL[2]);
+    N = sizeof(uint32_t) * (A[1] + 2);
+    pcxxCtrlSend(a, N, g_pc802_index, 2);
+    PCXX_CALL(pcxxSendEnd,g_pc802_index, 2);
+
+    while (-1 == PCXX_CALL(pcxxCtrlRecv,g_pc802_index, 2));
+    int re = atl_test_result[g_pc802_index][2];
+    atl_test_result[g_pc802_index][2] = 0;
+    return re;
 }
 
 static int case201(void)
@@ -1279,12 +1456,34 @@ static int case_n802(void)
         return_if_fail(301, diag, k);
         diag = case1();
         return_if_fail(1, diag, k);
+        diag = case101();
+        return_if_fail(101, diag, k);
         diag = case2();
         return_if_fail(2, diag, k);
+        diag = case102();
+        return_if_fail(102, diag, k);
         diag = case3();
         return_if_fail(3, diag, k);
+        diag = case103();
+        return_if_fail(103, diag, k);
         diag = case4(16);
         return_if_fail(4, diag, k);
+        diag = case104(16);
+        return_if_fail(104, diag, k);
+        diag = case106();
+        return_if_fail(106, diag, k);
+        diag = case7(16);
+        return_if_fail(7, diag, k);
+        diag = case107(16);
+        return_if_fail(107, diag, k);
+        diag = case8();
+        return_if_fail(8, diag, k);
+        diag = case108();
+        return_if_fail(108, diag, k);
+        diag = case9();
+        return_if_fail(9, diag, k);
+        diag = case109();
+        return_if_fail(109, diag, k);
         m++;
         k++;
         if (TEST_PC802_DISP_LOOP_NUM == m) {
@@ -1517,6 +1716,18 @@ static void run_case(int caseNo)
         diag = case5();
         disp_test_result(caseNo, diag);
         break;
+    case 7:
+        diag = case7(16);
+        disp_test_result(caseNo, diag);
+        break;
+    case 8:
+        diag = case8();
+        disp_test_result(caseNo, diag);
+        break;
+    case 9:
+        diag = case9();
+        disp_test_result(caseNo, diag);
+        break;
     case 101:
         diag = case101();
         disp_test_result(caseNo, diag);
@@ -1539,6 +1750,18 @@ static void run_case(int caseNo)
         break;
     case 106:
         diag = case106();
+        disp_test_result(caseNo, diag);
+        break;
+    case 107:
+        diag = case107(16);
+        disp_test_result(caseNo, diag);
+        break;
+    case 108:
+        diag = case108();
+        disp_test_result(caseNo, diag);
+        break;
+    case 109:
+        diag = case109();
         disp_test_result(caseNo, diag);
         break;
     case 201:
