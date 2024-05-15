@@ -119,6 +119,13 @@ uint16_t g_cell_index = 0;
 
 int case_dl_discard(void);
 
+static void get_phy_sfn_slot(uint16_t *sfn, uint8_t *slot, uint16_t pc802_index, uint32_t cell_index)
+{
+    uint32_t slot_sfn = pc802_get_sfn_slot(pc802_index, cell_index);
+    *slot = slot_sfn >> 16;
+    *sfn = slot_sfn & 0xFFFF;
+}
+
 static int port_init( uint16_t pc802_index )
 {
     struct rte_mempool *mbuf_pool;
@@ -495,8 +502,12 @@ static int case101(void)
     uint32_t *A;
     uint32_t N;
     uint32_t avail;
+    uint16_t sfn;
+    uint8_t  slot;
 
-    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index );
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+        return 0;
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, g_cell_index));
     A = (uint32_t *)a;
     produce_dl_src_data(A, QID_CTRL[g_cell_index]);
@@ -564,7 +575,12 @@ static int case102(void)
 
     uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+        return 0;
 
     produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
     length = sizeof(uint32_t) * (tmp[1] + 2);
@@ -650,7 +666,12 @@ static int case103(void)
 
     uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    PCXX_CALL(pcxxSendStart, g_pc802_index, g_cell_index);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+        return 0;
 
     produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
     length = sizeof(uint32_t) * (tmp[1] + 2);
@@ -743,7 +764,12 @@ static int case104(uint16_t D)
     if (D > 16) D = 16;
     uint32_t *tmp = alloc_tx_blk(QID_DATA[g_cell_index]);
 
-    PCXX_CALL(pcxxSendStart,g_pc802_index, g_cell_index);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+        return 0;
 
     for (k = 0; k < D; k++) {
         produce_dl_src_data(tmp, QID_DATA[g_cell_index]);
@@ -814,7 +840,12 @@ static int case106(void)
     uint32_t *A;
     uint32_t length, avail;
 
-    PCXX_CALL(pcxxSendStart, g_pc802_index, LEGACY_CELL_INDEX);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+        return 0;
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, LEGACY_CELL_INDEX));
     A = (uint32_t *)a;
@@ -897,7 +928,12 @@ static int case107(uint16_t D)
     if (D > 16) D = 16;
     uint32_t *tmp = alloc_tx_blk(QID_DATA[1]);
 
-    PCXX_CALL(pcxxSendStart,g_pc802_index, 1);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, 1);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, 1))
+        return 0;
 
     for (k = 0; k < D; k++) {
         produce_dl_src_data(tmp, QID_DATA[1]);
@@ -996,7 +1032,12 @@ static int case109(void)
     uint32_t N;
     uint32_t avail;
 
-    PCXX_CALL(pcxxSendStart, g_pc802_index, 2 );
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, 2);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, 2))
+        return 0;
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, 2));
     A = (uint32_t *)a;
     produce_dl_src_data(A, QID_CTRL[2]);
@@ -1590,7 +1631,12 @@ static int pcxx_test( uint16_t dev, uint16_t cell )
 
     uint32_t *tmp = alloc_tx_blk(QID_DATA[cell]);
 
-    PCXX_CALL( pcxxSendStart, dev, cell);
+    uint16_t sfn;
+    uint8_t  slot;
+
+    get_phy_sfn_slot(&sfn, &slot, dev, cell);
+    if (pcxxSendStart(sfn, slot, dev, cell))
+        return 0;
 
     for (k = 0; k < D; k++) {
         produce_dl_src_data(tmp, QID_DATA[cell]);
