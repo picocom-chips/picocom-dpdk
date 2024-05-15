@@ -49,7 +49,7 @@ struct pcxx_cell_info_st{
     uint32_t ctrl_cnt;
     uint8_t  dl_sn;
     uint8_t  scs;
-    uint8_t  tgt_dl_sfn;
+    uint16_t tgt_dl_sfn;
     uint8_t  tgt_dl_slot;
     uint8_t  dl_discard;
     SimULSlotMsg_t slot_msg;
@@ -146,7 +146,10 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
     cell_info->dl_sn = 0;
-    pcxx_devs[dev_index].cell_info[cell_index].scs = 1; //default 30 KHz
+    RTE_ASSERT(info->scs <= 4);
+    uint32_t scs_khz = 15 * (1 << info->scs);
+    NPU_SYSLOG("Set SCS = %1u , %3u KHz for dev %u cell %u\n", info->scs, scs_khz, dev_index, cell_index);
+    pcxx_devs[dev_index].cell_info[cell_index].scs = info->scs;
 
     pcxx_devs[dev_index].port_id = port_id;
 
@@ -194,7 +197,7 @@ static inline void __pcxxDataClose(uint16_t dev_index, uint16_t cell_index)
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
 }
 
-static inline int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
+static inline int __pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
@@ -212,84 +215,33 @@ static inline int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
     cell->data_length = 0;
 
     uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
-    uint8_t  num_slots = 10 << cell->scs;
-    uint8_t tgt_dl_slot = ((slot_sfn >> 16) & 0xFF) + 2;
-    uint8_t tgt_dl_sfn = slot_sfn & 0xFF;
-    if (tgt_dl_slot >= num_slots) {
-        tgt_dl_slot -= num_slots;
-        tgt_dl_sfn++;
-    }
-    cell->tgt_dl_sfn = tgt_dl_sfn;
-    cell->tgt_dl_slot = tgt_dl_slot;
-    cell->dl_discard = 0;
-    return 0;
-}
-
-/**
- * Check if target sfn and slot is in DL transfer window
- *
- * @param tgt_sfn
- *   target sfn
- * @param tgt_slot
- *   target slot
- * @return
- *   0 if in transfer window
- *  >0 too early
- *  <0 too late
- */
-static inline int __pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot, uint16_t dev_index, uint16_t cell_index)
-{
-    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
-    cell->tgt_dl_sfn = tgt_sfn;
-    cell->tgt_dl_slot = tgt_slot;
-
-    uint8_t curr_sfn;
-    uint8_t curr_slot;
-    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
-    curr_sfn = slot_sfn & 0xFF;
-    curr_slot = slot_sfn >> 16;
-    uint8_t delta_sfn = tgt_sfn - curr_sfn;
-    uint8_t delta_slot;
-    int re;
-    if (delta_sfn == 0) {
-        if (curr_slot < tgt_slot) {
-            delta_slot = tgt_slot - curr_slot;
-            re = (delta_slot >> 1) - 1;
-            cell->dl_discard = re < 0;
-            if (cell->dl_discard) {
-                NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                    tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-            }
-            return re;
-        } else { // too late
-            cell->dl_discard = 1;
-            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-            return -1;
-        }
-    } else if (delta_sfn == 1) {
-        tgt_slot += (10 <<cell->scs);
-        delta_slot = tgt_slot - curr_slot;
-        re = (delta_slot >> 1) - 1;
-        cell->dl_discard = re < 0;
-        if (cell->dl_discard) {
-            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        }
-        return re;
-    } else if (delta_sfn < 128) { // too early
+    uint8_t phy_slot = slot_sfn >> 16;
+    uint16_t phy_sfn = slot_sfn & 0xFFFF;
+    uint8_t tgt_slot = phy_slot;
+    uint16_t tgt_sfn = phy_sfn;
+    if ((current_sfn == tgt_sfn) && (current_slot == tgt_slot)) {
+        cell->tgt_dl_sfn = tgt_sfn;
+        cell->tgt_dl_slot = tgt_slot;
         cell->dl_discard = 0;
-        NPU_SYSLOG("DL Too Early not discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-            tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        return 1;
-    } else { // too late
-        cell->dl_discard = 1;
-        NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        return -1;
+        return 0;
     }
-    return 0;
+
+    tgt_slot++;
+    uint8_t num_slots = 10 << cell->scs;
+    if (tgt_slot >= num_slots) {
+        tgt_slot -= num_slots;
+        tgt_sfn = (tgt_sfn + 1) & 1023;
+    }
+    if ((current_sfn == tgt_sfn) && (current_slot == tgt_slot)) {
+        cell->tgt_dl_sfn = tgt_sfn;
+        cell->tgt_dl_slot = tgt_slot;
+        cell->dl_discard = 0;
+        return 0;
+    }
+    cell->dl_discard = 1;
+    NPU_SYSLOG("DL discard : stack_sfn = %u stack_slot = %u phy_sfn = %u phy_slot = %u dev = %u cell = %u\n",
+        current_sfn, current_slot, phy_sfn, phy_slot, dev_index, cell_index);
+    return 1;
 }
 
 static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)
@@ -299,6 +251,7 @@ static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard : dev_index = %u cell_index\n", dev_index, cell_index);
         return -1;
     }
     if (cell->data_num[cell->sfn_idx]) {
@@ -346,6 +299,8 @@ static inline int __pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t 
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard : dev_index = %u cell_index = %u\n", dev_index, cell_index);
+        *buf = NULL;
         *availableSize = 0;
         return -1;
     }
@@ -607,6 +562,9 @@ static inline int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard: dev_index, cell_index = %u\n", dev_index, cell_index);
+        *buf = NULL;
+        *offset = 0;
         return -1;
     }
     if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_DL_QUEUE_BLOCK_SIZE)
@@ -701,11 +659,6 @@ int pcxxSendStart(void)
     return __pcxxSendStart(0, 0);
 }
 
-int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot)
-{
-    return __pcxxSetDlTgtSfnSlot(tgt_sfn, tgt_slot, 0, 0);
-}
-
 int pcxxSendEnd(void)
 {
     return __pcxxSendEnd(0, 0);
@@ -779,11 +732,6 @@ void pcxxDataClose( uint16_t dev_index, uint16_t cell_index)
 int pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
 {
     return __pcxxSendStart(dev_index, cell_index);
-}
-
-int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot, uint16_t dev_index, uint16_t cell_index)
-{
-    return __pcxxSetDlTgtSfnSlot(tgt_sfn, tgt_slot, dev_index, cell_index);
 }
 
 int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)

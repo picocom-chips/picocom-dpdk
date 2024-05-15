@@ -186,6 +186,10 @@ Bug fixes
 PC802 driver 2.10
 ##################
 
+New features
+************
+* NDF-210: DL discard stage 2
+
 Others
 ******
 * NDF-211: Adjust code style of pcxx_ipc.c for reviewing codes in source insight
