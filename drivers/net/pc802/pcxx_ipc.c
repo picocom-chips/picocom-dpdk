@@ -654,9 +654,9 @@ void pcxxDataClose(void)
     __pcxxDataClose(0, 0);
 }
 
-int pcxxSendStart(void)
+int pcxxSendStart(uint16_t current_sfn, uint8_t current_slot)
 {
-    return __pcxxSendStart(0, 0);
+    return __pcxxSendStart(current_sfn, current_slot, 0, 0);
 }
 
 int pcxxSendEnd(void)
@@ -729,9 +729,9 @@ void pcxxDataClose( uint16_t dev_index, uint16_t cell_index)
     __pcxxDataClose(dev_index, cell_index);
 }
 
-int pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
+int pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, uint16_t dev_index, uint16_t cell_index)
 {
-    return __pcxxSendStart(dev_index, cell_index);
+    return __pcxxSendStart(current_sfn, current_slot, dev_index, cell_index);
 }
 
 int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)

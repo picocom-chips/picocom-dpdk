@@ -95,9 +95,9 @@ void pcxxDataClose(uint16_t dev_index, uint16_t cell_index );
 * @return returns 0 if opened successfully, otherwise returns error
 */
 #ifndef MULTI_PC802
-int pcxxSendStart(void);
+int pcxxSendStart(uint16_t current_sfn, uint8_t current_slot);
 #else
-int pcxxSendStart(uint16_t dev_index, uint16_t cell_index );
+int pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, uint16_t dev_index, uint16_t cell_index );
 #endif
 
 /**
