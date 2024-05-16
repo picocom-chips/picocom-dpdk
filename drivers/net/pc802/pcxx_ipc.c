@@ -226,6 +226,7 @@ static inline int __pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, ui
         return 0;
     }
 
+#if 0
     tgt_slot++;
     uint8_t num_slots = 10 << cell->scs;
     if (tgt_slot >= num_slots) {
@@ -238,6 +239,8 @@ static inline int __pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, ui
         cell->dl_discard = 0;
         return 0;
     }
+#endif
+
     cell->dl_discard = 1;
     NPU_SYSLOG("DL discard : stack_sfn = %u stack_slot = %u phy_sfn = %u phy_slot = %u dev = %u cell = %u\n",
         current_sfn, current_slot, phy_sfn, phy_slot, dev_index, cell_index);
