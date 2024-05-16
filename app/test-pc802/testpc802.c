@@ -842,13 +842,13 @@ static int case106(void)
     uint16_t sfn;
     uint8_t  slot;
 
-    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, g_cell_index);
-    if (pcxxSendStart(sfn, slot, g_pc802_index, g_cell_index))
+    get_phy_sfn_slot(&sfn, &slot, g_pc802_index, LEGACY_CELL_INDEX);
+    if (pcxxSendStart(sfn, slot, g_pc802_index, LEGACY_CELL_INDEX))
         return 0;
 
     RTE_ASSERT(0 == pcxxCtrlAlloc(&a, &avail, g_pc802_index, LEGACY_CELL_INDEX));
     A = (uint32_t *)a;
-    produce_dl_src_data(A, PC802_TRAFFIC_CTRL_3);
+    produce_dl_src_data(A, QID_CTRL[LEGACY_CELL_INDEX]);
     length = sizeof(uint32_t) * (A[1] + 2);
     pcxxCtrlSend(a, length, g_pc802_index, LEGACY_CELL_INDEX);
 
