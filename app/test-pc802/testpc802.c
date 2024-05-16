@@ -57,7 +57,6 @@
 #include <pcxx_ipc.h>
 #include <pcxx_oam.h>
 
-#define LEGACY_CELL_INDEX PC802_TRAFFIC_CTRL_3
 #define TEST_PC802_DISP_LOOP_NUM    500
 
 int testpc802_data_mode = 0;

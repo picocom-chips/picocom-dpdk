@@ -254,7 +254,7 @@ static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
-        NPU_SYSLOG("DL Discard : dev_index = %u cell_index\n", dev_index, cell_index);
+        NPU_SYSLOG("DL Discard : dev_index = %u cell_index = %u\n", dev_index, cell_index);
         return -1;
     }
     if (cell->data_num[cell->sfn_idx]) {
@@ -565,7 +565,7 @@ static inline int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
-        NPU_SYSLOG("DL Discard: dev_index, cell_index = %u\n", dev_index, cell_index);
+        NPU_SYSLOG("DL Discard: dev_index = %u, cell_index = %u\n", dev_index, cell_index);
         *buf = NULL;
         *offset = 0;
         return -1;
