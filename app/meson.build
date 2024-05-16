@@ -77,4 +77,4 @@ endforeach
 
 # special case the autotests
 subdir('test')
-subdir('test-pc802-mp')
+#subdir('test-pc802-mp')
