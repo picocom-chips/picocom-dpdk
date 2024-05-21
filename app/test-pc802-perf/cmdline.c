@@ -14,6 +14,7 @@
 
 extern int pc802_test_pcie( int len, int time, int ch, int type );
 extern int test_cell_perf( uint16_t count );
+extern int test_mem(void);
 
 struct cmd_quit_result {
     cmdline_fixed_string_t quit;
@@ -117,10 +118,35 @@ cmdline_parse_inst_t test_perf = {
         },
 };
 
+struct cmd_test_mem {
+    cmdline_fixed_string_t cmd;
+};
+
+cmdline_parse_token_string_t cmd_test_mem_token =
+    TOKEN_STRING_INITIALIZER(struct cmd_test_mem, cmd, "test mem");
+
+static void cmd_test_mem_parsed(void *parsed,
+                __attribute__((unused)) struct cmdline *cl,
+                __attribute__((unused)) void *data)
+{
+    test_mem( );
+}
+
+cmdline_parse_inst_t cmd_test_mem = {
+    .f = cmd_test_mem_parsed,
+    .data = NULL,
+    .help_str = "test mem",
+    .tokens = {
+        (void *)&cmd_test_mem_token,
+        NULL,
+        },
+};
+
 cmdline_parse_ctx_t main_ctx[] = {
     (cmdline_parse_inst_t *)&cmd_quit,
     (cmdline_parse_inst_t *)&test_pcie,
     (cmdline_parse_inst_t *)&test_perf,
+    (cmdline_parse_inst_t *)&cmd_test_mem,
     NULL,
 };
 
