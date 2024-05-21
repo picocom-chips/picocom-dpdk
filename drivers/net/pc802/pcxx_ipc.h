@@ -25,7 +25,6 @@ typedef uint32_t (*PCXX_RW_CALLBACK)(const char* buf, uint32_t payloadSize, uint
 typedef struct {
     PCXX_RW_CALLBACK readHandle;
     PCXX_RW_CALLBACK writeHandle;
-    uint8_t scs;
 } pcxxInfo_s;
 
 /**
@@ -40,12 +39,6 @@ typedef struct {
 int pcxxCtrlOpen(const pcxxInfo_s* info, ...);
 #else
 int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index );
-#endif
-
-#ifndef MULTI_PC802
-int pcxxSetSCS(uint8_t scs);
-#else
-int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index);
 #endif
 
 /**

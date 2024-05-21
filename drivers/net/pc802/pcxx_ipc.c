@@ -48,7 +48,6 @@ struct pcxx_cell_info_st{
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
     uint8_t  dl_sn;
-    uint8_t  scs;
     uint16_t tgt_dl_sfn;
     uint8_t  tgt_dl_slot;
     uint8_t  dl_discard;
@@ -146,19 +145,8 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
     cell_info->dl_sn = 0;
-    RTE_ASSERT(info->scs <= 4);
-    uint32_t scs_khz = 15 * (1 << info->scs);
-    NPU_SYSLOG("Set SCS = %1u , %3u KHz for dev %u cell %u\n", info->scs, scs_khz, dev_index, cell_index);
-    pcxx_devs[dev_index].cell_info[cell_index].scs = info->scs;
-
     pcxx_devs[dev_index].port_id = port_id;
 
-    return 0;
-}
-
-static inline int __pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index)
-{
-    pcxx_devs[dev_index].cell_info[cell_index].scs = scs;
     return 0;
 }
 
@@ -225,21 +213,6 @@ static inline int __pcxxSendStart(uint16_t current_sfn, uint8_t current_slot, ui
         cell->dl_discard = 0;
         return 0;
     }
-
-#if 0
-    tgt_slot++;
-    uint8_t num_slots = 10 << cell->scs;
-    if (tgt_slot >= num_slots) {
-        tgt_slot -= num_slots;
-        tgt_sfn = (tgt_sfn + 1) & 1023;
-    }
-    if ((current_sfn == tgt_sfn) && (current_slot == tgt_slot)) {
-        cell->tgt_dl_sfn = tgt_sfn;
-        cell->tgt_dl_slot = tgt_slot;
-        cell->dl_discard = 0;
-        return 0;
-    }
-#endif
 
     cell->dl_discard = 1;
     NPU_SYSLOG("DL discard : stack_sfn = %u stack_slot = %u phy_sfn = %u phy_slot = %u dev = %u cell = %u\n",
@@ -637,11 +610,6 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
     return __pcxxCtrlOpen(info, 0, 0);
 }
 
-int pcxxSetSCS(uint8_t scs)
-{
-    return __pcxxSetSCS(scs, 0, 0);
-}
-
 void pcxxCtrlClose(void)
 {
     __pcxxCtrlClose(0, 0);
@@ -710,11 +678,6 @@ int pcxxDataDestroy(void)
 int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 {
     return __pcxxCtrlOpen(info, dev_index, cell_index);
-}
-
-int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index)
-{
-    return __pcxxSetSCS(scs, dev_index, cell_index);
 }
 
 void pcxxCtrlClose(uint16_t dev_index, uint16_t cell_index )
