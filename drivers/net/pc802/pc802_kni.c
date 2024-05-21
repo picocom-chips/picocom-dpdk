@@ -165,10 +165,9 @@ int pc802_kni_add_port(uint16_t port)
 int pc802_kni_init(void)
 {
     struct rte_eth_conf dev_conf = {
-        .rxmode =
-            {
-                .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
-            },
+        .txmode = {
+            .mq_mode = RTE_ETH_MQ_TX_NONE,
+        },
     };
     int ret;
     uint16_t port;

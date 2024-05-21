@@ -15,8 +15,8 @@ apps = [
         'test-flow-perf',
         'test-gpudev',
         'test-pc802',
-        'test-pc802-nr-phy',
-        'test-pc802oam',
+#        'test-pc802-nr-phy',
+#        'test-pc802oam',
         'test-pc802-perf',
         'test-pipeline',
         'test-pmd',
@@ -82,4 +82,4 @@ endforeach
 
 # special case the autotests
 subdir('test')
-subdir('test-pc802-mp')
+#subdir('test-pc802-mp')

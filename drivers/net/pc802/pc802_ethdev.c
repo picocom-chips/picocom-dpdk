@@ -501,10 +501,10 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if (NULL != (rxq->mpool = rte_mempool_lookup(z_name)))
         rte_mempool_free(rxq->mpool);
 
-    rxq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, PC802_QUEUE_CACHE_SIZE, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    rxq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, PC802_QUEUE_CACHE_SIZE, 0, socket_id, 0);
     if (rxq->mpool == NULL) {
-        DBLOG("ERROR: fail to mempool create size = %u for Port %hu Rx queue %hu block %u\n",
-            block_size, port_id, queue_id, block_num);
+        DBLOG("ERROR(%s): fail to mempool create size = %u for Port %hu Rx queue %hu block %u\n",
+             rte_strerror(rte_errno), block_size, port_id, queue_id, block_num);
         return -ENOMEM;
     }
 	if (0 != rte_mempool_set_ops_byname(rxq->mpool, rte_mbuf_best_mempool_ops(), NULL)) {
@@ -643,7 +643,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     if (NULL != (txq->mpool = rte_mempool_lookup(z_name)))
         rte_mempool_free(txq->mpool);
 
-    txq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, PC802_QUEUE_CACHE_SIZE, 0, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+    txq->mpool = rte_mempool_create_empty(z_name, block_num, block_size, PC802_QUEUE_CACHE_SIZE, 0, socket_id, 0);
     if (txq->mpool == NULL) {
         DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
             block_size*block_num, port_id, queue_id);
@@ -1268,7 +1268,7 @@ pc802_dev_clear_queues(struct rte_eth_dev *dev)
         }
     }
 }
-
+#if 0
 /**
  * Interrupt handler which shall be registered at first.
  *
@@ -1287,7 +1287,7 @@ eth_pc802_interrupt_handler(void *param)
 
     rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
 }
-
+#endif
 /*********************************************************************
  *
  *  This routine disables all traffic on the adapter by issuing a
@@ -1301,15 +1301,15 @@ eth_pc802_stop(struct rte_eth_dev *dev)
     //        PC802_DEV_PRIVATE(dev->data->dev_private);
     //PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct rte_eth_link link;
-    struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-    struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
+//  struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
+//   struct rte_intr_handle *intr_handle = pci_dev->intr_handle;
 
     pc802_dev_clear_queues(dev);
 
     /* clear the recorded link status */
     memset(&link, 0, sizeof(link));
     rte_eth_linkstatus_set(dev, &link);
-
+#if 0
     if (!rte_intr_allow_others(intr_handle))
         /* resume to the default handler */
         rte_intr_callback_register(intr_handle,
@@ -1318,11 +1318,8 @@ eth_pc802_stop(struct rte_eth_dev *dev)
 
     /* Clean datapath event and queue/vec mapping */
     rte_intr_efd_disable(intr_handle);
-    if (intr_handle->intr_vec != NULL) {
-        rte_free(intr_handle->intr_vec);
-        intr_handle->intr_vec = NULL;
-    }
-
+    rte_intr_vec_list_free(intr_handle);
+#endif
     return 0;
 }
 
@@ -1737,7 +1734,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 }
 
 static void
-eth_pc802_queue_release(void *q __rte_unused)
+eth_pc802_queue_release(struct rte_eth_dev *dev __rte_unused, uint16_t queue_id __rte_unused)
 {
 }
 

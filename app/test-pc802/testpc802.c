@@ -89,7 +89,7 @@ signal_handler(int signum)
 
 static const struct rte_eth_conf dev_conf = {
         .rxmode = {
-            .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+            //.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
         },
     };
 
