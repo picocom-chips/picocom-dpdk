@@ -4,6 +4,7 @@
 
 #include <sys/queue.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -74,6 +75,12 @@
 	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
 
     #define PC802_QUEUE_CACHE_SIZE 0
+
+    #define dsb(opt)	asm volatile("dsb " #opt : : : "memory")
+    #define wmb()		dsb(st)
+    #define wsb()		dsb(sy)
+    #define isb()		asm volatile("isb" : : : "memory")
+    #define barrier()	asm volatile ("" : : : "memory");
 #else
 	#define CLEAN(p)
     #define CLEAN_RANGE(begin,end)
@@ -280,22 +287,63 @@ static void *cma_alloc(uint32_t size, uintptr_t *pa_addr)
     return tmp;
 }
 
+static int32_t uio_scan(const char *uio_name)
+{
+    int uio;
+    DIR *d = NULL;
+    struct dirent *dir;
+    FILE *f;
+    char file_name[64];
+    char line[BUFSIZ];
+
+    d = opendir("/sys/class/uio");
+    if (d == NULL) {
+        DBLOG("Error open uio directory: %s", strerror(errno));
+        return -1;
+    }
+
+    while (NULL != (dir = readdir(d))) {
+        uio = -1;
+        if (sscanf(dir->d_name, "uio%d", &uio) <= 0)
+            continue;
+
+        snprintf(file_name, sizeof(file_name), "/sys/class/uio/%s/name", dir->d_name);
+        if (NULL == (f = fopen(file_name, "r")))
+            continue;
+
+        if (NULL != fgets(line, sizeof(line), f)) {
+            if (NULL != strstr(line, uio_name)) {
+                DBLOG("uio:%s at %d:%s\n", uio_name, uio, dir->d_name);
+                fclose(f);
+                break;
+            }
+        }
+        fclose(f);
+    }
+    closedir(d);
+    return uio;
+}
+
 static int init_cma_mem(void)
 {
-#define UIO_DEV     "/dev/uio1"
-#define UIO_ADDR    "/sys/class/uio/uio1/maps/map0/addr"
-#define UIO_SIZE    "/sys/class/uio/uio1/maps/map0/size"
-
     void *uio_addr, *access_address;
     int uio_fd, addr_fd, size_fd;
     int uio_size, ret;
     char uio_addr_buf[64]={0}, uio_size_buf[64]={0};
+    int32_t uio;
+    char filename[64];
 
-    uio_fd = open(UIO_DEV, O_RDWR);
-    addr_fd = open(UIO_ADDR, O_RDONLY);
-    size_fd = open(UIO_SIZE, O_RDONLY);
+    if ( 0 > (uio = uio_scan("rk3399 uio")) )
+        exit(-1);
+
+    sprintf(filename, "/dev/uio%d", uio);
+    uio_fd = open(filename, O_RDWR);
+    sprintf(filename, "/sys/class/uio/uio%d/maps/map0/addr", uio);
+    addr_fd = open(filename, O_RDONLY);
+    sprintf(filename, "/sys/class/uio/uio%d/maps/map0/size", uio);
+    size_fd = open(filename, O_RDONLY);
     if (addr_fd < 0 || size_fd < 0 || uio_fd < 0) {
-        fprintf(stderr, "mmap: %s\n", strerror(errno));
+        DBLOG("mmap: %s\n", strerror(errno));
         exit(-1);
     }
 
@@ -304,10 +352,10 @@ static int init_cma_mem(void)
     close(addr_fd);
     close(size_fd);
 
-    printf("ret=%d\n uio_addr_buf:\n%s uio_size_buf:\n%s", ret, uio_addr_buf, uio_size_buf);
+    DBLOG("ret=%d\n uio_addr_buf:\n%s uio_size_buf:\n%s", ret, uio_addr_buf, uio_size_buf);
     uio_addr = (void *)strtoul(uio_addr_buf, NULL, 0);
     uio_size = (int)strtol(uio_size_buf, NULL, 0);
-    printf("uio_addr = %p uio_size = %d\n", uio_addr, uio_size);
+    DBLOG("uio_addr = %p uio_size = %d\n", uio_addr, uio_size);
 #if 0
 	if (ftruncate(uio_fd, uio_size) < 0){
 		printf("file '%s' resize to %u for cma err: %s\n", UIO_DEV, uio_size, strerror(errno));
@@ -316,11 +364,11 @@ static int init_cma_mem(void)
 #endif
     access_address = mmap(NULL, uio_size, PROT_READ | PROT_WRITE, MAP_SHARED, uio_fd, 0);
     if (access_address == NULL) {
-        fprintf(stderr, "mmap:%s\n", strerror(errno));
+        DBLOG("mmap:%s\n", strerror(errno));
         exit(-1);
     }
 
-    printf( "The device address %p (lenth %x), can beaccessed over logicaladdress %p\n", uio_addr, uio_size, access_address);
+    DBLOG( "The device address %p (lenth %x), can beaccessed over logicaladdress %p\n", uio_addr, uio_size, access_address);
 
     cma_pa_addr = uio_addr;
     cma_pv_addr = access_address;
@@ -452,7 +500,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     rxq->mpool.first = NULL;
-#ifndef PCIE_NO_CACHE_COHERENCE
+#if 1
     int socket_id = dev->device->numa_node;
     char z_name[RTE_MEMZONE_NAMESIZE];
     const struct rte_memzone *mz;
@@ -627,7 +675,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->mpool.first = NULL;
-#ifndef PCIE_NO_CACHE_COHERENCE
+#if 1
     int socket_id = dev->device->numa_node;
     const struct rte_memzone *mz;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
@@ -834,6 +882,8 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxq->mpool.first = nmb->next;
         nmb->next = NULL;
         nmb->alloced = 1;
+        INVALIDATE_SIZE(&nmb[1], nmb->pkt_length);
+        wsb();
 
         rxm = sw_ring[idx].mblk;
         rte_prefetch0(rxm);
@@ -846,6 +896,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         rxm->pkt_length = rxdp->length;
         rxm->pkt_type = rxdp->type;
         rxm->eop = rxdp->eop;
+
         rte_prefetch0(&rxm[1]);
         //DBLOG("UL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&rxm[1], rxdp->phy_addr, rxdp->length, rxdp->type, rxdp->eop);
@@ -854,7 +905,10 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         sw_ring[idx].mblk = nmb;
         rxdp->phy_addr = nmb->buf_phy_addr;
         rxdp->length = 0;
-
+#ifdef PCIE_NO_CACHE_COHERENCE
+        INVALIDATE_SIZE(&rxm[1], rxm->pkt_length);
+        wsb();
+#endif
         rx_id++;
         nb_hold++;
     }
@@ -862,6 +916,7 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
         rte_io_wmb();
+        wmb();
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
 #if 0
         if (PC802_TRAFFIC_MAILBOX == queue_id)
@@ -933,6 +988,8 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
             pc802_free_mem_block(txe->mblk);
         }
 
+        CLEAN_SIZE(&tx_blk[1], tx_blk->pkt_length);
+        wsb();
         txd->phy_addr = tx_blk->buf_phy_addr;
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
@@ -952,6 +1009,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     txq->nb_tx_free -= nb_blks;
     txq->rc_cnt = tx_id;
     rte_wmb();
+    wmb();
     *txq->trccnt_reg_addr = tx_id;
 
 #ifdef ENABLE_CHECK_PC802_DL_TIMING
@@ -970,7 +1028,7 @@ eth_pc802_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
     dev = dev;
 
     dev_info->min_rx_bufsize = 128; /* See BSIZE field of RCTL register. */
-    dev_info->max_rx_pktlen = 1500; //em_get_max_pktlen(dev);
+    dev_info->max_rx_pktlen = 1536; //em_get_max_pktlen(dev);
     dev_info->max_mac_addrs = 1; //hw->mac.rar_entry_count;
 
     /*
@@ -1609,6 +1667,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
         txd->type = tx_pkt->packet_type;
         txe->mbuf = tx_pkt;
         CLEAN_SIZE(rte_pktmbuf_mtod(tx_pkt,void *), tx_pkt->data_len);
+        wmb();
         tx_id++;
     }
     nb_tx_free -= mb_pkts;
@@ -1622,6 +1681,7 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     txq->nb_tx_free = nb_tx_free;
     txq->rc_cnt = tx_id;
     rte_wmb();
+    wmb();
     *txq->trccnt_reg_addr = tx_id;
     txq->stats.pkts += mb_pkts;
     txq->stats.err_pkts += nb_pkts -  mb_pkts;
@@ -1700,6 +1760,8 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxq->stats.bytes += pkt_len;
         rxm->packet_type = rxdp->type;
         rxm->port = rxq->port_id;
+        INVALIDATE_SIZE(rxm->buf_addr, nmb->buf_len);
+        wsb();
 
         rxm->ol_flags = 0;
         rx_pkts[nb_rx++] = rxm;
@@ -1710,7 +1772,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
         rxdp->eop = 1;
         rxdp->type = 1;
         INVALIDATE_SIZE(nmb->buf_addr, nmb->buf_len);
-        rte_wmb();
+        wsb();
         rx_id++;
         nb_hold++;
     }
@@ -1718,6 +1780,7 @@ eth_pc802_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
     rxq->rc_cnt = rx_id;
     if (nb_hold > rxq->rx_free_thresh) {
         rte_io_wmb();
+        wmb();
         *rxq->rrccnt_reg_addr = rxq->rc_cnt;
         nb_hold = 0;
     }

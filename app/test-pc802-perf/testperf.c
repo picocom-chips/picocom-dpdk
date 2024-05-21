@@ -113,7 +113,7 @@ static uint32_t process_ul_ctrl_msg(const char* buf, uint32_t payloadSize, uint1
     uint32_t dt7_0, dt1_0, dt4_3, dt7_6;
 
     c->tsc[6] = (uint32_t)rte_rdtsc();
-#if 0
+#if 1
     if ( NULL == d )
         printf("cann't recv data(no=%u)!\n", c->no);
     else
@@ -197,6 +197,168 @@ static int port_init(uint16_t port)
     return 0;
 }
 
+#if 1
+	#define CLEAN(p) { asm volatile("dc cvac, %0;" : : "r" (p) : "memory"); }
+    static inline void CLEAN_RANGE(uintptr_t begin, uintptr_t end)
+    {
+        do{
+            CLEAN(begin);
+            begin+=RTE_CACHE_LINE_MIN_SIZE;
+        }while(begin<end);
+    }
+	#define CLEAN_SIZE(p,size) CLEAN_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+
+	#define INVALIDATE(p) { asm volatile("dc civac, %0" : : "r"(p) : "memory"); }
+    static inline void INVALIDATE_RANGE(uintptr_t begin, uintptr_t end)
+    {
+        do{
+            INVALIDATE(begin);
+            begin+=RTE_CACHE_LINE_MIN_SIZE;
+        }while(begin<end);
+    }
+	#define INVALIDATE_SIZE(p,size) INVALIDATE_RANGE((uintptr_t)(p),(((uintptr_t)(p))+(size)))
+#endif
+
+int test_mem(void);
+int test_mem(void)
+{
+    #define COUNT 32
+    uint32_t i = 0, n = 0;
+    uint32_t ctrl = 1024, data = 64*1024, num = 1*2000;
+    uint64_t cycles = rte_get_timer_hz();
+    uint64_t t = 0;
+    uint64_t total = 0, count = 0, size = 0;
+
+    char *mem = rte_malloc(NULL, data, RTE_CACHE_LINE_MIN_SIZE);
+    char *ctrl_mem[COUNT] = {NULL};
+    char *data_mem[COUNT] = {NULL};
+    PC802_Mem_Block_t *ctrl_mblk[COUNT] = {NULL};
+    PC802_Mem_Block_t *data_mblk[COUNT] = {NULL};   
+
+    for ( i = 0; i < COUNT; i++) {
+        ctrl_mem[i] = rte_malloc(NULL, ctrl, RTE_CACHE_LINE_MIN_SIZE);
+        data_mem[i] = rte_malloc(NULL, data, RTE_CACHE_LINE_MIN_SIZE);
+
+        ctrl_mblk[i] = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_CTRL_1);
+        data_mblk[i] = pc802_alloc_tx_mem_block(0, PC802_TRAFFIC_DATA_1);
+    }
+
+    printf("start pc802 mblk(ctrl=%u data=%u) mem test ..... \n", ctrl, data);
+#if 1    
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(mem, ctrl_mblk[i]+1, ctrl);
+            rte_memcpy(mem, data_mblk[i]+1, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tcma -> huge mem: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mblk[i]+1, mem, ctrl);
+            rte_memcpy(data_mblk[i]+1, mem, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thuge mem -> cma: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+#if 1
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            INVALIDATE_SIZE(ctrl_mem[i], ctrl);
+            rte_mb();
+            rte_memcpy(mem, ctrl_mem[i], ctrl);
+            INVALIDATE_SIZE(data_mem[i], data);            
+            rte_mb();
+            rte_memcpy(mem, data_mem[i], data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thmem&invalid -> mem: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mem[i], mem, ctrl);
+            CLEAN_SIZE(ctrl_mem[i], ctrl);
+            rte_memcpy(data_mem[i], mem, data);
+            CLEAN_SIZE(data_mem[i], data);
+            rte_wmb();
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tmem -> hmem&clean: \t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+#if 1
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(mem, ctrl_mem[i], ctrl);
+            rte_memcpy(mem, data_mem[i], data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\thmem -> mem: \t\t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+
+    total = 0;
+    count = 0;
+    size = 0;
+    n = 0;
+    while ( n++ < num ) {
+        for ( i = 0; i < COUNT; i++ ){  
+            t = rte_rdtsc();
+            rte_memcpy(ctrl_mem[i], mem, ctrl);
+            rte_memcpy(data_mem[i], mem, data);
+            total += rte_rdtsc() - t;
+            size += data;
+            count++;
+        }
+    }
+    printf("\tmem -> hmem: \t\t%8lu us/TTI, \t%8lu Mbits/sec.\n", (total*1000000/cycles)/count, size*8/( (total*1000000/cycles) ));
+#endif
+
+    for ( i = 0; i < COUNT; i++) {
+        rte_free(ctrl_mem[i]);
+        rte_free(data_mem[i]);
+
+        pc802_free_mem_block(ctrl_mblk[i]);
+        pc802_free_mem_block(data_mblk[i]);
+    }
+    rte_free(mem);
+    return 0;
+}
 
 static uint32_t * alloc_tx_blk(uint16_t qId)
 {
@@ -475,10 +637,9 @@ int test_cell_perf(uint16_t count)
             dt7_5 += tsc;
             rx_ttis++;
             if ( rx_ttis >= gourp_size){
-                printf("TX   %4lu TTIs stats:                t2-t0=%3lu,%2lu us/TTI, speed = %4lu MB/sec.\n", tx_ttis, (max_dt2_0*1000000/hz), ((dt2_0/tx_ttis)*1000000/hz), bytes/((dt2_0*1000000/hz)));
-                printf("RX   %4lu TTIs stats:                                           t7-t5=%3lu,%2lu us/TTI.\n", rx_ttis, (max_dt7_5*1000000/hz), ((dt7_5/rx_ttis)*1000000/hz));
-
-                printf("recv %4lu TTIs stats: t7-t0=%3lu,%3lu; t1-t0=%3lu,%2lu; t4-t3=%2lu,%2lu; t7-t6=%3lu,%2lu\n", g_rx_ttis,
+                printf("TX/RX %4lu TTIs stats:                t2-t0=%3lu,%2lu us/TTI,       t7-t5=%3lu,%2lu us/TTI.\n",
+                    tx_ttis, (max_dt2_0*1000000/hz), ((dt2_0/tx_ttis)*1000000/hz), (max_dt7_5*1000000/hz), ((dt7_5/rx_ttis)*1000000/hz));
+                printf("recv  %4lu TTIs stats: t7-t0=%3lu,%3lu; t1-t0=%3lu,%2lu; t4-t3=%2lu,%2lu; t7-t6=%3lu,%2lu\n", g_rx_ttis,
                     dt_max.dt7_0, dt_sum.dt7_0/g_rx_ttis, dt_max.dt1_0, dt_sum.dt1_0/g_rx_ttis,
                     dt_max.dt4_3, dt_sum.dt4_3/g_rx_ttis, dt_max.dt7_6, dt_sum.dt7_6/g_rx_ttis);
                 g_rx_ttis = 0;
@@ -535,7 +696,7 @@ int test_cell_perf(uint16_t count)
         buf[rte_rand()%(data_len/4)] = rte_rdtsc();
         //data_msg->crc = rte_raw_cksum(buf, data_len);
 
-        //memcpy(data_msg->data, buf, data_len);
+        memcpy(data_msg->data, buf, data_len);
         data_msg->tsc[data_msg->tscs++] = rte_rdtsc();
 
         pcxxDataSend(offset, data_len+HLEN, dev, cell);
