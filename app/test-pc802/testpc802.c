@@ -135,14 +135,14 @@ static int port_init( uint16_t pc802_index )
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_TX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            0, 0, 4096, socket_id);
+            0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
     mpool_pc802_tx = mbuf_pool;
 
     sprintf(temp_name, "MBUF_POOL_ETH%d_RX", pc802_index );
     mbuf_pool = rte_pktmbuf_pool_create(temp_name, 2048,
-            0 , 0, 4096, socket_id);
+            0 , 0, RTE_MBUF_DEFAULT_BUF_SIZE, socket_id);
     if (mbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot create mbuf pool on Line %d\n", __LINE__);
 

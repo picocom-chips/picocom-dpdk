@@ -2,6 +2,7 @@
 # Copyright(c) 2017-2019 Intel Corporation
 
 apps = [
+        'dumpcap',
         'pdump',
         'proc-info',
         'test-acl',
@@ -12,6 +13,7 @@ apps = [
         'test-eventdev',
         'test-fib',
         'test-flow-perf',
+        'test-gpudev',
         'test-pc802',
         'test-pc802-nr-phy',
         'test-pc802oam',
@@ -45,14 +47,22 @@ foreach app:apps
 
     subdir(name)
 
+    if build
+        dep_objs = []
+        foreach d:deps
+            var_name = get_option('default_library') + '_rte_' + d
+            if not is_variable(var_name)
+                build = false
+                message('Missing dependency "@0@" for app "@1@"'.format(d, name))
+                break
+            endif
+            dep_objs += [get_variable(var_name)]
+        endforeach
+    endif
+
     if not build
         continue
     endif
-
-    dep_objs = []
-    foreach d:deps
-        dep_objs += get_variable(get_option('default_library') + '_rte_' + d)
-    endforeach
 
     link_libs = []
     if get_option('default_library') == 'static'
@@ -64,7 +74,7 @@ foreach app:apps
             c_args: cflags,
             link_args: ldflags,
             link_whole: link_libs,
-            dependencies: dep_objs,
+            dependencies: ext_deps + dep_objs,
             include_directories: includes,
             install_rpath: join_paths(get_option('prefix'), driver_install_path),
             install: true)
