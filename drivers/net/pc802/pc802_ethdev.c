@@ -51,6 +51,8 @@
 
 #define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
 
+#define PC802_BAR_EXT_OFFSET  (4 * 1024)
+
 static inline void pc802_write_reg(volatile uint32_t *addr, uint32_t value)
 {
     __asm__ volatile ("" : : : "memory");
@@ -86,6 +88,7 @@ typedef struct PC802_Mem_Pool_t {
     PC802_Mem_Block_t *first;
     uint32_t block_size;
     uint32_t block_num;
+    uint32_t avail;
 } PC802_Mem_Pool_t;
 
 struct pmd_queue_stats {
@@ -172,6 +175,7 @@ struct pc802_tx_queue {
     uint16_t               nb_tx_free;
     uint16_t               queue_id; /**< TX queue index. */
     uint16_t               port_id;  /**< Device port identifier. */
+    uint8_t                sn;
     //uint8_t                pthresh;  /**< Prefetch threshold register. */
     //uint8_t                hthresh;  /**< Host threshold register. */
     //uint8_t                wthresh;  /**< Write-back threshold register. */
@@ -182,7 +186,11 @@ struct pc802_tx_queue {
 };
 
 struct pc802_adapter {
-    uint8_t *bar0_addr;
+    union {
+        uint8_t *bar0_addr;
+        PC802_BAR_t *bar0;
+    };
+    PC802_BAR_Ext_t *bar0_ext;
     PC802_Descs_t *pDescs;
     uint64_t descs_phy_addr;
     struct pc802_tx_queue  txq[MAX_DL_CH_NUM];
@@ -364,6 +372,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
             DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
@@ -380,6 +389,7 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = rxq->mpool.first;
             mblk->first = &rxq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             rxq->mpool.first = mblk;
             DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -490,6 +500,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
 
     txq->mpool.first = NULL;
+    txq->mpool.avail = 0;
     snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d", dev->data->port_id, queue_id );
     if (NULL != (mz = rte_memzone_lookup(z_name))) {
         rte_memzone_free(mz);
@@ -513,8 +524,10 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
+            txq->mpool.avail++;
             DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
                 queue_id, k, mz->iova, mz->addr);
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
@@ -529,8 +542,10 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
             mblk->pkt_length = 0;
             mblk->next = txq->mpool.first;
             mblk->first = &txq->mpool.first;
+            mblk->index = k;
             mblk->alloced = 0;
             txq->mpool.first = mblk;
+            txq->mpool.avail++;
             DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
                 queue_id, k, mblk->buf_phy_addr, &mblk[1]);
         }
@@ -551,6 +566,7 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     txq->tx_free_thresh = nb_desc / 4;
     txq->queue_id = queue_id;
     txq->port_id = port_id;
+    txq->sn = 0;
 
     if (PC802_READ_REG(bar->DEVEN)) {
         PC802_WRITE_REG(bar->TDNUM[queue_id], nb_desc);
@@ -595,6 +611,7 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
         txq->mpool.first = mblk->next;
         mblk->next = NULL;
         mblk->alloced = 1;
+        txq->mpool.avail--;
     }
     return mblk;
 }
@@ -608,6 +625,8 @@ void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
     mblk->next = *mblk->first;
     *mblk->first = mblk;
     mblk->alloced = 0;
+    PC802_Mem_Pool_t *mpool = (PC802_Mem_Pool_t *)mblk->first;
+    mpool->avail++;
     return;
 }
 
@@ -748,6 +767,11 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     pdump_cb(adapter->port_index, queue_id, PC802_FLAG_TX, tx_blks, nb_blks, 0);
     for (nb_tx = 0; nb_tx < nb_blks; nb_tx++) {
         tx_blk = *tx_blks++;
+        if (0 == tx_blk->pkt_length) {
+            NPU_SYSLOG("WARN: NPU send 0 size DL msg: port %1u queue %1u SN %u\n",
+                port_id, queue_id, tx_blk->sn);
+            continue;
+        }
         idx = tx_id & mask;
         txe = &sw_ring[idx];
         txd = &tx_ring[idx];
@@ -760,6 +784,7 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
         txd->length = tx_blk->pkt_length;
         txd->type = tx_blk->pkt_type;
         txd->eop = tx_blk->eop;
+        txd->sn = tx_blk->sn;
         //DBLOG("DL DESC[%1u][%3u]: virtAddr=0x%lX phyAddr=0x%lX Length=%u Type=%1u EOP=%1u\n",
         //    queue_id, idx, (uint64_t)&tx_blk[1], txd->phy_addr, txd->length, txd->type, txd->eop);
         txe->mblk = tx_blk;
@@ -1415,6 +1440,10 @@ eth_pc802_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
     /* TX loop */
     for (nb_tx = 0; nb_tx < mb_pkts; nb_tx++) {
         tx_pkt = *tx_pkts++;
+        if (0 == tx_pkt->data_len) {
+            NPU_SYSLOG("WARN: NPU send 0 size DL eth pkt on port %1u\n", txq->port_id);
+            continue;
+        }
         idx = tx_id & mask;
         txe = &sw_ring[idx];
 
@@ -1917,7 +1946,7 @@ static int pc802_check_rerun(struct pc802_adapter *adapter)
 
 static int pc802_init_c2h_mailbox(struct pc802_adapter *adapter)
 {
-    return pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 64, 32);
+    return pc802_create_rx_queue(adapter->port_id, PC802_TRAFFIC_MAILBOX, 0x4600, 136, 128);
 }
 
 static int
@@ -1981,6 +2010,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
     bar = (PC802_BAR_t *)adapter->bar0_addr;
+    adapter->bar0_ext = (PC802_BAR_Ext_t *)(adapter->bar0_addr + PC802_BAR_EXT_OFFSET);
 
     pc802_check_rerun(adapter);
 
@@ -2343,8 +2373,6 @@ int pc802_check_dma_timeout(uint16_t port)
     return 0;
 }
 
-#define PC802_BAR_EXT_OFFSET  (4 * 1024)
-
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
@@ -2400,18 +2428,18 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+        NPU_SYSLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
         return -1;
     }
 
     char file_name[PATH_MAX];
     if ( NULL == get_vector_file_name(port_id, file_id, file_name) ) {
-        DBLOG("ERROR: Vector %d file not found.\n", file_id);
+        NPU_SYSLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
+    NPU_SYSLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2437,7 +2465,7 @@ __next_pfi_0_vec_read:
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
-            DBLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
+            NPU_SYSLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
             return -4;
         }
         // already done
@@ -2449,7 +2477,7 @@ __next_pfi_0_vec_read:
     }
 
     if ((0 == buf_full) && (vec_cnt < end)) {
-        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
+        NPU_SYSLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2475,7 +2503,7 @@ __next_pfi_0_vec_read:
 
     fclose(fh_vector);
 
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    NPU_SYSLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
 
@@ -2495,7 +2523,7 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
-       DBLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
+       NPU_SYSLOG("ERROR: VEC_DUMP address and length must be word aligned!\n");
        return -1;
     }
 
@@ -2509,12 +2537,12 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     if (is_core_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
+        NPU_SYSLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else {
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
-        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        NPU_SYSLOG("PC802 %d dumping to file %s\n", port_id, file_name);
         fh_vector  = fopen(file_name, "w");
         fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     }
@@ -2559,7 +2587,7 @@ __next_pfi_0_vec_dump:
     fclose(fh_vector);
 
     // Print a success message
-    DBLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
+    NPU_SYSLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
         length, address, file_name);
 
     return 0;
@@ -2569,18 +2597,18 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
 {
     unsigned int end = offset + length;
     if ((offset & 3) | (length & 3) | (address & 3)) {
-        DBLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
+        NPU_SYSLOG("ERROR: VEC_READ address, offset and length must be word aligned!\n");
         return -1;
     }
 
     char file_name[PATH_MAX];
     if ( NULL == get_vector_file_name( port_id, file_id, file_name) ) {
-        DBLOG("ERROR: Vector %d file not found.\n", file_id);
+        NPU_SYSLOG("ERROR: Vector %d file not found.\n", file_id);
         return -2;
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
+    NPU_SYSLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
@@ -2607,7 +2635,7 @@ __next_non_pfi_0_vec_read:
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
-            DBLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
+            NPU_SYSLOG("ERROR: Unexpected entry parsing line %u of %s: %s", line, file_name, buffer);
             return -4;
         }
         // already done
@@ -2619,7 +2647,7 @@ __next_non_pfi_0_vec_read:
     }
 
     if ((0 == buf_full) && (vec_cnt < end)) {
-        DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
+        NPU_SYSLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
 
@@ -2642,7 +2670,7 @@ __next_non_pfi_0_vec_read:
     }
 
     fclose(fh_vector);
-    DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
+    NPU_SYSLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
 
@@ -2653,7 +2681,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
 {
     unsigned int offset;
     if ((length & 3) | (address & 3)) {
-       DBLOG("ERROR: dump address and length must be word aligned!\n");
+       NPU_SYSLOG("ERROR: dump address and length must be word aligned!\n");
        return -1;
     }
 
@@ -2668,13 +2696,13 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
     if (is_core_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         sprintf(file_name, "core_dump_%u_%u.elf", pc802_index, file_id);
-        DBLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
+        NPU_SYSLOG("Generating PC802 %d core dump file %s\n", pc802_index, file_name);
         fh_vector = fopen(file_name, "wb");
     } else if (is_data_dump) {
         uint16_t pc802_index = pc802_get_port_index(port_id);
         get_vector_path(port_id, file_path);
         sprintf(file_name, "%s/%u_%u.bin", file_path, pc802_index, file_id);
-        DBLOG("Generating PC802 %d data dump file %s with flag = %u\n", pc802_index, file_name, flag);
+        NPU_SYSLOG("Generating PC802 %d data dump file %s with flag = %u\n", pc802_index, file_name, flag);
         if (flag) {
             fh_vector = fopen(file_name, "wb");
         } else {
@@ -2686,7 +2714,7 @@ static uint32_t handle_pc802_dump(uint16_t port_id, uint32_t command, uint32_t f
         sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
         // Parse the file
-        DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+        NPU_SYSLOG("PC802 %d vec dump file %s\n", port_id, file_name);
         fh_vector = fopen(file_name, "w");
         fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
     }
@@ -2714,7 +2742,7 @@ __next_non_pfi_0_vec_dump:
     if (is_core_dump || is_data_dump) {
         fwrite(pd, 1, data_size, fh_vector);
         if (is_data_dump) {
-            DBLOG("data_dump(%u, 0x%08X, %u, %u);\n",
+            NPU_SYSLOG("data_dump(%u, 0x%08X, %u, %u);\n",
                 file_id, address, data_size, flag);
         }
     } else {
@@ -2732,7 +2760,7 @@ __next_non_pfi_0_vec_dump:
     fclose(fh_vector);
 
     // Print a success message
-    DBLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
+    NPU_SYSLOG("Dumped %u bytes at address 0x%08x to file %s.\n",
         length, address, file_name);
 
     return 0;
@@ -2767,19 +2795,12 @@ typedef struct stMbVecAccess_t {
     uint32_t flag;
     uint16_t port_id;
     uint16_t core;
+    uint8_t  rccnt;
 } MbVecAccess_t;
 
 #define PC802_VEC_ACCESS_IDLE   0
 #define PC802_VEC_ACCESS_WORK   1
 #define PC802_VEC_ACCESS_DONE   2
-
-static uint8_t pc802_vec_blocked[PC802_INDEX_MAX][36];
-union {
-    uint32_t rccnts[PC802_INDEX_MAX][9];
-    uint8_t  rccnt[PC802_INDEX_MAX][36];
-} pc802_mb_rccnt;
-#define pc802_mailbox_rc_counter        pc802_mb_rccnt.rccnt
-#define pc802_mb_rccnts                 pc802_mb_rccnt.rccnts
 
 static uint32_t pc802_vec_access_msg_send(int fd, MbVecAccess_t *msg)
 {
@@ -2857,7 +2878,6 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
     int fd;
     uint32_t command;
     uint32_t re = 0;
-    uint16_t port_idx;
     uint8_t result;
 
     (void)data;
@@ -2866,7 +2886,6 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
     while (1) {
         pc802_vec_access_msg_recv(fd, &msg);
         PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(msg.port_id);
-        port_idx = pc802_get_port_index(msg.port_id);
         command = msg.command;
         if (MB_DATA_DUMP == command) {
             re = handle_data_dump(msg.port_id, msg.file_id, msg.address, msg.length, msg.flag);
@@ -2875,27 +2894,28 @@ static void * pc802_vec_access_thread(__rte_unused void *data)
             continue;
         }
         if (0 == msg.core) {
-            pc802_mailbox_rc_counter[port_idx][0]++;
-            pc802_write_mailbox_reg(ext, 0, pc802_mailbox_rc_counter[port_idx][0], 2);
+            pc802_write_mailbox_reg(ext, 0, msg.rccnt, 2);
+            NPU_SYSLOG("Bigin vec_access: PFI 0 command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
+                command, msg.file_id, msg.offset, msg.address, msg.length);
             if (MB_VEC_READ == command) {
                 re = handle_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
+            result = (0 == re);
+            NPU_SYSLOG("End   vec_access: PFI 0 command = %2u file_id = %u result = %u\n", command, msg.file_id, result);
         } else {
-            DBLOG("Bigin vec_access: core = %2u command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
+            NPU_SYSLOG("Bigin vec_access: core = %2u command = %2u file_id = %u offset = %u address = 0x%08X length = %u\n",
                 msg.core, command, msg.file_id, msg.offset, msg.address, msg.length);
             if (MB_VEC_READ == command) {
                 re = handle_non_pfi_0_vec_read(msg.port_id, msg.file_id, msg.offset, msg.address, msg.length);
             } else if (MB_VEC_DUMP == command) {
                 re = handle_non_pfi_0_vec_dump(msg.port_id, msg.file_id, msg.address, msg.length);
             }
-            DBLOG("End   vec_access: core = %2u command = %2u file_id = %u\n", msg.core, command, msg.file_id);
-            pc802_mailbox_rc_counter[port_idx][msg.core]++;
+            result = (0 == re);
+            NPU_SYSLOG("End   vec_access: core = %2u command = %2u file_id = %u result = %u\n", msg.core, command, msg.file_id, result);
         }
-        result = (0 == re);
-        pc802_write_mailbox_reg(ext, msg.core, pc802_mailbox_rc_counter[port_idx][msg.core], result);
-        pc802_vec_blocked[pc802_get_port_index(msg.port_id)][msg.core] = PC802_VEC_ACCESS_IDLE;
+        pc802_write_mailbox_reg(ext, msg.core, msg.rccnt, result);
     }
 
     return 0;
@@ -2989,7 +3009,11 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
         PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "Received Boot Bitmap = 0x%08X !\n", tdata);
         trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
         trace_enable[port_idx] |= tdata;
+        return;
     }
+
+    NPU_SYSLOG("ERROR: wrong trace action type[%1u][%2u] = %u, tdata = 0x%08X",
+        port_idx, core, trace_action_type[port_idx][core], tdata);
 }
 
 static int pc802_tracer( uint16_t port_index, uint16_t port_id )
@@ -3002,6 +3026,8 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     uint32_t idx;
     uint32_t trc_data;
     volatile uint32_t epcnt;
+    uint32_t cnt;
+    static uint32_t prev_epcnt[PC802_INDEX_MAX][32] = {0};
 
     if (NULL == ext[port_index]) {
         ext[port_index] = pc802_get_BAR_Ext(port_id);
@@ -3015,6 +3041,17 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
             continue;
         num = 0;
         epcnt = PC802_READ_REG(ext[port_index]->TRACE_EPCNT[core].v);
+        if (epcnt < prev_epcnt[port_index][core]) {
+            NPU_SYSLOG("INFO: Wrapped Trace EPCNT[%2u] = %u < previous EPCNT = %u\n",
+                core, epcnt, prev_epcnt[port_index][core]);
+        }
+        prev_epcnt[port_index][core] = epcnt;
+
+        cnt = epcnt - rccnt[port_index][core];
+        if (cnt > 16) {
+            NPU_SYSLOG("ERROR: Too much trace logs! core %2u epcnt %u rccnt %u\n",
+                core, epcnt, rccnt[port_index][core]);
+        }
         while (rccnt[port_index][core] != epcnt) {
             idx = rccnt[port_index][core] & (PC802_TRACE_FIFO_SIZE - 1);
             trc_data = PC802_READ_REG(ext[port_index]->TRACE_DATA[core].d[idx]);
@@ -3031,6 +3068,33 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     }
 
     return N;
+}
+
+static inline bool isSpecifier(char c)
+{
+    switch (c)
+    {
+    case 'd':
+    case 'i':
+    case 'u':
+    case 'o':
+    case 'x':
+    case 'X':
+    case 'f':
+    case 'F':
+    case 'e':
+    case 'E':
+    case 'g':
+    case 'G':
+    case 'a':
+    case 'A':
+    case 'c':
+    case 's':
+    case 'p':
+    case 'n':
+        return true;
+    }
+    return false;
 }
 
 static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
@@ -3058,7 +3122,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
             do {
                 assert(j < 15);
                 formatter[j] = *arg0++;
-                if (isalpha(formatter[j])) {
+                if (isSpecifier(formatter[j])) {
                     formatter[j+1] = 0;
                     break;
                 }
@@ -3080,11 +3144,8 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
         }
     }
     *ps = 0;
-    if (arg_idx != num_args) {
-        PC802_LOG(port_idx, core, RTE_LOG_INFO,
-            "WARNING -- core %u (arg_idx = %u num_args = %u): format = %s\n",
-            core, arg_idx, num_args, arg0_bak);
-        PC802_LOG(port_idx, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
+    if (arg_idx > num_args) {
+        NPU_SYSLOG("WARNING -- core %u (arg_idx=%u num_args=%u): format=%s str=%s", core, arg_idx, num_args, arg0_bak, str);
         return;
     }
     PC802_LOG(port_idx, core, RTE_LOG_INFO, "%s", str );
@@ -3110,7 +3171,7 @@ static void handle_mb_sim_stop(uint16_t port_idx, magic_mailbox_t *mb, uint32_t 
     return;
 }
 
-static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, uint32_t core)
+static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, uint32_t core, uint8_t rccnt)
 {
     static int fd = -1;
     volatile uint32_t action;
@@ -3126,10 +3187,6 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
 
     port_id = adapter->port_id;
 
-    if ((0 != core) && (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_idx][core])) {
-        return 0;
-    }
-
     action = mb->action;
 #if 1
     DBLOG_NONE("port_id = %1u core = %2u action = %2u num_args = %1u\n", port_id, core, action, mb->num_args);
@@ -3139,6 +3196,8 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     DBLOG("  Arg[4] = 0x%08X [5] = 0x%08X [6] = 0x%08X [7] = 0x%08X\n",
         mb->arguments[4], mb->arguments[5], mb->arguments[6], mb->arguments[7]);
 #endif
+
+    rccnt++;
 
     if (MB_EMPTY == action ) {
         return 0;
@@ -3154,9 +3213,10 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.length = mb->arguments[3];
         msg.port_id = port_id;
         msg.core = core;
-        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        msg.rccnt = rccnt;
+        //pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
         pc802_vec_access_msg_send(fd, &msg);
-        return 2;
+        return 1;
     } else if (MB_VEC_DUMP == action) {
         msg.command = MB_VEC_DUMP;
         msg.file_id = mb->arguments[0];
@@ -3164,9 +3224,9 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.length = mb->arguments[2];
         msg.port_id = port_id;
         msg.core = core;
-        pc802_vec_blocked[port_idx][core] = PC802_VEC_ACCESS_WORK;
+        msg.rccnt = rccnt;
         pc802_vec_access_msg_send(fd, &msg);
-        return 2;
+        return 1;
     } else if (MB_DATA_DUMP == action) {
         msg.command = MB_DATA_DUMP;
         msg.file_id = mb->arguments[0];
@@ -3175,8 +3235,9 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
         msg.flag = mb->arguments[3];
         msg.port_id = port_id;
         msg.core = core;
+        msg.rccnt = rccnt;
         pc802_vec_access_msg_send(fd, &msg);
-        return 2;
+        return 1;
     } else {
         num_args = mb[0].num_args;
         DBLOG("MB[%2u]: action=%u, num_args=%u, args:\n", core, action, num_args);
@@ -3187,24 +3248,26 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     }
     if (mb->blocked) {
         PC802_BAR_Ext_t * ext = pc802_get_BAR_Ext(port_id);
-        pc802_write_mailbox_reg(ext, core, pc802_mailbox_rc_counter[port_idx][core] + 1, 1);
+        pc802_write_mailbox_reg(ext, core, rccnt, 1);
     }
 
     return 1;
 }
 
-static uint8_t pc802_mailbox_get_rccnt(uint8_t *pRccnt, uint8_t epcnt, uint16_t core)
+static void pc802_mailbox_common(struct pc802_adapter *adapter, mailbox_counter_t *mb_cnts, magic_mailbox_t *mb, uint32_t core)
 {
-    uint8_t rccnt, used;
-    rccnt = *pRccnt;
-    used = epcnt - rccnt;
-    if (used <= MB_MAX_C2H_MAILBOXES)
-        return rccnt;
-    DBLOG("Adjust Mailbox RC counter: core %2u ep %3u rc %3u -> %3u\n",
-        (uint32_t)core, (uint32_t)epcnt, (uint32_t)rccnt, (uint32_t)(uint8_t)(epcnt - 1));
-    rccnt = epcnt - 1;
-    *pRccnt = rccnt;
-    return rccnt;
+    uint32_t core_in_cluster = core & 15;
+    uint8_t rccnt = mb_cnts->rd[mb_cnts->rg][core_in_cluster];
+    uint8_t epcnt = mb_cnts->rd[1 - mb_cnts->rg][core_in_cluster];
+    uint8_t num = epcnt - rccnt;
+    if (num > 16) {
+        NPU_SYSLOG("ERROR: too much mailbox requests ! Core %2u rg %1u epcnt %3u rccnt %3u\n",
+            core, mb_cnts->rg, epcnt, rccnt);
+    }
+    while (rccnt != epcnt) {
+        handle_mailbox(adapter, &mb[rccnt & 15], core, rccnt);
+        rccnt++;
+    }
 }
 
 static int pc802_mailbox(void *data)
@@ -3214,7 +3277,6 @@ static int pc802_mailbox(void *data)
     uint32_t core;
     uint16_t port_index = ((struct pc802_adapter *)data)->port_index;
     int num = 0;
-    int re;
 
     if ( adapter[port_index] == NULL )
     {
@@ -3231,7 +3293,6 @@ static int pc802_mailbox(void *data)
     PC802_Mem_Block_t *blks[8];
     uint8_t *msg;
     uint16_t n, N;
-    uint8_t epcnt, rccnt;
 
     N = pc802_rx_mblk_burst(adapter[port_index]->port_id, PC802_TRAFFIC_MAILBOX, blks, 8);
 #if 0
@@ -3245,78 +3306,23 @@ static int pc802_mailbox(void *data)
             (uint32_t)blks[n]->pkt_type, (uint32_t)blks[n]->cause, (uint32_t)n, (uint32_t)N);
         msg = (uint8_t *)blks[n] + sizeof(PC802_Mem_Block_t);
         mb_mem = (mailbox_mem_t *)msg;
+        mb_cnts = (mailbox_counter_t *)msg;
         if (0 == blks[n]->pkt_type) { //PFI
-            //if (0 != blks[n]->cause)
-            //{
-            //    DBLOG("Recved PFI mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
-            //}
-            mb_cnts = &mb_mem->cnts;
-            DBLOG_NONE("PFI   wrs[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
-                mb_cnts->wrs[0], mb_cnts->wrs[1], mb_cnts->wrs[2], mb_cnts->wrs[3]);
-            DBLOG_NONE("PFI   rds[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
-                pc802_mb_rccnts[port_index][0], pc802_mb_rccnts[port_index][1],
-                pc802_mb_rccnts[port_index][2], pc802_mb_rccnts[port_index][3]);
             for (core = 0; core < 16; core++) {
                 mbs = &mb_mem->e[core];
                 mb = mbs->m_cpu_to_host;
-                epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core], epcnt, core);
-                if (epcnt == rccnt)
-                    continue;
-                //DBLOG("mailbox core = %u state = %1u epcnt = %u rccnt = %u\n",
-                //    core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt);
-                while (rccnt != epcnt) {
-                    re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core);
-                    rccnt++;
-                    if (1 == re) {
-                        pc802_mailbox_rc_counter[port_index][core] = rccnt;
-                    } else if (0 == core) {
-                        DBLOG_NONE("mailbox re = %d core = %u state = %1u epcnt = %u rccnt = %u\n",
-                                re, core, (uint32_t)pc802_vec_blocked[port_index][core], epcnt, rccnt);
-                        while (epcnt != pc802_mailbox_rc_counter[port_index][core]) {
-                            usleep(1);
-                        }
-                    }
-                }
-                //DBLOG("mailbox rccnt[%2u] = %u\n", core, rccnt);
+                pc802_mailbox_common(adapter[port_index], mb_cnts, mb, core);
             }
         } else if (1 == blks[n]->pkt_type) { //eCPRI
-            //DBLOG("Recved eCPRI mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
-            mb_cnts = &mb_mem->cnts;
-            DBLOG_NONE("eCPRI wrs[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
-                mb_cnts->wrs[0], mb_cnts->wrs[1], mb_cnts->wrs[2], mb_cnts->wrs[3]);
-            DBLOG_NONE("eCPRI rds[0] = 0x%08X [1] = 0x%08X [2] = 0x%08X [3] = 0x%08X\n",
-                pc802_mb_rccnts[port_index][4], pc802_mb_rccnts[port_index][5],
-                pc802_mb_rccnts[port_index][6], pc802_mb_rccnts[port_index][7]);
             for (core = 0; core < 16; core++) {
                 mbs = &mb_mem->e[core];
                 mb = mbs->m_cpu_to_host;
-                epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 16], epcnt, core + 16);
-                while (rccnt != epcnt) {
-                    re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 16);
-                    rccnt++;
-                    if (1 == re) {
-                        pc802_mailbox_rc_counter[port_index][core + 16] = rccnt;
-                    }
-                }
+                pc802_mailbox_common(adapter[port_index], mb_cnts, mb, core + 16);
             }
         } else { //DSPs
-            //DBLOG("Recved DSPs mailbox request in %u of %u, cause = %u\n", (uint32_t)n, (uint32_t)N, (uint32_t)blks[n]->cause);
-            mb_cnts = (mailbox_counter_t *)msg;
-            DBLOG_NONE("DSP   wrs[0] = 0x%08X\n", mb_cnts->wrs[0]);
-            DBLOG_NONE("DSP   rds[0] = 0x%08X\n", pc802_mb_rccnts[port_index][8]);
             for (core = 0; core < 3; core++) {
                 mb = (magic_mailbox_t *)(msg + DSP_MAILBOX_COUNTERS_SIZE + MAILBOX_MEM_SIZE_PER_DSP * core + sizeof(mailbox_registry_t));
-                epcnt = mb_cnts->wr[core];
-                rccnt = pc802_mailbox_get_rccnt(&pc802_mailbox_rc_counter[port_index][core + 32], epcnt, core + 32);
-                while (rccnt != epcnt) {
-                    re = handle_mailbox(adapter[port_index], &mb[rccnt & 15], core + 32);
-                    rccnt++;
-                    if (1 == re) {
-                        pc802_mailbox_rc_counter[port_index][core + 32] = rccnt;
-                    }
-                }
+                pc802_mailbox_common(adapter[port_index], mb_cnts, mb, core + 32);
             }
         }
         pc802_free_mem_block(blks[n]);
