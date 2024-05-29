@@ -271,8 +271,14 @@ typedef struct stPC802_Descriptor_t{
     uint32_t length;    // length of content to be sent in bytes
     uint8_t  eop;       // end of packet, 0=not the last descriptor for a whole message, 1=last descriptor
     uint8_t  type;      // packet type, 1=control, 0=data, this field is not used for Ethernet
-    uint8_t  sn;
+    uint8_t  sfn;
+    uint8_t  slot;
 } PC802_Descriptor_t;
+
+typedef union {
+    PC802_CacheLine_t   cache_line_epcnt;
+    volatile uint32_t v;
+} PerCoreEpCnt_u;
 
 struct stPC802_EP_Counter_Mirror_t {
     union {
@@ -283,7 +289,19 @@ struct stPC802_EP_Counter_Mirror_t {
         PC802_CacheLine_t   cache_line_repcnt;
         volatile uint32_t REPCNT[MAX_UL_CH_NUM];
     };
-    volatile uint32_t MB_C2H_EPCNT;
+    union {
+        PC802_CacheLine_t   cache_line_2;
+        volatile uint32_t MB_C2H_EPCNT;
+    };
+    union {
+        PC802_CacheLine_t   cache_line_3;
+        volatile uint32_t TRACE_ENABLE;
+    };
+    union {
+        PC802_CacheLine_t   cache_line_4;
+        volatile uint32_t   SLOT_SFN[2];
+    };
+    PerCoreEpCnt_u TRACE_EPCNT[32];
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
@@ -499,7 +517,7 @@ typedef struct {
 #define MAILBOX_COUNTER_OFFSET_DSP  0
 
 int pc802_kni_add_port(uint16_t port);
-uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
+uint32_t pc802_get_sfn_slot(uint16_t pc802_index, uint32_t cell_index);
 uint16_t pc802_get_index_by_name(const char *name);
 
 enum {
@@ -509,6 +527,6 @@ enum {
 
 int pc802_pdump_init(void);
 int pc802_pdump_uninit(void);
-uint16_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc);
+uint64_t pdump_cb(uint16_t pc802_index, uint16_t queue_id, uint16_t rxtx_flag, PC802_Mem_Block_t **blks, uint16_t nb_blks, uint64_t last_tsc);
 
 #endif /* _PC802_ETHDEV_H_ */

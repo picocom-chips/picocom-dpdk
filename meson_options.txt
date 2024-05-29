@@ -34,7 +34,7 @@ option('tests', type: 'boolean', value: true,
 	description: 'build unit tests')
 option('use_hpet', type: 'boolean', value: false,
 	description: 'use HPET timer in EAL')
-option('enable_multi_pc802', type: 'boolean', value: false, description:
+option('enable_multi_pc802', type: 'boolean', value: true, description:
        'supported multi pc802')
 option('enable_check_pc802_ul_timing', type: 'boolean', value: false, description:
        'enable checking pc802 PCIe UL timing')

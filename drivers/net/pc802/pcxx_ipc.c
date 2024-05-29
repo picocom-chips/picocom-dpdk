@@ -48,6 +48,10 @@ struct pcxx_cell_info_st{
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
     uint8_t  dl_sn;
+    uint8_t  scs;
+    uint8_t  tgt_dl_sfn;
+    uint8_t  tgt_dl_slot;
+    uint8_t  dl_discard;
     SimULSlotMsg_t slot_msg;
 
     char     *data_buf[NUM_SFN_IDX][NUM_DATA_BUF];
@@ -149,9 +153,23 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
     cell_info->dl_sn = 0;
+    pcxx_devs[dev_index].cell_info[cell_index].scs = 1; //default 30 KHz
 
     pcxx_devs[dev_index].port_id = port_id;
 
+    return 0;
+}
+
+#ifndef MULTI_PC802
+int pcxxSetSCS(uint8_t scs)
+{
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#else
+int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index)
+{
+#endif
+    pcxx_devs[dev_index].cell_info[cell_index].scs = scs;
     return 0;
 }
 
@@ -235,6 +253,92 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     cell->data_num[cell->sfn_idx] = 0;
     cell->data_offset = 0;
     cell->data_length = 0;
+
+    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
+    uint8_t  num_slots = 10 << cell->scs;
+    uint8_t tgt_dl_slot = ((slot_sfn >> 16) & 0xFF) + 2;
+    uint8_t tgt_dl_sfn = slot_sfn & 0xFF;
+    if (tgt_dl_slot >= num_slots) {
+        tgt_dl_slot -= num_slots;
+        tgt_dl_sfn++;
+    }
+    cell->tgt_dl_sfn = tgt_dl_sfn;
+    cell->tgt_dl_slot = tgt_dl_slot;
+    cell->dl_discard = 0;
+    return 0;
+}
+
+/**
+ * Check if target sfn and slot is in DL transfer window
+ *
+ * @param tgt_sfn
+ *   target sfn
+ * @param tgt_slot
+ *   target slot
+ * @return
+ *   0 if in transfer window
+ *  >0 too early
+ *  <0 too late
+ */
+#ifndef MULTI_PC802
+int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot)
+{
+    uint16_t dev_index = 0;
+    uint16_t cell_index = 0;
+#else
+int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot, uint16_t dev_index, uint16_t cell_index)
+{
+    RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
+#endif
+    pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    cell->tgt_dl_sfn = tgt_sfn;
+    cell->tgt_dl_slot = tgt_slot;
+
+    uint8_t curr_sfn;
+    uint8_t curr_slot;
+    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
+    curr_sfn = slot_sfn & 0xFF;
+    curr_slot = slot_sfn >> 16;
+    uint8_t delta_sfn = tgt_sfn - curr_sfn;
+    uint8_t delta_slot;
+    int re;
+    if (delta_sfn == 0) {
+        if (curr_slot < tgt_slot) {
+            delta_slot = tgt_slot - curr_slot;
+            re = (delta_slot >> 1) - 1;
+            cell->dl_discard = re < 0;
+            if (cell->dl_discard) {
+                NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                    tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+            }
+            return re;
+        } else { // too late
+            cell->dl_discard = 1;
+            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+            return -1;
+        }
+    } else if (delta_sfn == 1) {
+        tgt_slot += (10 <<cell->scs);
+        delta_slot = tgt_slot - curr_slot;
+        re = (delta_slot >> 1) - 1;
+        cell->dl_discard = re < 0;
+        if (cell->dl_discard) {
+            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+        }
+        return re;
+    } else if (delta_sfn < 128) { // too early
+        cell->dl_discard = 0;
+        NPU_SYSLOG("DL Too Early not discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+            tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+        return 1;
+    } else { // too late
+        cell->dl_discard = 1;
+        NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
+                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
+        return -1;
+    }
     return 0;
 }
 
@@ -251,6 +355,9 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     if (cell->data_num[cell->sfn_idx]) {
         if (NULL == cell->ctrl_buf) {
             NPU_SYSLOG("ERROR: Dev %1u Cell %1u send DL data (SN = %u) but no associated control msg !\n",
@@ -261,6 +368,8 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         mblk_data->pkt_type = 0;
         mblk_data->eop = 1;
         mblk_data->sn = cell->dl_sn;
+        mblk_data->sfn = cell->tgt_dl_sfn;
+        mblk_data->slot = cell->tgt_dl_slot;
         if (0 == mblk_data->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL data msg with EOP=1 : port %1u queue %1u SN %u\n",
                 pcxx_devs[dev_index].port_id, QID_DATA[cell_index], mblk_data->sn);
@@ -274,6 +383,8 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
         mblk_ctrl->pkt_type = 1 + (0 == cell->data_offset);
         mblk_ctrl->eop = 1;
         mblk_ctrl->sn = cell->dl_sn;
+        mblk_ctrl->sfn = cell->tgt_dl_sfn;
+        mblk_ctrl->slot = cell->tgt_dl_slot;
         cell->dl_sn += (cell->data_offset > 0);
         if (0 == mblk_ctrl->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL control msg : port %1u queue %1u SN %u\n",
@@ -298,12 +409,18 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        *availableSize = 0;
+        return -1;
+    }
     if (NULL == cell->ctrl_buf) {
         mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_CTRL[cell_index]);
         if (NULL == mblk)
             return -1;
         cell->ctrl_buf = (char *)&mblk[1];
         cell->ctrl_length = 0;
+        mblk->sfn = cell->tgt_dl_sfn;
+        mblk->slot = cell->tgt_dl_slot;
     }
     if (NULL == cell->ctrl_buf)
         return -1;
@@ -324,6 +441,9 @@ int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t 
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     //RTE_ASSERT(0 == (bufLen & 3));
     if (NULL == cell->pcxx_ctrl_dl_handle) {
         cell->ctrl_length += bufLen;
@@ -569,6 +689,9 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
     mblk = pc802_alloc_tx_mem_block(pcxx_devs[dev_index].port_id, QID_DATA[cell_index]);
@@ -590,6 +713,9 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
+    if (cell->dl_discard) {
+        return -1;
+    }
     bufLen = ((bufLen + 3) >> 2) << 2;
     if ((sizeof(PC802_Mem_Block_t) + offset + bufLen) > DATA_DL_QUEUE_BLOCK_SIZE)
         return -1;
@@ -607,6 +733,8 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
         mblk->pkt_type = 0;
         mblk->eop = 0;
         mblk->sn = cell->dl_sn;
+        mblk->sfn = cell->tgt_dl_sfn;
+        mblk->slot = cell->tgt_dl_slot;
         if (0 == mblk->pkt_length) {
             NPU_SYSLOG("ERROR: NPU send 0 size DL data msg with EOP=0 : port %1u queue %1u SN %u\n",
                 pcxx_devs[dev_index].port_id, QID_DATA[cell_index], mblk->sn);

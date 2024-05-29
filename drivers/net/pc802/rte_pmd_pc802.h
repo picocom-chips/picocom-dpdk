@@ -74,6 +74,8 @@ struct pc802_mem_block {
         uint8_t cause;
     };
     uint8_t sn;
+    uint8_t sfn;
+    uint8_t slot;
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
 
@@ -154,6 +156,8 @@ int pc802_check_dma_timeout(uint16_t port);
 int pc802_set_ul_dma_count(uint16_t port, uint32_t n);
 uint32_t pc802_vec_read(uint16_t port_id, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 uint32_t pc802_vec_dump(uint16_t port_id, uint32_t file_id, uint32_t address, uint32_t length);
+
+int pc802_trigger_coredump_from_npu(uint16_t pc802_index, uint32_t pc802_core);
 
 #ifdef __cplusplus
 }
