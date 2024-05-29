@@ -18,6 +18,7 @@
 #include <rte_byteorder.h>
 #include <rte_debug.h>
 #include <rte_pci.h>
+#include <rte_telemetry.h>
 #include <rte_bus_pci.h>
 #include <rte_version.h>
 #include <rte_ether.h>
@@ -552,6 +553,11 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     PC802_Mem_Block_t **rx_blks, uint16_t nb_blks)
 {
     static uint64_t last_tsc[PC802_INDEX_MAX][PC802_TRAFFIC_NUM] = {0};
+#if 0
+    uint64_t tstart, tend, tdiff;
+    tstart = rte_rdtsc();
+#endif
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
@@ -625,6 +631,27 @@ uint16_t pc802_rx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     if( nb_rx )
         pdump_cb(adapter->port_index, queue_id, PC802_FLAG_RX, rx_blks, nb_blks, last_tsc[adapter->port_index][queue_id]);
     last_tsc[adapter->port_index][queue_id] = rte_rdtsc();
+
+#if 0
+    tend = rte_rdtsc();
+    tdiff = tend - tstart;
+    uint32_t stat_no = 0xFF;
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        if (nb_rx)
+            stat_no = NO_CTRL_BURST_GOT;
+        else
+            stat_no = NO_CTRL_BURST_NULL;
+    } else if (PC802_TRAFFIC_5G_EMBB_DATA == queue_id) {
+        if (nb_rx)
+            stat_no = NO_DATA_BURST_GOT;
+        else
+            stat_no = NO_DATA_BURST_NULL;
+    }
+    if (stat_no < 0xFF) {
+        check_proc_time(stat_no, tdiff);
+    }
+#endif
+
     return nb_rx;
 }
 
@@ -680,6 +707,12 @@ uint16_t pc802_tx_mblk_burst(uint16_t port_id, uint16_t queue_id,
     txq->rc_cnt = tx_id;
     rte_wmb();
     *txq->trccnt_reg_addr = tx_id;
+
+#ifdef ENABLE_CHECK_PC802_DL_TIMING
+    if (PC802_TRAFFIC_5G_EMBB_CTRL == queue_id) {
+        stat_and_check(NO_DL_CTRL_SEND);
+    }
+#endif
 
     return nb_tx;
 }
@@ -2326,22 +2359,29 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
+    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
+    uint32_t       *pd;
+    uint32_t       data_size;
+    uint32_t       buf_full;
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-
-    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+__next_pfi_0_vec_read:
+    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    data_size = 0;
+    buf_full = 0;
+    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
             // In scope
             if (vec_cnt >= offset && vec_cnt < end) {
                 *pd++ = data;
+                data_size += sizeof(uint32_t);
+                buf_full = (data_size >= PC802_DEBUG_BUF_SIZE);
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
@@ -2355,11 +2395,8 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
         // Increment line count
         line++;
     }
-    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
-    fclose(fh_vector);
-
-    if (vec_cnt < end) {
+    if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
@@ -2370,8 +2407,7 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
     PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
     PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    assert(length <= PC802_DEBUG_BUF_SIZE);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
     uint32_t vec_rccnt;
     volatile uint32_t vec_epcnt;
     vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
@@ -2381,6 +2417,11 @@ static uint32_t handle_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, uint32
         usleep(1);
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
     } while (vec_epcnt != vec_rccnt);
+
+    if (vec_cnt < end)
+        goto __next_pfi_0_vec_read;
+
+    fclose(fh_vector);
 
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
@@ -2403,34 +2444,42 @@ static uint32_t handle_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, uint32
     get_vector_path(port_id, file_path);
     sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+    uint32_t left = length;
+    uint32_t data_size;
+
     struct rte_eth_dev *dev = &rte_eth_devices[port_id];
     struct pc802_adapter *adapter =
         PC802_DEV_PRIVATE(dev->data->dev_private);
     PC802_BAR_Ext_t *ext = pc802_get_BAR_Ext(adapter->port_id);
-    uint32_t *pd = (uint32_t *)adapter->dbg;
-    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
-    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
-    PC802_WRITE_REG(ext->VEC_BUFSIZE, length);
-    volatile uint32_t vec_epcnt;
     uint32_t vec_rccnt;
     vec_rccnt = PC802_READ_REG(ext->VEC_RCCNT);
+    PC802_WRITE_REG(ext->VEC_BUFADDRH, adapter->dgb_phy_addrH);
+    PC802_WRITE_REG(ext->VEC_BUFADDRL, adapter->dgb_phy_addrL);
+
+    uint32_t *pd;
+__next_pfi_0_vec_dump:
+    pd = (uint32_t *)adapter->dbg;
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(ext->VEC_BUFSIZE, data_size);
+    vec_rccnt++;
+    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
+    volatile uint32_t vec_epcnt;
     do {
         usleep(1);
         vec_epcnt = PC802_READ_REG(ext->VEC_EPCNT);
-    } while (vec_epcnt == vec_rccnt);
+    } while (vec_epcnt != vec_rccnt);
 
-    vec_rccnt++;
-    PC802_WRITE_REG(ext->VEC_RCCNT, vec_rccnt);
-
-    // Parse the file
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
-      unsigned int mem_data = *pd++;;
-      fprintf(fh_vector, "%08x\n", mem_data);
+    for (offset = 0; offset < data_size; offset += 4) {
+        unsigned int mem_data = *pd++;;
+        fprintf(fh_vector, "%08x\n", mem_data);
     }
+    left -= data_size;
+
+    if (left > 0)
+        goto __next_pfi_0_vec_dump;
 
     fclose(fh_vector);
 
@@ -2456,22 +2505,30 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
     }
 
     // Parse the file
-    DBLOG("PC802 %d reading vector file %s %u line.\n", port_id, file_name, length);
+    DBLOG("PC802 %d reading vector file %s %u bytes.\n", port_id, file_name, length);
     unsigned int   data       = 0;
     unsigned int   vec_cnt = 0;
     unsigned int   line = 0;
     FILE         * fh_vector  = fopen(file_name, "r");
     char           buffer[2048];
 
-    uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    uint32_t *pd;
+    uint32_t data_size;
+    uint32_t buf_full;
 
-    while (fgets(buffer, sizeof(buffer), fh_vector) != NULL) {
+__next_non_pfi_0_vec_read:
+    pd = (uint32_t *)pc802_get_debug_mem(port_id);
+    data_size = 0;
+    buf_full = 0;
+    while ((0 == buf_full) && (fgets(buffer, sizeof(buffer), fh_vector) != NULL)) {
         // Trim trailing newlines
         buffer[strcspn(buffer, "\r\n")] = 0;
         if (sscanf(buffer, "%x", &data) == 1) {
             // In scope
             if (vec_cnt >= offset && vec_cnt < end) {
                 *pd++ = data;
+                data_size += sizeof(uint32_t);
+                buf_full = (data_size >= PC802_DEBUG_BUF_SIZE);
             }
             vec_cnt += 4;
         } else if (buffer[0] != '#' && strlen(buffer) > 0) { // Allow for comment character '#'
@@ -2485,11 +2542,8 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         // Increment line count
         line++;
     }
-    //pc802_access_ep_mem(0, address, length, DIR_PCIE_DMA_DOWNLINK);
 
-    fclose(fh_vector);
-
-    if (vec_cnt < end) {
+    if ((0 == buf_full) && (vec_cnt < end)) {
         DBLOG("ERROR: EOF! of %s line %u\n", file_name, vec_cnt);
         return -5;
     }
@@ -2507,6 +2561,12 @@ static uint32_t handle_non_pfi_0_vec_read(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
+    if (vec_cnt < end) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_read;
+    }
+
+    fclose(fh_vector);
     DBLOG("Loaded a total of %u bytes from %s\n", length, file_name);
     return 0;
 }
@@ -2527,11 +2587,22 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
     get_vector_path(port_id, file_path);
     sprintf(file_name, "%s/%u.txt", file_path, file_id);
 
+    // Parse the file
+    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
+    FILE         * fh_vector  = fopen(file_name, "w");
+    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
+
     PC802_BAR_t *bar = pc802_get_BAR(port_id);
-    PC802_WRITE_REG(bar->DBGEPADDR, address);
-    PC802_WRITE_REG(bar->DBGBYTESNUM, length);
-    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     uint32_t RCCNT = PC802_READ_REG(bar->DBGRCCNT);
+
+    uint32_t left = length;
+    uint32_t data_size;
+
+__next_non_pfi_0_vec_dump:
+    PC802_WRITE_REG(bar->DBGEPADDR, address);
+    data_size = (left < PC802_DEBUG_BUF_SIZE) ? left : PC802_DEBUG_BUF_SIZE;
+    PC802_WRITE_REG(bar->DBGBYTESNUM, data_size);
+    PC802_WRITE_REG(bar->DBGCMD, DIR_PCIE_DMA_UPLINK);
     RCCNT++;
     PC802_WRITE_REG(bar->DBGRCCNT, RCCNT);
     volatile uint32_t EPCNT;
@@ -2540,15 +2611,15 @@ static uint32_t handle_non_pfi_0_vec_dump(uint16_t port_id, uint32_t file_id, ui
         EPCNT = PC802_READ_REG(bar->DBGEPCNT);
     } while (EPCNT != RCCNT);
 
-    // Parse the file
-    DBLOG("PC802 %d dumping to file %s\n", port_id, file_name);
-    FILE         * fh_vector  = fopen(file_name, "w");
-
     uint32_t *pd = (uint32_t *)pc802_get_debug_mem(port_id);
-    fprintf(fh_vector, "#@%08x, length=%d\n", address, length);
-    for (offset = 0; offset < length; offset += 4) {
-      unsigned int mem_data = *pd++;;
-      fprintf(fh_vector, "%08x\n", mem_data);
+    for (offset = 0; offset < data_size; offset += 4) {
+        unsigned int mem_data = *pd++;;
+        fprintf(fh_vector, "%08x\n", mem_data);
+    }
+    left -= data_size;
+    if (left > 0) {
+        address += data_size;
+        goto __next_non_pfi_0_vec_dump;
     }
 
     fclose(fh_vector);
@@ -2915,4 +2986,186 @@ uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index)
         sfn_slot = 0xFFFFFFFF;
     }
     return sfn_slot;
+}
+
+static void pc802_tel_add_reg_array(struct rte_tel_data *d, const char *name, uint32_t *reg_addr, int count)
+{
+	int i;
+	struct rte_tel_data *array = rte_tel_data_alloc();
+	rte_tel_data_start_array(array, RTE_TEL_U64_VAL);
+	for (i = 0; i < count; i++)
+		rte_tel_data_add_array_u64(array, PC802_READ_REG(reg_addr[i]));
+	rte_tel_data_add_dict_container(d, name, array, 0);
+}
+
+static int pc802_tel_handle_port_list(const char *cmd __rte_unused,
+                const char *params __rte_unused, struct rte_tel_data *d)
+{
+	int i;
+	rte_tel_data_start_array(d, RTE_TEL_INT_VAL);
+    for ( i=0; i<num_pc802s; i++ )
+		rte_tel_data_add_array_int(d, pc802_devices[i]->port_id);
+	return 0;
+}
+
+static int pc802_rel_handle_regs(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    #define ADD_DICT_REG(reg) rte_tel_data_add_dict_u64(d, #reg, PC802_READ_REG(bar->reg))
+    #define ADD_DICT_ARRAY(reg) pc802_tel_add_reg_array(d, #reg, bar->reg, sizeof(bar->reg)/sizeof(uint32_t))
+    struct pc802_adapter *adapter;
+    PC802_BAR_t *bar;
+	int dev_id=0;
+
+	/* Get dev ID from parameter string */
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+
+    sscanf( params, "%d", &dev_id);
+    if(dev_id >= num_pc802s)
+        return -1;
+
+    adapter = pc802_devices[dev_id];
+    bar = (PC802_BAR_t *)adapter->bar0_addr;
+
+	rte_tel_data_start_dict(d);
+    ADD_DICT_REG(DEVEN);
+    ADD_DICT_REG(DEVRDY);
+    ADD_DICT_REG(DBAL);
+    ADD_DICT_REG(DBAH);
+    ADD_DICT_REG(ULDMAN);
+    ADD_DICT_ARRAY(TDNUM);
+
+    ADD_DICT_ARRAY(TRCCNT);
+    ADD_DICT_ARRAY(TEPCNT);
+    ADD_DICT_ARRAY(RDNUM);
+    ADD_DICT_ARRAY(RRCCNT);
+    ADD_DICT_ARRAY(REPCNT);
+
+    ADD_DICT_REG(BOOTSRCL);
+    ADD_DICT_REG(BOOTSRCH);
+    ADD_DICT_REG(BOOTDST);
+    ADD_DICT_REG(BOOTSZ);
+    ADD_DICT_REG(BOOTRCCNT);
+    ADD_DICT_REG(BOOTRSPL);
+    ADD_DICT_REG(BOOTRSPH);
+    ADD_DICT_REG(BOOTEPCNT);
+    ADD_DICT_REG(BOOTERROR);
+    ADD_DICT_REG(BOOTDEBUG);
+    ADD_DICT_REG(MB_HANDSHAKE);
+    ADD_DICT_REG(MACADDRL);
+    ADD_DICT_REG(DBGRCAL);
+    ADD_DICT_REG(DBGRCAH);
+    ADD_DICT_REG(MB_ANDES_DIS);
+    ADD_DICT_REG(MB_DSP_DIS);
+    ADD_DICT_REG(DBGEPADDR);
+    ADD_DICT_REG(DBGBYTESNUM);
+    ADD_DICT_REG(DBGCMD);
+    ADD_DICT_REG(DBGRCCNT);
+    ADD_DICT_REG(DBGEPCNT);
+    ADD_DICT_REG(DRVSTATE);
+    ADD_DICT_REG(MEMCFGADDR);
+
+    ADD_DICT_ARRAY(ULDMA_TIMEOUT_FINISHED);
+    ADD_DICT_ARRAY(ULDMA_TIMEOUT_ERROR);
+    ADD_DICT_ARRAY(DLDMA_TIMEOUT_FINISHED);
+    ADD_DICT_ARRAY(DLDMA_TIMEOUT_ERROR);
+
+	return 0;
+}
+
+static int pc802_tel_handle_queue_stats(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    struct pc802_adapter *adapter;
+    struct pc802_tx_queue *txq;
+    struct pc802_rx_queue *rxq;
+	int dev_id=0, queue_id=0;
+
+	/* Get dev ID from parameter string */
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+
+    sscanf( params, "%d,%d", &dev_id, &queue_id);
+    if( (dev_id >= num_pc802s) || (queue_id >= PC802_TRAFFIC_NUM) )
+        return -1;
+
+    adapter = pc802_devices[dev_id];
+    txq = &adapter->txq[queue_id];
+    rxq = &adapter->rxq[queue_id];
+
+	rte_tel_data_start_dict(d);
+    rte_tel_data_add_dict_int(d, "dev", dev_id);
+    rte_tel_data_add_dict_int(d, "queue", queue_id);
+
+    rte_tel_data_add_dict_u64(d, "TX_rc_cnt",       txq->rc_cnt);
+    rte_tel_data_add_dict_int(d, "nb_tx_desc",      txq->nb_tx_desc);
+    rte_tel_data_add_dict_int(d, "tx_free_thresh",  txq->tx_free_thresh);
+    rte_tel_data_add_dict_int(d, "nb_tx_free",      txq->nb_tx_free);
+
+    rte_tel_data_add_dict_u64(d, "DL_RC", *txq->trccnt_reg_addr);
+    rte_tel_data_add_dict_u64(d, "DL_EP", *txq->tepcnt_mirror_addr);
+
+    rte_tel_data_add_dict_u64(d, "RX_rc_cnt",       rxq->rc_cnt);
+    rte_tel_data_add_dict_int(d, "nb_rx_desc",      rxq->nb_rx_desc);
+    rte_tel_data_add_dict_int(d, "nb_rx_hold",      rxq->nb_rx_hold);
+    rte_tel_data_add_dict_int(d, "rx_free_thresh",  rxq->rx_free_thresh);
+    rte_tel_data_add_dict_u64(d, "UL_RC", *rxq->rrccnt_reg_addr);
+    rte_tel_data_add_dict_u64(d, "UL_EP", *rxq->repcnt_mirror_addr);
+
+	return 0;
+}
+
+static int pc802_tel_handle_read_memory(const char *cmd __rte_unused,
+		const char *params, struct rte_tel_data *d)
+{
+    struct pc802_adapter *adapter;
+	int dev_id, ret;
+    uint32_t addr, len;
+    char file[128] = {0};
+
+	if (params == NULL || strlen(params) == 0)
+		return -1;
+    ret = sscanf( params, "%d,%x,%d,%s", &dev_id, &addr, &len, file);
+    if ((ret < 3) || (dev_id >= num_pc802s) || len<4 )
+        return -1;
+    adapter = pc802_devices[dev_id];
+
+    pc802_access_ep_mem(adapter->port_id, addr, len, DIR_PCIE_DMA_UPLINK);
+    uint32_t *p = (uint32_t *)pc802_get_debug_mem(adapter->port_id);
+
+    rte_tel_data_start_dict(d);
+    if(ret==3) {
+        uint32_t i;
+        char name[16], buf[40];
+        for (i = 0; i < len; i+=16 ) {
+            sprintf(name, "%08X:", addr+i);
+            sprintf(buf, "%08x, %08x, %08x, %08x", p[0], p[1], p[2], p[3]);
+            rte_tel_data_add_dict_string(d, name, buf);
+        }
+    }
+    else {
+        FILE  *fp = fopen(file, "wb");
+        if (fp == NULL) {
+            rte_tel_data_add_dict_string( d, "result", "Fopen error!");
+            return 0;
+        }
+        ret = fwrite( (char *)p, 1, len, fp);
+        fclose(fp);
+        rte_tel_data_add_dict_string( d, "result", "ok" );
+        rte_tel_data_add_dict_string( d, "file_name", file );
+    }
+    return 0;
+}
+
+RTE_INIT(pc802_init_telemetry)
+{
+	rte_telemetry_register_cmd("/pc802/list", pc802_tel_handle_port_list,
+			"Returns list of available pc802 dev. no parameters");
+	rte_telemetry_register_cmd("/pc802/regs", pc802_rel_handle_regs,
+			"Returns the bar0 regs for a pc802. Params: DevID");
+	rte_telemetry_register_cmd("/pc802/queue", pc802_tel_handle_queue_stats,
+			"Returns the stats for a pc802 queue. Params: DevID,QueueID");
+	rte_telemetry_register_cmd("/pc802/read_mem", pc802_tel_handle_read_memory,
+			"Read pc802 mem. Params: DevID,HexAddr,len,(file)");
 }
