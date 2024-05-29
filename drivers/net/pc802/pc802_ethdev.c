@@ -45,6 +45,8 @@
 #define PCI_VENDOR_PICOCOM          0x1EC4
 #define PCI_DEVICE_PICOCOM_PC802_OLD 0x1001
 #define PCI_DEVICE_PICOCOM_PC802    0x0802
+#define PCI_DEVICE_PICOCOM_PC806    0x0806
+
 #define FIFO_PC802_VEC_ACCESS   "/tmp/pc802_vec_access"
 
 #define PC802_TRAFFIC_MAILBOX   PC802_TRAFFIC_NUM
@@ -76,6 +78,7 @@ static struct pc802_adapter *pc802_devices[PC802_INDEX_MAX] = {NULL};
 static const struct rte_pci_id pci_id_pc802_map[] = {
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802) },
     { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC802_OLD) },
+    { RTE_PCI_DEVICE(PCI_VENDOR_PICOCOM, PCI_DEVICE_PICOCOM_PC806) },
     { .vendor_id = 0, /* sentinel */ },
 };
 
@@ -211,7 +214,7 @@ static char CUR_PATH[] = ".";
 int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t *attr,
 		void *(*start_routine)(void *), void *arg);
 static PC802_BAR_Ext_t * pc802_get_BAR_Ext(uint16_t port);
-static int pc802_download_boot_image(uint16_t port);
+static int pc802_download_boot_image(uint16_t port, uint16_t port_idx);
 static uint32_t handle_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
 static uint32_t handle_pfi_0_vec_dump(uint16_t port, uint32_t file_id, uint32_t address, uint32_t length);
 static uint32_t handle_non_pfi_0_vec_read(uint16_t port, uint32_t file_id, uint32_t offset, uint32_t address, uint32_t length);
@@ -271,7 +274,8 @@ int pc802_get_port_id(uint16_t pc802_index)
         DBLOG( "ETH DEV %d: %s\n", i, rte_eth_devices[i].device->name );
         pci_dev = RTE_ETH_DEV_TO_PCI(&rte_eth_devices[i]);
         if ( (PCI_VENDOR_PICOCOM==pci_dev->id.vendor_id) &&
-             ( (PCI_DEVICE_PICOCOM_PC802_OLD==pci_dev->id.device_id) || (PCI_DEVICE_PICOCOM_PC802==pci_dev->id.device_id) ) )
+             ( (PCI_DEVICE_PICOCOM_PC802_OLD==pci_dev->id.device_id) || (PCI_DEVICE_PICOCOM_PC802==pci_dev->id.device_id)
+                || (PCI_DEVICE_PICOCOM_PC806==pci_dev->id.device_id) ) )
         {
             DBLOG( "PC802 index %d port is %d:%s\n", index, i, rte_eth_devices[i].device->name );
             port_id[index++] = i;
@@ -343,22 +347,44 @@ int pc802_create_rx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
-        DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
-            block_size*block_num, port_id, queue_id, block_num);
-        return -ENOMEM;
-    }
-    DBLOG("UL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
-        queue_id, mz->iova, mz->addr);
-    for (k = 0; k < block_num; k++) {
-        mblk = (PC802_Mem_Block_t *)((char *)mz->addr + block_size*k);
-        mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
-        mblk->pkt_length = 0;
-        mblk->next = rxq->mpool.first;
-        mblk->first = &rxq->mpool.first;
-        mblk->alloced = 0;
-        rxq->mpool.first = mblk;
-        DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
-            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        for (k = 0; k < block_num; k++) {
+            snprintf(z_name, sizeof(z_name), "PC802Rx_%02d_%02d_%4d",
+                dev->data->port_id, queue_id, k);
+            if (NULL != (mz = rte_memzone_lookup(z_name))) {
+                rte_memzone_free(mz);
+            }
+            mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+            if (mz == NULL) {
+                DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Rx queue %hu block %u\n",
+                    block_size, port_id, queue_id, k);
+                return -ENOMEM;
+            }
+            mblk = (PC802_Mem_Block_t *)mz->addr;
+            mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = rxq->mpool.first;
+            mblk->first = &rxq->mpool.first;
+            mblk->alloced = 0;
+            rxq->mpool.first = mblk;
+            DBLOG_INFO("UL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+                queue_id, k, mz->iova, mz->addr);
+            DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    } else {
+        DBLOG("UL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, mz->iova, mz->addr);
+        for (k = 0; k < block_num; k++) {
+            mblk = (PC802_Mem_Block_t *)((char *)mz->addr + block_size*k);
+            mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = rxq->mpool.first;
+            mblk->first = &rxq->mpool.first;
+            mblk->alloced = 0;
+            rxq->mpool.first = mblk;
+            DBLOG_INFO("UL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
     }
 
     rxdp = rxq->rx_ring = adapter->pDescs->ul[queue_id];
@@ -470,22 +496,44 @@ int pc802_create_tx_queue(uint16_t port_id, uint16_t queue_id, uint32_t block_si
     }
     mz = rte_memzone_reserve(z_name, block_size*block_num, socket_id, RTE_MEMZONE_IOVA_CONTIG);
     if (mz == NULL) {
-        DBLOG("ERROR: fail to memzone %s reserve size = %u for Port %hu Tx queue %hu\n", z_name,
-            block_size*block_num, port_id, queue_id);
-        return -ENOMEM;
-    }
-    DBLOG("DL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
-        queue_id, mz->iova, mz->addr);
-    for (k = 0; k < block_num; k++) {
-        mblk = (PC802_Mem_Block_t *)((char *)mz->addr+block_size*k);
-        mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
-        mblk->pkt_length = 0;
-        mblk->next = txq->mpool.first;
-        mblk->first = &txq->mpool.first;
-        mblk->alloced = 0;
-        txq->mpool.first = mblk;
-        DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
-            queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        for (k = 0; k < block_num; k++) {
+            snprintf(z_name, sizeof(z_name), "PC802Tx_%02d_%02d_%4d",
+                dev->data->port_id, queue_id, k);
+            if (NULL != (mz = rte_memzone_lookup(z_name))) {
+                rte_memzone_free(mz);
+            }
+            mz = rte_memzone_reserve(z_name, block_size, socket_id, RTE_MEMZONE_IOVA_CONTIG);
+            if (mz == NULL) {
+                DBLOG("ERROR: fail to memzone reserve size = %u for Port %hu Tx queue %hu block %u\n",
+                    block_size, port_id, queue_id, k);
+                return -ENOMEM;
+            }
+            mblk = (PC802_Mem_Block_t *)mz->addr;
+            mblk->buf_phy_addr = mz->iova + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = txq->mpool.first;
+            mblk->first = &txq->mpool.first;
+            mblk->alloced = 0;
+            txq->mpool.first = mblk;
+            DBLOG_INFO("DL MZ[%1u][%3u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+                queue_id, k, mz->iova, mz->addr);
+            DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
+    } else {
+        DBLOG("DL MZ[%1u]: PhyAddr=0x%lX VirtulAddr=%p\n",
+            queue_id, mz->iova, mz->addr);
+        for (k = 0; k < block_num; k++) {
+            mblk = (PC802_Mem_Block_t *)((char *)mz->addr+block_size*k);
+            mblk->buf_phy_addr = mz->iova + block_size*k + sizeof(PC802_Mem_Block_t);
+            mblk->pkt_length = 0;
+            mblk->next = txq->mpool.first;
+            mblk->first = &txq->mpool.first;
+            mblk->alloced = 0;
+            txq->mpool.first = mblk;
+            DBLOG_INFO("DL MBlk[%1u][%3u]: PhyAddr=0x%lX VirtAddr=%p\n",
+                queue_id, k, mblk->buf_phy_addr, &mblk[1]);
+        }
     }
 
     txq->tx_ring = adapter->pDescs->dl[queue_id];
@@ -1248,8 +1296,25 @@ eth_pc802_start(struct rte_eth_dev *dev)
     PMD_INIT_FUNC_TRACE();
 
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
-        return 0;
+        int delay = 3;
+        while (delay--) {
+            if (PC802_READ_REG(bar->DEVEN)) {
+                volatile uint32_t drv_state;
+
+                DBLOG("PC802 has been started by primary process, so bypass by secondary process!\n");
+                DBLOG("Waiting for PC802 boot(DRVSTATE=3) ...\n");
+                do {
+                    usleep(1);
+                    drv_state = PC802_READ_REG(bar->DRVSTATE);
+                } while (drv_state != 3);
+                DBLOG("DRVSTATE=%d, DEVRDY=%d.\n", drv_state, PC802_READ_REG(bar->DEVRDY));
+
+                return 0;
+            }
+            sleep(1);
+        }
+        DBLOG("PC802 not start(DEVEN=%d,DRVSTATE=%d,DEVRDY=%d), secondary process will start pc802.\n",
+                PC802_READ_REG(bar->DEVEN), PC802_READ_REG(bar->DRVSTATE), PC802_READ_REG(bar->DEVRDY));
     }
 
     eth_pc802_stop(dev);
@@ -1869,15 +1934,25 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         syslog(LOG_INFO, "%s built at %s on %s.", picocom_pc802_version(), __TIME__, __DATE__ );
 
     pc802_devices[num_pc802s] = adapter;
-    num_pc802s++;
+
+
+    eth_dev->dev_ops = &eth_pc802_ops;
+    eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
+    eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
+
     if (RTE_PROC_PRIMARY != rte_eal_process_type()) {
-        uint32_t drv_state;
+        uint32_t devRdy;
+
+        DBLOG("Secondary PC802 process wait primary complete init...\n");
+
+        num_pc802s++;
         bar = (PC802_BAR_t *)adapter->bar0_addr;
         do {
             usleep(1);
-            drv_state = PC802_READ_REG(bar->DRVSTATE);
-        } while (drv_state != 3);
-        DBLOG("Secondary PC802 App detect drv_state = 3 !\n");
+            devRdy = PC802_READ_REG(bar->DEVRDY);;
+        } while ( !((devRdy >= 5) && (devRdy <= 8)) );
+        DBLOG("Secondary PC802 process detect devRdy = %u !\n", devRdy);
+
         uint32_t DBAH = PC802_READ_REG(bar->DBAH);
         uint32_t DBAL = PC802_READ_REG(bar->DBAL);
         DBLOG("DBA: 0x%08X %08X\n", DBAH, DBAL);
@@ -1902,10 +1977,6 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     adapter->eth_addr.addr_bytes[4] = 0xC0;
     adapter->eth_addr.addr_bytes[5] = 0x00;
 
-    eth_dev->dev_ops = &eth_pc802_ops;
-    eth_dev->rx_pkt_burst = (eth_rx_burst_t)&eth_pc802_recv_pkts;
-    eth_dev->tx_pkt_burst = (eth_tx_burst_t)&eth_pc802_xmit_pkts;
-
     rte_eth_copy_pci_info(eth_dev, pci_dev);
 
     adapter->bar0_addr = (uint8_t *)pci_dev->mem_resource[0].addr;
@@ -1923,7 +1994,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     printf( "PC802 Log level: PRINT=%d, EVENT=%d, VEC=%d\n", pc802_log_get_level(PC802_LOG_PRINT),
         pc802_log_get_level(PC802_LOG_EVENT), pc802_log_get_level(PC802_LOG_VEC) );
     adapter->log_flag = 0;
-    adapter->port_index = num_pc802s-1;
+    adapter->port_index = num_pc802s;
 
 #if 0
     if ((RTE_LOG_EMERG != pc802_log_get_level(PC802_LOG_PRINT)) && (NULL != pci_dev->mem_resource[1].addr)) {
@@ -2006,6 +2077,8 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
     DBLOG("NPU clear PC802 prot %d DEVEN = 0\n", adapter->port_id);
     usleep(1000);
 
+    mb_string_init(adapter->port_index);
+
     adapter->started = 1;
 
     PMD_INIT_LOG(DEBUG, "port_id %d vendorID=0x%x deviceID=0x%x",
@@ -2013,8 +2086,9 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
              pci_dev->id.device_id);
 
     pc802_init_c2h_mailbox(adapter);
+    num_pc802s++;
 
-    if (1 == num_pc802s) {
+    if (0 == adapter->port_index) {
         pthread_t tid;
         mkfifo(FIFO_PC802_VEC_ACCESS, S_IRUSR | S_IWUSR);
         if (0xFFFFFFFF != bar->BOOTRCCNT) {
@@ -2025,7 +2099,7 @@ eth_pc802_dev_init(struct rte_eth_dev *eth_dev)
         pc802_pdump_init( );
     }
 
-    pc802_download_boot_image(data->port_id);
+    pc802_download_boot_image(data->port_id, adapter->port_index);
 
     if ( pc802_log_get_level(PC802_LOG_VEC)>=(int)RTE_LOG_INFO ) {
         adapter->log_flag  |= (1<<PC802_LOG_VEC);
@@ -2090,7 +2164,7 @@ char * picocom_pc802_version(void)
 
 static FILE * get_image_file(uint16_t port, const char *image_name)
 {
-    char *path[] = {DEFAULT_IMAGE_PATH, CUR_PATH};
+    char *path[] = {CUR_PATH, DEFAULT_IMAGE_PATH};
     char file_name[PATH_MAX];
     uint16_t index = pc802_get_port_index(port);
     uint32_t i;
@@ -2109,7 +2183,7 @@ static FILE * get_image_file(uint16_t port, const char *image_name)
     return fp;
 }
 
-static int pc802_download_boot_image(uint16_t port)
+static int pc802_download_boot_image(uint16_t port, uint16_t port_idx)
 {
     PC802_BAR_t *bar = pc802_get_BAR(port);
     volatile uint32_t *BOOTRCCNT = &bar->BOOTRCCNT;
@@ -2119,7 +2193,7 @@ static int pc802_download_boot_image(uint16_t port)
     DBLOG("Begin pc802_download_boot_image,  port = %hu\n", port);
     if (0xFFFFFFFF == *BOOTRCCNT) {
         DBLOG("PC802 ELF image has already been downloaded and is running !\n");
-        mb_set_ssbl_end();
+        mb_set_ssbl_end(port_idx);
         return 0;
     }
 
@@ -2848,7 +2922,7 @@ static uint32_t trace_enable[PC802_INDEX_MAX] = {1, 1, 1, 1};
 static uint32_t trace_enable[PC802_INDEX_MAX] = {1};
 #endif
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
+static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause);
 
 static void handle_trace_printf(uint16_t port_idx, uint32_t core, uint32_t tdata)
 {
@@ -2887,7 +2961,7 @@ static inline void handle_trace_data(uint16_t port_idx, uint32_t core, uint32_t 
             assert(core == 0);
             PC802_LOG(port_idx, core, RTE_LOG_NOTICE, "SSBL finish loading and will jump to pc802.img\n");
             trace_action_type[port_idx][core] = TRACE_ACTION_IDLE;
-            mb_set_ssbl_end();
+            mb_set_ssbl_end(port_idx);
         }
         return;
     }
@@ -2959,12 +3033,12 @@ static int pc802_tracer( uint16_t port_index, uint16_t port_id )
     return N;
 }
 
-static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
+static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core, uint32_t cause)
 {
     uint32_t num_args = mb->num_args;
     char str[2048];
     char formatter[16];
-    const char *arg0 = mb_get_string(mb->arguments[0], core);
+    const char *arg0 = mb_get_string(port_idx, mb->arguments[0], core);
     const char *arg0_bak = arg0;
     char *ps = &str[0];
     uint32_t arg_idx = 1;
@@ -2994,7 +3068,7 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
             if (formatter[j] == 's') {
-                sub_str = mb_get_string(mb->arguments[arg_idx++], core);
+                sub_str = mb_get_string(port_idx, mb->arguments[arg_idx++], core);
                 ps += snprintf(ps, sizeof(str), formatter, sub_str);
             } else {
                 ps += snprintf(ps, sizeof(str), formatter, mb->arguments[arg_idx++]);
@@ -3007,23 +3081,23 @@ static void handle_mb_printf(uint16_t port_id, magic_mailbox_t *mb, uint32_t cor
     }
     *ps = 0;
     if (arg_idx != num_args) {
-        PC802_LOG(port_id, core, RTE_LOG_INFO,
+        PC802_LOG(port_idx, core, RTE_LOG_INFO,
             "WARNING -- core %u (arg_idx = %u num_args = %u): format = %s\n",
             core, arg_idx, num_args, arg0_bak);
-        PC802_LOG(port_id, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
+        PC802_LOG(port_idx, core, RTE_LOG_INFO, "PC802 Core %u printf: %s\n", core, str);
         return;
     }
-    PC802_LOG( port_id, core, RTE_LOG_INFO, "%s", str );
+    PC802_LOG(port_idx, core, RTE_LOG_INFO, "%s", str );
     return;
 }
 
-static void handle_mb_sim_stop(magic_mailbox_t *mb, uint32_t core)
+static void handle_mb_sim_stop(uint16_t port_idx, magic_mailbox_t *mb, uint32_t core)
 {
     uint32_t num_args = PC802_READ_REG(mb->num_args);
     if (1 == num_args) {
         DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
     } else if (3 == num_args) {
-        const char *func_name = mb_get_string(mb->arguments[1], core);
+        const char *func_name = mb_get_string(port_idx, mb->arguments[1], core);
         DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
             num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
     } else {
@@ -3042,16 +3116,15 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     volatile uint32_t action;
     volatile uint32_t num_args;
     MbVecAccess_t msg;
-    uint16_t port_idx;
+    uint16_t port_idx = adapter->port_index;
     uint16_t port_id;
 
     if (fd < 0) {
         fd = open(FIFO_PC802_VEC_ACCESS, O_WRONLY, 0);
-        mb_set_ssbl_end();
+        mb_set_ssbl_end(port_idx);
     }
 
     port_id = adapter->port_id;
-    port_idx = pc802_get_port_index(port_id);
 
     if ((0 != core) && (PC802_VEC_ACCESS_WORK == pc802_vec_blocked[port_idx][core])) {
         return 0;
@@ -3070,9 +3143,9 @@ static int handle_mailbox(struct pc802_adapter *adapter, magic_mailbox_t *mb, ui
     if (MB_EMPTY == action ) {
         return 0;
     } else if (MB_PRINTF == action) {
-        handle_mb_printf(port_id, mb, core, 1);
+        handle_mb_printf(port_idx, mb, core, 1);
     } else if (MB_SIM_STOP == action) {
-        handle_mb_sim_stop(mb, core);
+        handle_mb_sim_stop(port_idx, mb, core);
     } else if (MB_VEC_READ == action) {
         msg.command = MB_VEC_READ;
         msg.file_id = mb->arguments[0];
@@ -3146,7 +3219,6 @@ static int pc802_mailbox(void *data)
     if ( adapter[port_index] == NULL )
     {
         adapter[port_index] = (struct pc802_adapter *)data;
-        mb_string_init();
         pc802_log_flush();
         DBLOG("come here\n");
     }
@@ -3277,8 +3349,6 @@ static void * pc802_mailbox_thread(__rte_unused void *data)
     return NULL;
 }
 
-extern int mb_ssbl_image_ok(void);
-
 static void * pc802_trace_thread(__rte_unused void *data)
 {
     int i = 0;
@@ -3293,8 +3363,6 @@ static void * pc802_trace_thread(__rte_unused void *data)
             trace_action_type[i][j] = TRACE_ACTION_IDLE;
         }
     }
-
-    while (0 == mb_ssbl_image_ok());
 
     uint32_t active;
 
