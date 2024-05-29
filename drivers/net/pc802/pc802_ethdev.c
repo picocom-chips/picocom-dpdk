@@ -863,10 +863,15 @@ eth_pc802_infos_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
         .nb_seg_max = 1,
         .nb_mtu_seg_max = 1,
     };
-
+#if RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
     dev_info->speed_capa = ETH_LINK_SPEED_10M_HD | ETH_LINK_SPEED_10M |
             ETH_LINK_SPEED_100M_HD | ETH_LINK_SPEED_100M |
             ETH_LINK_SPEED_1G;
+#else
+    dev_info->speed_capa = RTE_ETH_LINK_SPEED_10M_HD | RTE_ETH_LINK_SPEED_10M |
+            RTE_ETH_LINK_SPEED_100M_HD | RTE_ETH_LINK_SPEED_100M |
+            RTE_ETH_LINK_SPEED_1G;
+#endif
 
     /* Preferred queue parameters */
     dev_info->default_rxportconf.nb_queues = 1;
@@ -1126,7 +1131,7 @@ pc802_dev_clear_queues(struct rte_eth_dev *dev)
         }
     }
 }
-
+#if 0
 /**
  * Interrupt handler which shall be registered at first.
  *
@@ -1145,7 +1150,7 @@ eth_pc802_interrupt_handler(void *param)
 
     rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC, NULL);
 }
-
+#endif
 /*********************************************************************
  *
  *  This routine disables all traffic on the adapter by issuing a
@@ -1159,15 +1164,15 @@ eth_pc802_stop(struct rte_eth_dev *dev)
     //        PC802_DEV_PRIVATE(dev->data->dev_private);
     //PC802_BAR_t *bar = (PC802_BAR_t *)adapter->bar0_addr;
     struct rte_eth_link link;
-    struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
-    struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
+    //struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(dev);
+    //struct rte_intr_handle *intr_handle = &pci_dev->intr_handle;
 
     pc802_dev_clear_queues(dev);
 
     /* clear the recorded link status */
     memset(&link, 0, sizeof(link));
     rte_eth_linkstatus_set(dev, &link);
-
+#if 0
     if (!rte_intr_allow_others(intr_handle))
         /* resume to the default handler */
         rte_intr_callback_register(intr_handle,
@@ -1180,7 +1185,7 @@ eth_pc802_stop(struct rte_eth_dev *dev)
         rte_free(intr_handle->intr_vec);
         intr_handle->intr_vec = NULL;
     }
-
+#endif
     return 0;
 }
 
@@ -1824,12 +1829,21 @@ static const struct eth_dev_ops eth_pc802_ops = {
     .stats_reset          = eth_pc802_stats_reset
 };
 
+#if RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
 static const struct rte_eth_link pmd_link = {
         .link_speed = ETH_SPEED_NUM_10G,
         .link_duplex = ETH_LINK_FULL_DUPLEX,
         .link_status = ETH_LINK_DOWN,
         .link_autoneg = ETH_LINK_FIXED,
 };
+#else
+static const struct rte_eth_link pmd_link = {
+        .link_speed = RTE_ETH_SPEED_NUM_10G,
+        .link_duplex = RTE_ETH_LINK_FULL_DUPLEX,
+        .link_status = RTE_ETH_LINK_DOWN,
+        .link_autoneg = RTE_ETH_LINK_FIXED,
+};
+#endif
 
 static void pc802_bar_memset(uint32_t *p, uint32_t c, uint32_t u32_cnt)
 {
@@ -1903,7 +1917,12 @@ int pc802_ctrl_thread_create(pthread_t *thread, const char *name, pthread_attr_t
     }
 
 	if (name != NULL) {
+#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0)
 		ret = rte_thread_setname(*thread, name);
+#else
+		rte_thread_set_name(*((rte_thread_t *)thread), name);
+        ret = 0;
+#endif
 		if (ret < 0)
 			DBLOG( "Cannot set name %s for ctrl thread\n", name );
 	}
