@@ -9,5 +9,6 @@
 
 int mb_string_init(void);
 const char *mb_get_string(uint32_t addr, uint32_t core);
+void mb_set_ssbl_end(void);
 
 #endif

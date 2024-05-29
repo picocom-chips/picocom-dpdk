@@ -155,7 +155,7 @@ int pc802_kni_add_port(uint16_t port)
     // rte_eth_dev_callback_register();
     if (pc802_num >= ARRAY_SIZE(pc802_port)) return -EINVAL;
 
-    if (0 == port) pc802_kni_init();
+    if (0 == pc802_num) pc802_kni_init();
 
     pc802_port[pc802_num++] = port;
     return 0;

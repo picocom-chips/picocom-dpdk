@@ -365,6 +365,10 @@ struct PC802_BAR_Ext_t {
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
+    union {
+        uint32_t _dump[16];
+        Mailbox_RC_t DUMP_RC[32];
+    };
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
@@ -412,6 +416,7 @@ typedef enum {
     MB_VEC_BIN_DUMP,            // 28 - Trigger binary file dump (host side)
     MB_RPC_CALL,                // 29 - Trigger RPC call
     MB_DDR_RUNNING,             // 30 - Notify host DDR is running
+    MB_DATA_DUMP,               // 31 - Phy in PC802 dump data without blocking
 } mailbox_action_t;
 
 typedef struct {
@@ -468,16 +473,24 @@ typedef struct {
         uint8_t rd[2][16];
     };
     uint32_t rg;
+    uint32_t last_cycle;
+    uint32_t pad[6];
 } mailbox_counter_t;
 
+typedef struct {
+    mailbox_counter_t cnts;
+    mailbox_exclusive e[16];
+} mailbox_mem_t;
+
 #define MAILBOX_COUNTER_OFFSET_PFI \
-    (sizeof(mailbox_info_exclusive) * NUM_CORES_PFI + sizeof(mailbox_exclusive) * NUM_CORES_PFI)
+    (sizeof(mailbox_info_exclusive) * NUM_CORES_PFI)
 
 #define MAILBOX_COUNTER_OFFSET_ECPRI \
-    (sizeof(mailbox_exclusive) * NUM_CORES_ECPRI + sizeof(mailbox_info_exclusive) * NUM_CORES_ECPRI)
+    (sizeof(mailbox_info_exclusive) * NUM_CORES_ECPRI)
 
 #define MAILBOX_MEM_SIZE_PER_DSP    0x400
-#define MAILBOX_COUNTER_OFFSET_DSP (MAILBOX_MEM_SIZE_PER_DSP * NUM_CORES_DSP)
+#define DSP_MAILBOX_COUNTERS_SIZE   0x100
+#define MAILBOX_COUNTER_OFFSET_DSP  0
 
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);

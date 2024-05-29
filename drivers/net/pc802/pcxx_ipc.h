@@ -10,6 +10,7 @@ extern "C" {
 #define DEV_INDEX_MAX       PC802_INDEX_MAX     /**< Max number of baseband devices */
 #ifdef MULTI_PC802
 #define CELL_NUM_PRE_DEV    2                   /**< Number of cells per baseband device */
+#define LEGACY_CELL_INDEX   CELL_NUM_PRE_DEV    /**< The LEGACY cell index of the baseband device, only supports one */
 #else
 #define CELL_NUM_PRE_DEV    1                   /**< Number of cells per baseband device */
 #endif
