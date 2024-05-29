@@ -22,6 +22,7 @@ extern "C" {
     syslog(RTE_LOG_INFO, "NPU: %s : %u " format, __func__, __LINE__, ##__VA_ARGS__)
 
 #define  DBLOG_INFO(format, ...)
+#define  DBLOG_NONE(...)
 
 #define DIR_PCIE_DMA_DOWNLINK   1
 #define DIR_PCIE_DMA_UPLINK     0
@@ -35,6 +36,7 @@ typedef enum PC802_Traffic_Type_e {
     PC802_TRAFFIC_5G_EMBB_CTRL = PC802_TRAFFIC_CTRL_1,
 
     PC802_TRAFFIC_5G_URLLC,
+    PC802_TRAFFIC_CTRL_3 = PC802_TRAFFIC_5G_URLLC,
 
     PC802_TRAFFIC_DATA_2,
     PC802_TRAFFIC_4G_LTE_DATA = PC802_TRAFFIC_DATA_2,
@@ -42,6 +44,10 @@ typedef enum PC802_Traffic_Type_e {
     PC802_TRAFFIC_4G_LTE_CTRL = PC802_TRAFFIC_CTRL_2,
 
     PC802_TRAFFIC_OAM,
+
+#if 0
+    PC802_TRAFFIC_DATA_3,
+#endif
 
     PC802_TRAFFIC_NUM
 } PC802_Traffic_Type_e;
@@ -61,7 +67,10 @@ struct pc802_mem_block {
     uint64_t buf_phy_addr;
     uint32_t pkt_length;
     uint8_t  pkt_type;
-    uint8_t  eop;
+    union {
+        uint8_t eop;
+        uint8_t cause;
+    };
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 typedef struct pc802_mem_block PC802_Mem_Block_t;
 

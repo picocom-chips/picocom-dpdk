@@ -18,6 +18,8 @@
 static const char * (*get_mb_string)(uint32_t addr, uint32_t core);
 static const char * mb_get_string_N(uint32_t addr, uint32_t core);
 static const char * mb_get_string_d(uint32_t addr, uint32_t core);
+void mb_set_ssbl_end(void);
+int mb_ssbl_image_ok(void);
 
 typedef union {
     uint32_t _ed[16];
@@ -39,6 +41,9 @@ typedef union {
     };
 } SSBL_Phdr_t;
 
+static int ssbl_end = 0;
+static char *ssbl_img;
+static int ssbl_img_ok = 0;
 static char *pc802_img;
 static char *dsp_img[3];
 
@@ -67,6 +72,7 @@ static uint32_t e_num_global;
 
 static int mb_string_common(void)
 {
+    int retval;
     int fd = open("/lib/firmware/pico/pc802.img", O_RDONLY);
     assert(fd > 0);
     struct stat statbuf;
@@ -78,11 +84,28 @@ static int mb_string_common(void)
     close(fd);
     if (memcmp(ELF_MAGIC, pc802_img, ELF_MAGIC_SIZE)) {
         DBLOG("pc802.img is format of NR_DU_Release !\n");
-        return 0;
+        retval = 0;
     } else {
         DBLOG("pc802.img is format of develop !\n");
-        return 1;
+        retval = 1;
     }
+
+    fd = open("/lib/firmware/pico/pc802.ssbl", O_RDONLY);
+    assert(fd > 0);
+    fstat(fd, &statbuf);
+    ssbl_img = rte_zmalloc("PC802_SSBL_IMG", statbuf.st_size, RTE_CACHE_LINE_MIN_SIZE);
+    assert(NULL != ssbl_img);
+    DBLOG("PC802_SSBL_IMG: fd = %d Size = %lu\n", fd, statbuf.st_size);
+    assert(statbuf.st_size == read(fd, ssbl_img, statbuf.st_size));
+    close(fd);
+    ssbl_end = 0;
+    ssbl_img_ok = 1;
+    return retval;
+}
+
+int mb_ssbl_image_ok(void)
+{
+    return ssbl_img_ok;
 }
 
 static int mb_string_init_N(void)
@@ -352,7 +375,17 @@ static const char * mb_get_string_d(uint32_t addr, uint32_t core)
     return unknown;
 }
 
+void mb_set_ssbl_end(void)
+{
+    rte_free(ssbl_img);
+    ssbl_end = 1;
+}
+
 const char *mb_get_string(uint32_t addr, uint32_t core)
 {
+    if (0 == ssbl_end) {
+        assert(core == 0);
+        return (const char *)(ssbl_img + (addr - 0x03080000));
+    }
     return (*get_mb_string)(addr, core);
 }

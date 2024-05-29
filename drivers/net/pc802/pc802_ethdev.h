@@ -95,6 +95,7 @@ typedef struct PC802_BAR_t {
             uint32_t DBGRCAH;
             uint32_t MB_ANDES_DIS;
             uint32_t MB_DSP_DIS;
+            uint32_t MB_C2H_RDNUM;
         };
     };
     union {
@@ -281,13 +282,14 @@ struct stPC802_EP_Counter_Mirror_t {
         PC802_CacheLine_t   cache_line_repcnt;
         volatile uint32_t REPCNT[MAX_UL_CH_NUM];
     };
+    volatile uint32_t MB_C2H_EPCNT;
 } __attribute__((__aligned__(NPU_CACHE_LINE_SZ)));
 
 typedef struct stPC802_EP_Counter_Mirror_t PC802_EP_Counter_Mirror_t;
 
 typedef struct PC802_Descs_t {
     PC802_Descriptor_t  dl[MAX_DL_CH_NUM][MAX_DESC_NUM];
-    PC802_Descriptor_t  ul[MAX_UL_CH_NUM][MAX_DESC_NUM];
+    PC802_Descriptor_t  ul[MAX_UL_CH_NUM + 1][MAX_DESC_NUM]; //additional ul[MAX_UL_CH_NUM] for c2h mailbox
     PC802_EP_Counter_Mirror_t  mr;
 } PC802_Descs_t;
 
@@ -325,22 +327,35 @@ typedef struct {
     uint32_t d[PC802_TRACE_FIFO_SIZE];
 } TraceData_t;
 
+typedef struct {
+    uint8_t rccnt;
+    uint8_t result;
+} Mailbox_RC_t;
+
 struct PC802_BAR_Ext_t {
     union {
-        uint32_t _a0[16];
+        uint32_t _mb_dsp[8];
+        Mailbox_RC_t MB_DSP[3];
+    };
+    union {
+        uint32_t _mb_pfi[8];
+        Mailbox_RC_t MB_PFI[16];
+    };
+    union {
+        uint32_t _mb_ecpri[8];
+        Mailbox_RC_t MB_eCPRI[16];
+    };
+    union {
+        uint32_t _a0[8];
         struct {
-            volatile uint32_t MB_EPCNT;
-            uint32_t MB_COMMAND;
-            uint32_t MB_EPCORE;
+            uint32_t MB_C2H_EPCNT;
             uint32_t VEC_EPCNT;
-            uint32_t MB_ARGS[8];
         };
     };
     union {
         uint32_t _a1[8];
         struct {
-            uint32_t MB_RCCNT;
-            uint32_t MB_RESULT;
+            uint32_t MB_C2H_RCCNT;
             uint32_t VEC_RCCNT;
             uint32_t VEC_BUFSIZE;
             uint32_t VEC_BUFADDRL;
@@ -350,24 +365,13 @@ struct PC802_BAR_Ext_t {
     uint32_t TRACE_RCCNT[32];
     TraceEpCnt_u TRACE_EPCNT[32];
     TraceData_t TRACE_DATA[32];
-    union {
-        uint32_t _e0[16];
-        struct {
-            uint32_t EMB_EPCNT;
-            uint32_t EMB_COMMAND;
-            uint32_t EMB_ARGS[8];
-        };
-    };
-    union {
-        uint32_t _e1[8];
-        struct {
-            uint32_t EMB_RCCNT;
-            uint32_t EMB_RESULT;
-        };
-    };
 } __attribute__((__aligned__(32)));
 
 typedef struct PC802_BAR_Ext_t  PC802_BAR_Ext_t;
+
+#define NUM_CORES_PFI       16
+#define NUM_CORES_ECPRI     16
+#define NUM_CORES_DSP       3
 
 #define MB_NUM_ARGS              8
 #define MB_NUM_HANDLERS          8
@@ -413,7 +417,10 @@ typedef enum {
 typedef struct {
     uint32_t         action;                 // 0x00
     uint32_t         num_args;               // 0x04
-    uint32_t         retval;                 // 0x08
+    union {
+        uint32_t     retval;                 // 0x08
+        uint32_t     blocked;
+    };
     uint32_t         error;                  // 0x0C
     uint32_t         arguments[MB_NUM_ARGS]; // 0x10+
 } magic_mailbox_t;
@@ -450,6 +457,27 @@ typedef struct {
     uint32_t m_next_c2h;
     uint32_t m_next_h2c;
 } mailbox_info_exclusive;
+
+typedef struct {
+    union {
+        uint32_t wrs[8];
+        uint8_t wr[16];
+    };
+    union {
+        uint32_t rds[2][4];
+        uint8_t rd[2][16];
+    };
+    uint32_t rg;
+} mailbox_counter_t;
+
+#define MAILBOX_COUNTER_OFFSET_PFI \
+    (sizeof(mailbox_info_exclusive) * NUM_CORES_PFI + sizeof(mailbox_exclusive) * NUM_CORES_PFI)
+
+#define MAILBOX_COUNTER_OFFSET_ECPRI \
+    (sizeof(mailbox_exclusive) * NUM_CORES_ECPRI + sizeof(mailbox_info_exclusive) * NUM_CORES_ECPRI)
+
+#define MAILBOX_MEM_SIZE_PER_DSP    0x400
+#define MAILBOX_COUNTER_OFFSET_DSP (MAILBOX_MEM_SIZE_PER_DSP * NUM_CORES_DSP)
 
 int pc802_kni_add_port(uint16_t port);
 uint32_t pc802_get_sfn_slot(uint16_t port_id, uint32_t cell_index);
