@@ -113,7 +113,7 @@ static int kni_egress(void)
     }
     else if (pc802_num > 1) {
         for (i = 0; i < num; i++) {
-            rte_pktmbuf_refcnt_update(pkts_burst[i], pc802_num);
+            rte_pktmbuf_refcnt_update(pkts_burst[i], pc802_num-1);
         }
     }
 
