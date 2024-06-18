@@ -10,7 +10,9 @@
 #include <syslog.h>
 #include <rte_version.h>
 #include <rte_malloc.h>
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 5, 0, 0)
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
+#include <rte_log.h>
+#elif RTE_VERSION >= RTE_VERSION_NUM(21, 5, 0, 0)
 #include <eal_log.h>
 #else
 #include <rte_log.h>

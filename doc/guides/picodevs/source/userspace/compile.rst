@@ -3,22 +3,6 @@
 Compiling the PC802 PCIe driver from source code
 ================================================
 
-If you use igb_uio.ko to bind PC802 to linux kernel:
-
-The source code can be cloned as follows:
-
-.. code-block:: console
-
-       git clone https://dpdk.org/git/dpdk-kmods
-
-build igb_uio
-
-.. code-block:: console
-
-       cd path/to/git/repo/dpdk-kmods/linux/igb_uio
-       make
-       insmod igb_uio.ko
-
 .. _build_PC802_PCIe_driver:
 
 Build PC802 PCIe driver libs on NPU side from source code
@@ -30,9 +14,9 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
 
 .. code-block:: console
 
-        cd ${your_DPDK_PATH}
-        patch -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-DPDK-21.08.patch
-        meson build
+        git clone git@github.com:picocom-chips/picocom-dpdk.git
+        cd picocom-dpdk
+        meson -Denable_multi_pc802=true build
         #default path is /usr/local
         ninja -C build install
 
@@ -40,15 +24,26 @@ Contact `Picocom <info@picocom.com>`_ to get <PC-002911-DC - Picocom PC802_UDriv
 
 .. code-block:: console
 
+        git clone git@github.com:picocom-chips/picocom-dpdk.git
+        cd picocom-dpdk
+        #create pc802 driver patch
+        git diff v20.11 ':drivers/net/pc802/*' >~/pc802.patch
+        #Build dpdk libs on lsdk2108
         cd ${your_flexbuild_lsdk2108_PATH}
         cd components/apps/networking/dpdk
-        patch  -p1 < ../Picocom-PC802-PCIe-UDriver-based-on-flexbuild-lsdk2108.patch
-        meson aarch64-build-gcc --cross-file config/arm/arm64_armv8_linux_gcc
-        meson configure -Dprefix=~/dpdk_arm_libs aarch64-build-gcc
+        #Apply pc802 driver patch
+        patch -p1 < ~/pc802.patch
+        sed -i '/pcap/a\\t'\''pc802'\'',' ./drivers/net/meson.build
+        echo "option('enable_multi_pc802', type: 'boolean', value: true, description: 'supported multi pc802')" >>./meson_options.txt
+        echo "option('enable_check_pc802_ul_timing', type: 'boolean', value: false, description: 'enable checking pc802 PCIe UL timing')" >>./meson_options.txt
+        echo "option('enable_check_pc802_dl_timing', type: 'boolean', value: false, description: 'enable checking pc802 PCIe DL timing')" >>./meson_options.txt
         #cross compile libs output to "~/dpdk_arm_libs"
+        meson aarch64-build-gcc --cross-file config/arm/arm64_armv8_linux_gcc -Dprefix=~/dpdk_arm_libs -Denable_multi_pc802=true
         ninja -C aarch64-build-gcc install
 
 More information on how to compile the DPDK, see `DPDK Documentation <https://www.dpdk.org/>`_ .
+
+The PC802 driver code is based on DPDK 20.11. When merged into other DPDK versions, refer to `ARM platform` steps 3, 6 to 10. DPDK 20.11/21.11/22.11/23.11 versions have been verified.
 
 .. note:: If no source code, please contact `Picocom <info@picocom.com>`_ to get PC-002897-DC-A-PC802_UDriver_libs
 
@@ -325,13 +320,13 @@ Check if PC802 is active
 
 Optional driver ``01: 00.0`` appears::
 
-    usertools/dpdk-devbind.py -b igb_uio 01:00.0
+    usertools/dpdk-devbind.py -b uio_pci_generic 01:00.0
 
 .. code-block:: console
 
     Network devices using DPDK-compatible driver
     ============================================
-    0000:01:00.0 'Device 0802' drv=igb_uio unused=vfio-pci
+    0000:01:00.0 'Device 0802' drv=uio_pci_generic unused=vfio-pci
     Network devices using kernel driver
     ===================================
     ...
