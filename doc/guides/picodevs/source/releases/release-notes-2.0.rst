@@ -183,12 +183,18 @@ Bug fixes
 *********
 * NDF-202: Mailbox message modified to use pipe, fix startup failure when multi-primary process
 
-PC802 driver 2.10
+PC802 driver 24.06
 ##################
 
 New features
 ************
 * NDF-210: DL discard stage 2
+* NDF-208: PC802 reset script supports mode setting
+* NDF-213: PC802 driver adapt dpdk stable version
+
+Bug fixes
+*********
+* NDF-217: Fix KNI out of memory when start multi pc802
 
 Others
 ******
