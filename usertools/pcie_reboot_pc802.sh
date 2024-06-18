@@ -10,20 +10,21 @@
 #
 
 ext_reset() {
-	if [ ! -f /sys/class/gpio/gpio422/value ]
+	GPIO=gpio$1
+	if [ ! -f /sys/class/gpio/$GPIO/value ]
 	then
-		echo "Export GPIO 3-6 (422) to userspace."
-		echo 422 > /sys/class/gpio/export
+		echo "Export GPIO 3-6 ($GPIO) to userspace."
+		echo $1 > /sys/class/gpio/export
 	fi
 
-	echo "Set GPIO 3-6 (422) direction to out."
-	echo out > /sys/class/gpio/gpio422/direction
+	echo "Set GPIO 3-6 ($GPIO) direction to out."
+	echo out > /sys/class/gpio/$GPIO/direction
 
-	echo "Set GPIO 3-6 (422) value to 0."
-	echo 0 > /sys/class/gpio/gpio422/value
+	echo "Set GPIO 3-6 ($GPIO) value to 0."
+	echo 0 > /sys/class/gpio/$GPIO/value
 
-	echo "Set GPIO 3-6 (422) value to 1."
-	echo 1 > /sys/class/gpio/gpio422/value
+	echo "Set GPIO 3-6 ($GPIO) value to 1."
+	echo 1 > /sys/class/gpio/$GPIO/value
 }
 
 int_reset() {
@@ -154,10 +155,11 @@ set_speed() {
 
 usage() {
 	echo "Usage: Script for reset pc802 on NPU"
-	echo -e "\t$0 [pc802_index] [-i|-e] [-h]"
+	echo -e "\t$0 [pc802_index] [-i|-e] [-p port] [-h]"
 	echo -e "\tpc802_index, Input pc802 index to be reset: 1-4, default 1"
 	echo -e "\t-i, Reset pc802 by pc802 internal gpio, x86 platform default mode"
 	echo -e "\t-e, Reset pc802 by NPU gpio, arm platform default mode"
+	echo -e "\t-p, Define the gpio port used to reset PC802"
 	echo -e "\t-h, Display this help"
 }
 
@@ -167,21 +169,27 @@ gpio=""
 
 if [[ `arch` =~ "x86_64" ]];then
 	mode="INT"
-	gpio=422
 else
 	mode="EXT"
-	gpio=27
 fi
 
 while getopts "hiep:" ARG ; do
 	case $ARG in
 		i ) mode="INT" ;;
 		e ) mode="EXT" ;;
-		p ) gpio=${options} ;;
+		p ) gpio=$OPTARG ;;
 		h ) usage ; exit 0 ;;
 	esac
 done
 shift $((OPTIND -1))
+
+if [ -z $gpio ];then
+	if [[ $mode == "INT" ]];then
+		gpio=27
+	else
+		gpio=422
+	fi
+fi
 
 if [ $1 ];then
     index=$1
@@ -190,6 +198,9 @@ else
 	index=1
     PCI_ADDR=`lspci | awk '/1ec4/{print $1;exit;}'`
 fi
+
+echo "mode:$mode gpio:$gpio index:$index"
+
 if [ -z $PCI_ADDR ];then
 	echo "Error: cann't find PC802 $index"
 	exit
