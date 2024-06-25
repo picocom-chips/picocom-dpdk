@@ -1,4 +1,4 @@
-DPDK_21 {
+DPDK_24 {
 	global:
 
 	pc802_get_socket_id;

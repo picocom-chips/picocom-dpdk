@@ -9,6 +9,7 @@
 #include <rte_errno.h>
 #include <rte_string_fns.h>
 #include <rte_ether.h>
+#include <rte_version.h>
 
 #include "pc802_ethdev.h"
 #include "rte_pmd_pc802.h"
@@ -237,9 +238,13 @@ static void mbuf_init(__rte_unused struct rte_mempool *mp, __rte_unused void *op
 	struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 	struct rte_ipv4_hdr *ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 	struct rte_udp_hdr *udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr *, UDP_HDR_POS);
-
+#if RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
 	eth_hdr->d_addr = dst_mac;
 	eth_hdr->s_addr = src_mac;
+#else
+	eth_hdr->dst_addr = dst_mac;
+	eth_hdr->src_addr = src_mac;
+#endif
 	eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
 
 	ipv4_header_init(ipv4_hdr,0);
