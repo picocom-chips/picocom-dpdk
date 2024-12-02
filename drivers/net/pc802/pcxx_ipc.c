@@ -48,8 +48,7 @@ struct pcxx_cell_info_st{
     uint32_t ctrl_length;
     uint32_t ctrl_cnt;
     uint8_t  dl_sn;
-    uint8_t  scs;
-    uint8_t  tgt_dl_sfn;
+    uint16_t tgt_dl_sfn;
     uint8_t  tgt_dl_slot;
     uint8_t  dl_discard;
     SimULSlotMsg_t slot_msg;
@@ -97,15 +96,8 @@ static uint64_t stat_t[NUM_STATS];
 #define RTE_RDTSC(a)
 #endif
 
-#ifndef MULTI_PC802
-int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
+static inline int __pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
 #ifdef ENABLE_CHECK_PC802_TIMING
     if ((dev_index > 0) || (cell_index > 0))
         goto __Init_Timing_Stats_Finished;
@@ -153,48 +145,18 @@ __Init_Timing_Stats_Finished:
     cell_info->pcxx_ctrl_ul_handle = info->readHandle;
     cell_info->pcxx_ctrl_dl_handle = info->writeHandle;
     cell_info->dl_sn = 0;
-    pcxx_devs[dev_index].cell_info[cell_index].scs = 1; //default 30 KHz
-
     pcxx_devs[dev_index].port_id = port_id;
 
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxSetSCS(uint8_t scs)
+static inline void __pcxxCtrlClose(__rte_unused uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index)
-{
-#endif
-    pcxx_devs[dev_index].cell_info[cell_index].scs = scs;
-    return 0;
-}
-
-#ifndef MULTI_PC802
-void pcxxCtrlClose(void)
-{
-     uint16_t dev_index = 0;
-     uint16_t cell_index = 0;
-#else
-void pcxxCtrlClose( __rte_unused uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
 }
 
-
-#ifndef MULTI_PC802
-int pcxxDataOpen(const pcxxInfo_s* info, ...)
+static inline int __pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     int32_t port_id = pc802_get_port_id(dev_index);
     if (port_id < 0)
@@ -218,28 +180,14 @@ int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index
     return 0;
 }
 
-#ifndef MULTI_PC802
-void pcxxDataClose(void)
+static inline void __pcxxDataClose(uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-void pcxxDataClose( uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
 }
 
-#ifndef MULTI_PC802
-int pcxxSendStart(void)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
+static inline int __pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-#endif
     PC802_Mem_Block_t *mblk;
     int k;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -255,107 +203,56 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index )
     cell->data_length = 0;
 
     uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
-    uint8_t  num_slots = 10 << cell->scs;
-    uint8_t tgt_dl_slot = ((slot_sfn >> 16) & 0xFF) + 2;
-    uint8_t tgt_dl_sfn = slot_sfn & 0xFF;
-    if (tgt_dl_slot >= num_slots) {
-        tgt_dl_slot -= num_slots;
-        tgt_dl_sfn++;
-    }
-    cell->tgt_dl_sfn = tgt_dl_sfn;
-    cell->tgt_dl_slot = tgt_dl_slot;
+
+    cell->tgt_dl_sfn = slot_sfn & 0xFFFF;
+    cell->tgt_dl_slot = slot_sfn >> 16;
     cell->dl_discard = 0;
     return 0;
 }
 
-/**
- * Check if target sfn and slot is in DL transfer window
- *
- * @param tgt_sfn
- *   target sfn
- * @param tgt_slot
- *   target slot
- * @return
- *   0 if in transfer window
- *  >0 too early
- *  <0 too late
- */
-#ifndef MULTI_PC802
-int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSetDlTgtSfnSlot(uint8_t tgt_sfn, uint8_t tgt_slot, uint16_t dev_index, uint16_t cell_index)
+int pcxxSendStartBySlot(uint16_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-#endif
+    PC802_Mem_Block_t *mblk;
+    int k;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
-    cell->tgt_dl_sfn = tgt_sfn;
-    cell->tgt_dl_slot = tgt_slot;
-
-    uint8_t curr_sfn;
-    uint8_t curr_slot;
-    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
-    curr_sfn = slot_sfn & 0xFF;
-    curr_slot = slot_sfn >> 16;
-    uint8_t delta_sfn = tgt_sfn - curr_sfn;
-    uint8_t delta_slot;
-    int re;
-    if (delta_sfn == 0) {
-        if (curr_slot < tgt_slot) {
-            delta_slot = tgt_slot - curr_slot;
-            re = (delta_slot >> 1) - 1;
-            cell->dl_discard = re < 0;
-            if (cell->dl_discard) {
-                NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                    tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-            }
-            return re;
-        } else { // too late
-            cell->dl_discard = 1;
-            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-            return -1;
-        }
-    } else if (delta_sfn == 1) {
-        tgt_slot += (10 <<cell->scs);
-        delta_slot = tgt_slot - curr_slot;
-        re = (delta_slot >> 1) - 1;
-        cell->dl_discard = re < 0;
-        if (cell->dl_discard) {
-            NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        }
-        return re;
-    } else if (delta_sfn < 128) { // too early
-        cell->dl_discard = 0;
-        NPU_SYSLOG("DL Too Early not discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-            tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        return 1;
-    } else { // too late
-        cell->dl_discard = 1;
-        NPU_SYSLOG("DL Discard: tgt_sfn = %u tgt_slot = %u curr_sfn = %u curr_slot = %u dev_index = %u cell_index = %u\n",
-                tgt_sfn, tgt_slot, curr_sfn, curr_slot, dev_index, cell_index);
-        return -1;
+    cell->ctrl_length = 0;
+    cell->ctrl_buf = NULL;
+    for (k = 0; k < cell->data_num[cell->sfn_idx]; k++) {
+        mblk = (PC802_Mem_Block_t *)((char *)cell->data_buf[cell->sfn_idx][k] - sizeof(PC802_Mem_Block_t));
+        pc802_free_mem_block(mblk);
+        cell->data_buf[cell->sfn_idx][k] = NULL;
     }
-    return 0;
+    cell->data_num[cell->sfn_idx] = 0;
+    cell->data_offset = 0;
+    cell->data_length = 0;
+
+    uint32_t slot_sfn = pc802_get_sfn_slot(dev_index, cell_index);
+    uint8_t phy_slot = slot_sfn >> 16;
+    uint16_t phy_sfn = slot_sfn & 0xFFFF;
+    uint8_t tgt_slot = phy_slot;
+    uint16_t tgt_sfn = phy_sfn;
+    if ((sfn == tgt_sfn) && (slot == tgt_slot)) {
+        cell->tgt_dl_sfn = tgt_sfn;
+        cell->tgt_dl_slot = tgt_slot;
+        cell->dl_discard = 0;
+        return 0;
+    }
+
+    cell->dl_discard = 1;
+    NPU_SYSLOG("DL discard : stack_sfn = %u stack_slot = %u phy_sfn = %u phy_slot = %u dev = %u cell = %u\n",
+        sfn, slot, phy_sfn, phy_slot, dev_index, cell_index);
+    return 1;
 }
 
-#ifndef MULTI_PC802
-int pcxxSendEnd(void)
-{
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
+static inline int __pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-#endif
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard : dev_index = %u cell_index = %u\n", dev_index, cell_index);
         return -1;
     }
     if (cell->data_num[cell->sfn_idx]) {
@@ -397,19 +294,14 @@ int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
+static inline int __pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard : dev_index = %u cell_index = %u\n", dev_index, cell_index);
+        *buf = NULL;
         *availableSize = 0;
         return -1;
     }
@@ -429,15 +321,8 @@ int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint1
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
+static inline int __pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0;
-    uint16_t cell_index = 0;
-#else
-int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
     uint32_t ret;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -522,15 +407,9 @@ void check_proc_time(uint32_t stat_no, uint64_t tdiff_64)
 #define check_proc_time(a, b)
 #endif
 
-#ifndef MULTI_PC802
-int pcxxCtrlRecv(void)
-{
-    uint16_t dev_index = 0, cell_index = 0;
-#else
-int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
+static inline int __pcxxCtrlRecv(uint16_t dev_index, uint16_t cell_index)
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );
-#endif
     PC802_Mem_Block_t *mblk_ctrl;
     PC802_Mem_Block_t *mblk_data;
     uint16_t num_rx;
@@ -678,18 +557,15 @@ int pcxxCtrlRecv( uint16_t dev_index, uint16_t cell_index )
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
+static inline int __pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0, cell_index = 0;
-#else
-int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (cell->dl_discard) {
+        NPU_SYSLOG("DL Discard: dev_index = %u, cell_index = %u\n", dev_index, cell_index);
+        *buf = NULL;
+        *offset = 0;
         return -1;
     }
     if ((sizeof(PC802_Mem_Block_t) + cell->data_offset + bufSize) > DATA_DL_QUEUE_BLOCK_SIZE)
@@ -702,14 +578,8 @@ int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_i
     return 0;
 }
 
-#ifndef MULTI_PC802
-int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
+static inline int __pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0, cell_index = 0;
-#else
-int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     PC802_Mem_Block_t *mblk;
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
@@ -748,14 +618,8 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t 
     return 0;
 }
 
-#ifndef MULTI_PC802
-void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
+static inline void* __pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index)
 {
-    uint16_t dev_index = 0, cell_index = 0;
-#else
-void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index )
-{
-#endif
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<CELL_NUM_PRE_DEV) );
     pcxx_cell_info_t *cell = &pcxx_devs[dev_index].cell_info[cell_index];
     if (NULL == cell->rx_data_buf)
@@ -766,6 +630,66 @@ void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t c
 }
 
 #ifndef MULTI_PC802
+int pcxxCtrlOpen(const pcxxInfo_s* info, ...)
+{
+    return __pcxxCtrlOpen(info, 0, 0);
+}
+
+void pcxxCtrlClose(void)
+{
+    __pcxxCtrlClose(0, 0);
+}
+
+int pcxxDataOpen(const pcxxInfo_s* info, ...)
+{
+    return __pcxxDataOpen(info, 0, 0);
+}
+
+void pcxxDataClose(void)
+{
+    __pcxxDataClose(0, 0);
+}
+
+int pcxxSendStart(void)
+{
+    return __pcxxSendStart(0, 0);
+}
+
+int pcxxSendEnd(void)
+{
+    return __pcxxSendEnd(0, 0);
+}
+
+int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, ...)
+{
+    return __pcxxCtrlAlloc(buf, availableSize, 0, 0);
+}
+
+int pcxxCtrlSend(const char* buf, uint32_t bufLen, ...)
+{
+    return __pcxxCtrlSend(buf, bufLen, 0, 0);
+}
+
+int pcxxCtrlRecv(void)
+{
+    return __pcxxCtrlRecv(0, 0);
+}
+
+int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, ...)
+{
+    return __pcxxDataAlloc(bufSize, buf, offset, 0, 0);
+}
+
+int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...)
+{
+    return __pcxxDataSend(offset, bufLen, 0, 0);
+}
+
+void* pcxxDataRecv(uint32_t offset, uint32_t len, ...)
+{
+    return __pcxxDataRecv(offset, len, 0, 0);
+}
+
 int pcxxCtrlDestroy(void)
 {
     return 0;
@@ -776,6 +700,66 @@ int pcxxDataDestroy(void)
     return 0;
 }
 #else
+int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxCtrlOpen(info, dev_index, cell_index);
+}
+
+void pcxxCtrlClose(uint16_t dev_index, uint16_t cell_index )
+{
+    __pcxxCtrlClose(dev_index, cell_index);
+}
+
+int pcxxDataOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxDataOpen(info, dev_index, cell_index);
+}
+
+void pcxxDataClose( uint16_t dev_index, uint16_t cell_index)
+{
+    __pcxxDataClose(dev_index, cell_index);
+}
+
+int pcxxSendStart(uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxSendStart(dev_index, cell_index);
+}
+
+int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxSendEnd(dev_index, cell_index);
+}
+
+int pcxxCtrlAlloc(char** buf, uint32_t* availableSize, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxCtrlAlloc(buf, availableSize, dev_index, cell_index);
+}
+
+int pcxxCtrlSend(const char* buf, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxCtrlSend(buf, bufLen, dev_index, cell_index);
+}
+
+int pcxxCtrlRecv(uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxCtrlRecv(dev_index, cell_index);
+}
+
+int pcxxDataAlloc(uint32_t bufSize, char** buf, uint32_t* offset, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxDataAlloc(bufSize, buf, offset, dev_index, cell_index);
+}
+
+int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxDataSend(offset, bufLen, dev_index, cell_index);
+}
+
+void* pcxxDataRecv(uint32_t offset, uint32_t len, uint16_t dev_index, uint16_t cell_index)
+{
+    return __pcxxDataRecv(offset, len, dev_index, cell_index);
+}
+
 int pcxxCtrlDestroy( uint16_t dev_index, uint16_t cell_index )
 {
     RTE_ASSERT( (dev_index<DEV_INDEX_MAX)&&(cell_index<=CELL_NUM_PRE_DEV) );

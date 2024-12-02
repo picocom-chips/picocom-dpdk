@@ -24,7 +24,11 @@ static uint16_t kni_port = 0xFFFF;
 
 /* Mempool for mbufs */
 static struct rte_mempool *kni_pool = NULL;
+#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0)
 static pthread_t kni_tid;
+#else
+rte_thread_t kni_tid;
+#endif
 
 static uint16_t pc802_num = 0;
 static uint16_t pc802_port[PC802_INDEX_MAX] = {0};
@@ -109,7 +113,7 @@ static int kni_egress(void)
     }
     else if (pc802_num > 1) {
         for (i = 0; i < num; i++) {
-            rte_pktmbuf_refcnt_update(pkts_burst[i], pc802_num);
+            rte_pktmbuf_refcnt_update(pkts_burst[i], pc802_num-1);
         }
     }
 
@@ -167,7 +171,9 @@ int pc802_kni_init(void)
     struct rte_eth_conf dev_conf = {
         .rxmode =
             {
+#if RTE_VERSION <= RTE_VERSION_NUM(21, 8, 0, 0)
                 .max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+#endif
             },
     };
     int ret;
@@ -207,8 +213,11 @@ int pc802_kni_init(void)
         }
         kni_port = port;
         DBLOG("Create kni port %d.\n", kni_port);
-
+#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0)
         ret = rte_ctrl_thread_create(&kni_tid, "kni", NULL, kni_loop, NULL);
+#else
+        ret = rte_thread_create_control(&kni_tid, "kni", kni_loop, NULL);
+#endif
         if (ret < 0) {
             DBLOG("Could not create kni thread!\n");
             return -EINVAL;
@@ -225,7 +234,12 @@ int pc802_kni_release(void)
 
     pc802_num = 0;
     rte_atomic32_inc(&kni_stop);
+#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0)
     pthread_join(kni_tid, &retval);
+#else
+    rte_thread_join(kni_tid, &retval);
+#endif
+
 
     if (0xFFFF != kni_port) rte_eth_dev_stop(kni_port);
 

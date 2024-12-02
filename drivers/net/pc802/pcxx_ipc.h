@@ -41,18 +41,6 @@ int pcxxCtrlOpen(const pcxxInfo_s* info, ...);
 int pcxxCtrlOpen(const pcxxInfo_s* info, uint16_t dev_index, uint16_t cell_index );
 #endif
 
-#ifndef MULTI_PC802
-int pcxxSetSCS(uint8_t scs);
-#else
-int pcxxSetSCS(uint8_t scs, uint16_t dev_index, uint16_t cell_index);
-#endif
-
-#ifndef MULTI_PC802
-int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot);
-#else
-int pcxxSetDlTgtSfnSlot(uint8_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index);
-#endif
-
 /**
 * @brief Close and free the control shared memory.
 *
@@ -97,6 +85,7 @@ void pcxxDataClose(uint16_t dev_index, uint16_t cell_index );
 * @brief Called before sending a messages list, mainly is used to select the block .
 *
 * @param[in] dev_index baseband device index
+* @param[in] cell_index baseband device cell index
 * @return returns 0 if opened successfully, otherwise returns error
 */
 #ifndef MULTI_PC802
@@ -104,6 +93,17 @@ int pcxxSendStart(void);
 #else
 int pcxxSendStart(uint16_t dev_index, uint16_t cell_index );
 #endif
+
+/**
+* @brief Called before sending a messages list, mainly is used to select the block .
+*
+* @param[in] dev_index baseband device index
+* @param[in] cell_index baseband device cell index
+* @param[in] sfn messages target sfn
+* @param[in] slot messages target slot
+* @return returns 0 if opened successfully, otherwise returns error
+*/
+int pcxxSendStartBySlot(uint16_t sfn, uint8_t slot, uint16_t dev_index, uint16_t cell_index);
 
 /**
 * @brief Notify Rx side that new messages are arrived.
@@ -114,7 +114,7 @@ int pcxxSendStart(uint16_t dev_index, uint16_t cell_index );
 #ifndef MULTI_PC802
 int pcxxSendEnd(void);
 #else
-int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );;
+int pcxxSendEnd(uint16_t dev_index, uint16_t cell_index );
 #endif
 
 /**
