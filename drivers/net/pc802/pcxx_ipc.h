@@ -14,6 +14,10 @@ extern "C" {
 #else
 #define CELL_NUM_PRE_DEV    1                   /**< Number of cells per baseband device */
 #endif
+
+#define PCXX_MAX_TX_DATAS    18
+#define PCXX_MAX_TX_TTIS     32
+
 /**< Get the total number of baseband devices that have been successfully initialised */
 #define pcxxGetDevCount()   pc802_get_count()
 
@@ -190,6 +194,8 @@ int pcxxDataSend(uint32_t offset, uint32_t bufLen, ...);
 #else
 int pcxxDataSend(uint32_t offset, uint32_t bufLen, uint16_t dev_index, uint16_t cell_index );
 #endif
+
+int pcxxDataReSend(char *buf, uint32_t bufLen, uint32_t *offset, uint16_t dev_index, uint16_t cell_index );
 
 /**
 * @brief Receive data  from queue by offset

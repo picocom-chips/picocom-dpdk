@@ -616,15 +616,28 @@ PC802_Mem_Block_t * pc802_alloc_tx_mem_block(uint16_t port_id, uint16_t queue_id
     return mblk;
 }
 
+PC802_Mem_Block_t * pc802_reuse_mem_block(PC802_Mem_Block_t *mblk)
+{
+    if (NULL == mblk)
+        return NULL;
+    if (!mblk->alloced){
+        DBLOG("ERROR: mblk=%p already free!\n", mblk);
+        return NULL;
+    }
+    mblk->alloced++;
+    return mblk;
+}
+
 void pc802_free_mem_block(PC802_Mem_Block_t *mblk)
 {
     if (NULL == mblk)
         return;
     if (mblk->alloced == 0)
         return;
+    if (--mblk->alloced > 0)
+        return;
     mblk->next = *mblk->first;
     *mblk->first = mblk;
-    mblk->alloced = 0;
     PC802_Mem_Pool_t *mpool = (PC802_Mem_Pool_t *)mblk->first;
     mpool->avail++;
     return;
@@ -3136,7 +3149,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
     uint32_t num_args = mb->num_args;
     char str[2048];
     char formatter[16];
-    const char *arg0 = mb_get_string(port_idx, mb->arguments[0], core);
+    const char *arg0 = mb_get_string(port_idx, mb->arguments[0], core, cause);
     const char *arg0_bak = arg0;
     char *ps = &str[0];
     uint32_t arg_idx = 1;
@@ -3166,7 +3179,7 @@ static void handle_mb_printf(uint16_t port_idx, magic_mailbox_t *mb, uint32_t co
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
             if (formatter[j] == 's') {
-                sub_str = mb_get_string(port_idx, mb->arguments[arg_idx++], core);
+                sub_str = mb_get_string(port_idx, mb->arguments[arg_idx++], core, cause);
                 ps += snprintf(ps, sizeof(str), formatter, sub_str);
             } else {
                 ps += snprintf(ps, sizeof(str), formatter, mb->arguments[arg_idx++]);
@@ -3192,7 +3205,7 @@ static void handle_mb_sim_stop(uint16_t port_idx, magic_mailbox_t *mb, uint32_t 
     if (1 == num_args) {
         DBLOG("EXIT(%u): core %u code %u \n", num_args, core, mb->arguments[0]);
     } else if (3 == num_args) {
-        const char *func_name = mb_get_string(port_idx, mb->arguments[1], core);
+        const char *func_name = mb_get_string(port_idx, mb->arguments[1], core, 1);
         DBLOG("EXIT(%u): core %u code %u function: %s() line %u\n",
             num_args, core, mb->arguments[0], func_name, mb->arguments[2]);
     } else {

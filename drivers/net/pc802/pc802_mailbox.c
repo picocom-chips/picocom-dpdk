@@ -494,9 +494,9 @@ void mb_set_ssbl_end(uint16_t pc802_index)
     g_fw_info[pc802_index].ssbl_end = 1;
 }
 
-const char * mb_get_string(uint16_t pc802_index, uint32_t addr, uint32_t core)
+const char * mb_get_string(uint16_t pc802_index, uint32_t addr, uint32_t core, uint32_t cause)
 {
-    if (0 == g_fw_info[pc802_index].ssbl_end) {
+    if ((0 == cause) && (0 == g_fw_info[pc802_index].ssbl_end)) {
         assert(core == 0);
         return (const char *)(g_fw_info[pc802_index].ssbl->ssbl_img + (addr - 0x03080000));
     }
